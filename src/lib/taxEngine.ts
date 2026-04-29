@@ -1,0 +1,449 @@
+import dayjs from "dayjs";
+import { getIncomeEventAmountForMonth, isIdecoMonexPensionEvent } from "@/lib/incomeEvents";
+import type {
+  HouseholdMember,
+  IncomeEvent,
+  ScenarioData,
+  TaxCalculationMode,
+  TaxInsuranceByFiscalYear,
+  YearMonth,
+} from "@/types";
+
+const INCOME_TAX_BASIC_DEDUCTION = 580_000;
+const RESIDENT_TAX_BASIC_DEDUCTION = 430_000;
+const RESIDENT_TAX_FLAT = 5_000;
+const RESIDENT_TAX_RATE = 0.1;
+const RECOVERY_SPECIAL_TAX_RATE = 0.021;
+const SPOUSE_DEDUCTION_INCOME_TAX = 380_000;
+const SPOUSE_DEDUCTION_RESIDENT_TAX = 330_000;
+const DEPENDENT_DEDUCTION_INCOME_TAX = 380_000;
+const DEPENDENT_DEDUCTION_RESIDENT_TAX = 330_000;
+
+const NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR: Record<number, number> = {
+  2026: 17_920,
+};
+
+const OTA_NHI = {
+  baseIncomeDeduction: 430_000,
+  medicalIncomeRate: 0.0751,
+  medicalPerCapita: 47_600,
+  medicalCap: 670_000,
+  supportIncomeRate: 0.028,
+  supportPerCapita: 17_600,
+  supportCap: 260_000,
+  childSupportIncomeRate: 0.0027,
+  childSupportPerCapita: 1_873,
+  childSupportCap: 30_000,
+  careIncomeRate: 0.0243,
+  carePerCapita: 17_800,
+  careCap: 170_000,
+};
+
+export type AutoTaxMemberDetail = {
+  memberId: string;
+  memberName: string;
+  relationship: HouseholdMember["relationship"];
+  ageAtYearEnd: number;
+  salaryGrossAnnual: number;
+  salaryDeductionAnnual: number;
+  pensionGrossAnnual: number;
+  pensionDeductionAnnual: number;
+  miscellaneousIncomeAnnual: number;
+  taxableIncomeBeforeBasicDeductionAnnual: number;
+  basicDeductionAnnual: number;
+  dependentDeductionsIncomeTaxAnnual: number;
+  dependentDeductionsResidentTaxAnnual: number;
+  incomeTaxBaseAnnual: number;
+  residentTaxBaseAnnual: number;
+  incomeTaxAnnual: number;
+  residentTaxAnnual: number;
+  nationalPensionMonthly: number;
+  nationalPensionAnnual: number;
+};
+
+export type AutoTaxYearDetail = {
+  fiscalYear: number;
+  memberDetails: AutoTaxMemberDetail[];
+  nationalHealthInsuranceAnnual: number;
+  nursingCareAnnual: number;
+  otherPublicCostAnnual: number;
+  nationalHealthInsuranceBreakdown: {
+    insuredMemberCount: number;
+    totalBaseIncome: number;
+    medical: number;
+    support: number;
+    childSupport: number;
+    care: number;
+    insuredMemberDetails: Array<{
+      memberId: string;
+      memberName: string;
+      ageAtYearEnd: number;
+      baseIncome: number;
+    }>;
+  };
+};
+
+function ym(value: YearMonth) {
+  return dayjs(`${value}-01`);
+}
+
+function formatYm(date: dayjs.Dayjs) {
+  return date.format("YYYY-MM");
+}
+
+function getFiscalYear(yearMonth: YearMonth) {
+  const date = ym(yearMonth);
+  return date.month() >= 3 ? date.year() : date.year() - 1;
+}
+
+function getCalendarYearMonths(year: number) {
+  const months: YearMonth[] = [];
+  let cursor = dayjs(`${year}-01-01`);
+  const end = dayjs(`${year}-12-01`);
+  while (cursor.isBefore(end) || cursor.isSame(end, "month")) {
+    months.push(formatYm(cursor));
+    cursor = cursor.add(1, "month");
+    if (months.length > 12) break;
+  }
+  return months;
+}
+
+function listFiscalYearsForScenario(scenario: ScenarioData) {
+  const start = ym(scenario.userProfile.simulationStartYearMonth);
+  const endYearMonth =
+    scenario.userProfile.simulationEndMode === "yearMonth" && scenario.userProfile.simulationEndYearMonth
+      ? scenario.userProfile.simulationEndYearMonth
+      : dayjs(scenario.userProfile.birthDate).add(scenario.userProfile.simulationEndAge ?? 95, "year").format("YYYY-MM");
+  const end = ym(endYearMonth);
+  const years = new Set<number>();
+  let cursor = start;
+  while (cursor.isBefore(end) || cursor.isSame(end, "month")) {
+    years.add(getFiscalYear(formatYm(cursor)));
+    cursor = cursor.add(1, "month");
+    if (years.size > 120) break;
+  }
+  return [...years].sort((a, b) => a - b);
+}
+
+function isEventActive(event: Pick<IncomeEvent, "startYearMonth" | "endYearMonth">, yearMonth: YearMonth) {
+  return yearMonth >= event.startYearMonth && (!event.endYearMonth || yearMonth <= event.endYearMonth);
+}
+
+function getPensionAdjustedAmount(event: IncomeEvent, monthsFromStart: number, scenario: ScenarioData) {
+  const base = event.amountInputMode === "annual" ? event.monthlyAmount / 12 : event.monthlyAmount;
+  if (event.type !== "pension" || !scenario.inflationSettings.enabled) return base;
+  return base * Math.pow(1 + scenario.inflationSettings.pensionAnnualAdjustmentRate, monthsFromStart / 12);
+}
+
+function getMonthlyIncomeAmount(event: IncomeEvent, yearMonth: YearMonth, scenario: ScenarioData) {
+  if (!isIdecoMonexPensionEvent(event) && !isEventActive(event, yearMonth)) return 0;
+  return getIncomeEventAmountForMonth(
+    event,
+    yearMonth,
+    scenario,
+    scenario.inflationSettings.enabled ? scenario.inflationSettings.pensionAnnualAdjustmentRate : 0,
+  );
+}
+
+function getSalaryIncomeDeduction(amount: number) {
+  if (amount <= 1_625_000) return 650_000;
+  if (amount <= 1_800_000) return amount * 0.4 - 100_000;
+  if (amount <= 1_900_000) return amount * 0.3 + 80_000;
+  if (amount <= 3_600_000) return amount * 0.3 + 80_000;
+  if (amount <= 6_600_000) return amount * 0.2 + 440_000;
+  if (amount <= 8_500_000) return amount * 0.1 + 1_100_000;
+  return 1_950_000;
+}
+
+function getPublicPensionDeduction(amount: number, ageAtYearEnd: number) {
+  if (ageAtYearEnd >= 65) return Math.min(amount, 1_100_000);
+  return Math.min(amount, 600_000);
+}
+
+function getAgeAtDate(birthDate: string, date: dayjs.Dayjs) {
+  const birth = dayjs(birthDate);
+  let age = date.year() - birth.year();
+  if (date.month() < birth.month() || (date.month() === birth.month() && date.date() < birth.date())) {
+    age -= 1;
+  }
+  return age;
+}
+
+function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
+  const months = getCalendarYearMonths(fiscalYear);
+  const events = scenario.incomeEvents.filter((event) => event.memberId === member.id);
+  let salary = 0;
+  let pension = 0;
+  let miscellaneous = 0;
+
+  for (const month of months) {
+    for (const event of events) {
+      if (event.taxTreatment === "nonTaxable") continue;
+      const amount = getMonthlyIncomeAmount(event, month, scenario);
+      if (amount <= 0) continue;
+      if (event.type === "salary") {
+        salary += amount;
+      } else if (event.type === "pension") {
+        pension += amount;
+      } else {
+        miscellaneous += amount;
+      }
+    }
+  }
+
+  const ageAtYearEnd = getAgeAtDate(member.birthDate, dayjs(`${fiscalYear}-12-31`));
+  const salaryIncome = Math.max(0, salary - getSalaryIncomeDeduction(salary));
+  const pensionIncome = Math.max(0, pension - getPublicPensionDeduction(pension, ageAtYearEnd));
+  const totalIncome = Math.round(salaryIncome + pensionIncome + miscellaneous);
+
+  return {
+    salaryGrossAnnual: Math.round(salary),
+    salaryDeductionAnnual: Math.round(getSalaryIncomeDeduction(salary)),
+    salaryIncome: Math.round(salaryIncome),
+    pensionGrossAnnual: Math.round(pension),
+    pensionDeductionAnnual: Math.round(getPublicPensionDeduction(pension, ageAtYearEnd)),
+    pensionIncome: Math.round(pensionIncome),
+    miscellaneousIncome: Math.round(miscellaneous),
+    totalIncome,
+    ageAtYearEnd,
+  };
+}
+
+function getDependentDeductions(scenario: ScenarioData, memberId: string) {
+  const spouseIncomeTax = scenario.householdMembers.reduce((sum, member) => {
+    if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    return sum + SPOUSE_DEDUCTION_INCOME_TAX;
+  }, 0);
+  const spouseResidentTax = scenario.householdMembers.reduce((sum, member) => {
+    if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    return sum + SPOUSE_DEDUCTION_RESIDENT_TAX;
+  }, 0);
+  const dependentIncomeTax = scenario.householdMembers.reduce((sum, member) => {
+    if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    return sum + DEPENDENT_DEDUCTION_INCOME_TAX;
+  }, 0);
+  const dependentResidentTax = scenario.householdMembers.reduce((sum, member) => {
+    if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    return sum + DEPENDENT_DEDUCTION_RESIDENT_TAX;
+  }, 0);
+
+  return {
+    incomeTax: spouseIncomeTax + dependentIncomeTax,
+    residentTax: spouseResidentTax + dependentResidentTax,
+  };
+}
+
+function calculateIncomeTax(taxableIncome: number) {
+  if (taxableIncome <= 0) return 0;
+  let tax = 0;
+  if (taxableIncome <= 1_949_000) tax = taxableIncome * 0.05;
+  else if (taxableIncome <= 3_299_000) tax = taxableIncome * 0.1 - 97_500;
+  else if (taxableIncome <= 6_949_000) tax = taxableIncome * 0.2 - 427_500;
+  else if (taxableIncome <= 8_999_000) tax = taxableIncome * 0.23 - 636_000;
+  else if (taxableIncome <= 17_999_000) tax = taxableIncome * 0.33 - 1_536_000;
+  else if (taxableIncome <= 39_999_000) tax = taxableIncome * 0.4 - 2_796_000;
+  else tax = taxableIncome * 0.45 - 4_796_000;
+  return Math.max(0, Math.round(tax * (1 + RECOVERY_SPECIAL_TAX_RATE)));
+}
+
+function calculateResidentTax(taxableIncome: number) {
+  if (taxableIncome <= 0) return 0;
+  return Math.max(0, Math.round(taxableIncome * RESIDENT_TAX_RATE + RESIDENT_TAX_FLAT));
+}
+
+function calculateNationalPensionMonthly(fiscalYear: number) {
+  const latestYear = Object.keys(NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .at(-1);
+  if (!latestYear) return 0;
+  return NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR[fiscalYear] ?? NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR[latestYear];
+}
+
+function countEligibleNationalPensionMonths(member: HouseholdMember, fiscalYear: number) {
+  let count = 0;
+  for (const month of getCalendarYearMonths(fiscalYear)) {
+    const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
+    if (age >= 20 && age < 60 && member.isResident && !member.isLateElderlyMedicalMember) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear: number) {
+  if (!scenario.householdProfile.municipality.includes("大田区")) {
+    return {
+      nationalHealthInsuranceAnnual: 0,
+      nursingCareAnnual: 0,
+      nationalHealthInsuranceBreakdown: {
+        insuredMemberCount: 0,
+        totalBaseIncome: 0,
+        medical: 0,
+        support: 0,
+        childSupport: 0,
+        care: 0,
+        insuredMemberDetails: [],
+      },
+    };
+  }
+
+  const insuredMembers = scenario.householdMembers.filter(
+    (member) => member.isNationalHealthInsuranceMember && !member.isLateElderlyMedicalMember,
+  );
+  if (insuredMembers.length === 0) {
+    return {
+      nationalHealthInsuranceAnnual: 0,
+      nursingCareAnnual: 0,
+      nationalHealthInsuranceBreakdown: {
+        insuredMemberCount: 0,
+        totalBaseIncome: 0,
+        medical: 0,
+        support: 0,
+        childSupport: 0,
+        care: 0,
+        insuredMemberDetails: [],
+      },
+    };
+  }
+
+  const memberIncomes = insuredMembers.map((member) => {
+    const breakdown = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+    const baseIncome = Math.max(0, breakdown.totalIncome - OTA_NHI.baseIncomeDeduction);
+    const age = breakdown.ageAtYearEnd;
+    return {
+      member,
+      age,
+      baseIncome,
+    };
+  });
+
+  const totalBaseIncome = memberIncomes.reduce((sum, item) => sum + item.baseIncome, 0);
+  const childCount = memberIncomes.filter((item) => item.age <= 18).length;
+  const careMembers = memberIncomes.filter((item) => item.age >= 40 && item.age <= 64);
+  const careBaseIncome = careMembers.reduce((sum, item) => sum + item.baseIncome, 0);
+
+  const medical = Math.min(
+    Math.round(totalBaseIncome * OTA_NHI.medicalIncomeRate) + insuredMembers.length * OTA_NHI.medicalPerCapita,
+    OTA_NHI.medicalCap,
+  );
+  const support = Math.min(
+    Math.round(totalBaseIncome * OTA_NHI.supportIncomeRate) + insuredMembers.length * OTA_NHI.supportPerCapita,
+    OTA_NHI.supportCap,
+  );
+  const childSupport = Math.min(
+    Math.round(totalBaseIncome * OTA_NHI.childSupportIncomeRate) + childCount * OTA_NHI.childSupportPerCapita,
+    OTA_NHI.childSupportCap,
+  );
+  const care = Math.min(
+    Math.round(careBaseIncome * OTA_NHI.careIncomeRate) + careMembers.length * OTA_NHI.carePerCapita,
+    OTA_NHI.careCap,
+  );
+
+  return {
+    nationalHealthInsuranceAnnual: medical + support + childSupport,
+    nursingCareAnnual: care,
+    nationalHealthInsuranceBreakdown: {
+      insuredMemberCount: insuredMembers.length,
+      totalBaseIncome,
+      medical,
+      support,
+      childSupport,
+      care,
+      insuredMemberDetails: memberIncomes.map((item) => ({
+        memberId: item.member.id,
+        memberName: item.member.name,
+        ageAtYearEnd: item.age,
+        baseIncome: item.baseIncome,
+      })),
+    },
+  };
+}
+
+export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDetail[] {
+  const fiscalYears = listFiscalYearsForScenario(scenario);
+  return fiscalYears.map((fiscalYear) => {
+    const perMember = scenario.householdMembers.map((member) => {
+      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+      const deductions = getDependentDeductions(scenario, member.id);
+      const incomeTaxBase = Math.max(0, income.totalIncome - INCOME_TAX_BASIC_DEDUCTION - deductions.incomeTax);
+      const residentTaxBase = Math.max(0, income.totalIncome - RESIDENT_TAX_BASIC_DEDUCTION - deductions.residentTax);
+      const nationalPensionMonthly = countEligibleNationalPensionMonths(member, fiscalYear) > 0
+        ? calculateNationalPensionMonthly(fiscalYear)
+        : 0;
+      const incomeTaxAnnual = calculateIncomeTax(incomeTaxBase);
+      const residentTaxAnnual = calculateResidentTax(residentTaxBase);
+
+      return {
+        memberId: member.id,
+        memberName: member.name,
+        relationship: member.relationship,
+        ageAtYearEnd: income.ageAtYearEnd,
+        salaryGrossAnnual: income.salaryGrossAnnual,
+        salaryDeductionAnnual: income.salaryDeductionAnnual,
+        pensionGrossAnnual: income.pensionGrossAnnual,
+        pensionDeductionAnnual: income.pensionDeductionAnnual,
+        miscellaneousIncomeAnnual: income.miscellaneousIncome,
+        taxableIncomeBeforeBasicDeductionAnnual: income.totalIncome,
+        basicDeductionAnnual: INCOME_TAX_BASIC_DEDUCTION,
+        dependentDeductionsIncomeTaxAnnual: deductions.incomeTax,
+        dependentDeductionsResidentTaxAnnual: deductions.residentTax,
+        incomeTaxBaseAnnual: incomeTaxBase,
+        residentTaxBaseAnnual: residentTaxBase,
+        incomeTaxAnnual,
+        residentTaxAnnual,
+        nationalPensionMonthly,
+        nationalPensionAnnual: nationalPensionMonthly * 12,
+      };
+    });
+
+    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear);
+
+    return {
+      fiscalYear,
+      memberDetails: perMember,
+      nationalHealthInsuranceAnnual: otaNhi.nationalHealthInsuranceAnnual,
+      nursingCareAnnual: otaNhi.nursingCareAnnual,
+      otherPublicCostAnnual: 0,
+      nationalHealthInsuranceBreakdown: otaNhi.nationalHealthInsuranceBreakdown,
+    };
+  });
+}
+
+export function calculateAutoTaxRows(scenario: ScenarioData): TaxInsuranceByFiscalYear[] {
+  return calculateAutoTaxDetails(scenario).map((detail) => ({
+    id: `auto-tax-${detail.fiscalYear}`,
+    fiscalYear: detail.fiscalYear,
+    residentTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual, 0),
+    incomeTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual, 0),
+    nationalHealthInsuranceAnnual: detail.nationalHealthInsuranceAnnual,
+    nationalPensionMonthly: detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionMonthly, 0),
+    nursingCareAnnual: detail.nursingCareAnnual,
+    otherPublicCostAnnual: detail.otherPublicCostAnnual,
+  }));
+}
+
+function mergeTaxRows(autoRows: TaxInsuranceByFiscalYear[], manualRows: TaxInsuranceByFiscalYear[]) {
+  const adjustments = new Map(manualRows.map((row) => [row.fiscalYear, row]));
+  return autoRows.map((row) => {
+    const adjustment = adjustments.get(row.fiscalYear);
+    if (!adjustment) return row;
+    return {
+      ...row,
+      residentTaxAnnual: row.residentTaxAnnual + adjustment.residentTaxAnnual,
+      incomeTaxAnnual: row.incomeTaxAnnual + adjustment.incomeTaxAnnual,
+      nationalHealthInsuranceAnnual: row.nationalHealthInsuranceAnnual + adjustment.nationalHealthInsuranceAnnual,
+      nationalPensionMonthly: row.nationalPensionMonthly + adjustment.nationalPensionMonthly,
+      nursingCareAnnual: row.nursingCareAnnual + adjustment.nursingCareAnnual,
+      otherPublicCostAnnual: row.otherPublicCostAnnual + adjustment.otherPublicCostAnnual,
+    };
+  });
+}
+
+export function getEffectiveTaxRows(scenario: ScenarioData) {
+  const mode: TaxCalculationMode = scenario.householdProfile.taxCalculationMode;
+  if (mode === "manual") return scenario.taxInsurance;
+  const autoRows = calculateAutoTaxRows(scenario);
+  if (mode === "auto") return autoRows;
+  return mergeTaxRows(autoRows, scenario.taxInsurance);
+}

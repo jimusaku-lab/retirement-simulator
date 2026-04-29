@@ -1,0 +1,9 @@
+.DS_Store
+.codex-runtime/
+dist/
+node_modules/
+recovered_retirement_5173_from_chrome.json
+recovered_retirement_5173_state.json
+retirement-simulation-backup-*.json
+public/recovered_retirement_5173_from_chrome.json
+*.log
