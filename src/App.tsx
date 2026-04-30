@@ -254,6 +254,12 @@ function App() {
     };
   }, [replaceState]);
 
+  useEffect(() => {
+    if (!restoreMessage) return undefined;
+    const timer = window.setTimeout(() => setRestoreMessage(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [restoreMessage]);
+
   const updateScenario = (updater: (scenario: ScenarioData) => void) => {
     updateActiveScenario((scenario) => {
       updater(scenario);
@@ -351,7 +357,12 @@ function App() {
     <div className="min-h-screen">
       {restoreMessage && (
         <div className="border-b bg-emerald-50 px-4 py-2 text-sm text-emerald-900">
-          {restoreMessage}
+          <div className="container flex flex-wrap items-center justify-between gap-2">
+            <span>{restoreMessage}</span>
+            <Button variant="ghost" size="sm" onClick={() => setRestoreMessage(null)}>
+              閉じる
+            </Button>
+          </div>
         </div>
       )}
       {isLikelySampleState && !restoreMessage && (
