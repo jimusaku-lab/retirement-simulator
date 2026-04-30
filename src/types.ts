@@ -284,6 +284,9 @@ export type MonthlyResult = {
   optionIncomeSuspendedTotal: number;
   nisaContributionSkippedTotal: number;
   nisaAnnualLimitExceededTotal: number;
+  nisaContributionTotal: number;
+  nisaCumulativeInvestment: number;
+  nisaRemainingLifetimeLimit: number;
   assetContributionTotal: number;
   assetContributionFundingGap: number;
   livingExpenseTotal: number;
@@ -321,6 +324,9 @@ export type AnnualResult = {
   optionIncomeSuspendedTotal: number;
   nisaContributionSkippedTotal: number;
   nisaAnnualLimitExceededTotal: number;
+  nisaContributionTotal: number;
+  nisaCumulativeInvestment: number;
+  nisaRemainingLifetimeLimit: number;
   assetContributionTotal: number;
   assetContributionFundingGap: number;
   livingExpenseTotal: number;

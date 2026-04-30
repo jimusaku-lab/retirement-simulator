@@ -2693,6 +2693,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   const annualPlannedDrawdown = result.annual.reduce((sum, row) => sum + row.plannedDrawdownTotal, 0);
   const annualNet = result.annual.reduce((sum, row) => sum + row.netCashFlow, 0);
   const latestAnnual = result.annual.at(-1);
+  const latestNisaCumulativeInvestment = latestAnnual?.nisaCumulativeInvestment ?? 0;
+  const latestNisaRemainingLifetimeLimit = latestAnnual?.nisaRemainingLifetimeLimit ?? 0;
   const latestTrackedGainTotal = latestAnnual
     ? gainTrackedAssets.reduce((sum, asset) => sum + latestAnnual.endingTrackedAssetUnrealizedGains[asset.key], 0)
     : 0;
@@ -2722,6 +2724,13 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     basis: row.endingTrackedAssetCostBasis.ordinaryAccountForOptions,
     gain: row.endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions,
   }));
+  const nisaLimitChartData = result.annual.map((row) => ({
+    label: `${row.year} / ${row.ageYears}歳`,
+    cumulative: row.nisaCumulativeInvestment,
+    remaining: Number.isFinite(row.nisaRemainingLifetimeLimit) ? row.nisaRemainingLifetimeLimit : 0,
+    annualContribution: row.nisaContributionTotal,
+    skipped: row.nisaContributionSkippedTotal,
+  }));
 
   return (
     <div className="space-y-6">
@@ -2733,6 +2742,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="累計証拠金不足停止" value={compactYen(annualOptionSuspended)} sub="最低維持額未満で止めた収益" />
         <Metric title="累計NISA未実行" value={compactYen(annualNisaSkipped)} sub="原資不足で実行しなかった積立" />
         <Metric title="累計NISA枠超過" value={compactYen(annualNisaLimitExceeded)} sub="年間枠を超えた予定額" />
+        <Metric title="NISA累計投資額" value={compactYen(latestNisaCumulativeInvestment)} sub={latestAnnual ? `${latestAnnual.year}年末時点` : "年末時点"} />
+        <Metric title="残りNISA枠" value={compactLimitYen(latestNisaRemainingLifetimeLimit)} sub="生涯投資枠の残り" />
         <Metric title="累計生活費" value={compactYen(annualLiving)} sub="税社保を除く生活費" />
         <Metric title="累計税社保支払" value={compactYen(annualTax)} sub="翌年反映分を含む現金支出" />
         <Metric title="累計iDeCo源泉" value={compactYen(annualIdecoWithholding)} sub="受取時に差し引き" />
@@ -2801,6 +2812,28 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               row.optionIncomeSuspendedTotal > 0 ||
               row.optionProfitSweepTotal > 0,
           ) && <p className="text-sm text-muted-foreground">投資計画上の警告はありません。</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>NISA枠の進捗</CardTitle>
+          <CardDescription>累計投資額、残り生涯枠、年ごとの追加投資と未実行額を確認します。</CardDescription>
+        </CardHeader>
+        <CardContent className="h-96">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={nisaLimitChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+              <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <Tooltip formatter={(value) => yen(Number(value))} />
+              <Legend />
+              <Line dataKey="cumulative" name="NISA累計投資額" stroke="#0f766e" strokeWidth={3} dot={false} />
+              <Line dataKey="remaining" name="残りNISA枠" stroke="#2563eb" strokeWidth={3} dot={false} />
+              <Line dataKey="annualContribution" name="年内追加投資" stroke="#7c3aed" dot={false} />
+              <Line dataKey="skipped" name="NISA未実行" stroke="#dc2626" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 
@@ -3253,12 +3286,16 @@ function formatWithdrawalSources(breakdown: AnnualResult["withdrawalSourceBreakd
     .join("\n");
 }
 
+function compactLimitYen(value: number) {
+  return Number.isFinite(value) ? compactYen(value) : "制限なし";
+}
+
 function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows: AnnualResult[]; period: "year" }) {
   const { rows, period } = props;
   const stickyHeaderClass = "sticky left-0 z-30 bg-white shadow-[1px_0_0_#cbd5e1]";
   const stickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
   return (
-    <Table className="min-w-[2200px]">
+    <Table className="min-w-[2400px]">
       <thead className="sticky top-0 z-10 bg-white shadow-sm">
         <Tr>
           <Th className={stickyHeaderClass}>{period === "month" ? "年月" : "年 / 年齢"}</Th>
@@ -3275,8 +3312,11 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>不足補填売却</Th>
           <Th className="min-w-[300px]">不足補填元</Th>
           <Th>追加投資</Th>
+          <Th>NISA実行</Th>
           <Th>NISA未実行</Th>
           <Th>NISA枠超過</Th>
+          <Th>NISA累計投資</Th>
+          <Th>残りNISA枠</Th>
           <Th>追加投資原資不足</Th>
           <Th>口座内積上</Th>
           <Th>原資移動</Th>
@@ -3311,8 +3351,11 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
                 {formatWithdrawalSources(row.deficitWithdrawalBreakdown) || "-"}
               </Td>
               <Td>{compactYen(row.assetContributionTotal)}</Td>
+              <Td>{compactYen(row.nisaContributionTotal)}</Td>
               <Td className={row.nisaContributionSkippedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaContributionSkippedTotal)}</Td>
               <Td className={row.nisaAnnualLimitExceededTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaAnnualLimitExceededTotal)}</Td>
+              <Td>{compactYen(row.nisaCumulativeInvestment)}</Td>
+              <Td>{compactLimitYen(row.nisaRemainingLifetimeLimit)}</Td>
               <Td className={row.assetContributionFundingGap > 0 ? "text-destructive" : ""}>{compactYen(row.assetContributionFundingGap)}</Td>
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>
@@ -3345,8 +3388,11 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
                 {formatWithdrawalSources(row.deficitWithdrawalBreakdown) || "-"}
               </Td>
               <Td>{compactYen(row.assetContributionTotal)}</Td>
+              <Td>{compactYen(row.nisaContributionTotal)}</Td>
               <Td className={row.nisaContributionSkippedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaContributionSkippedTotal)}</Td>
               <Td className={row.nisaAnnualLimitExceededTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaAnnualLimitExceededTotal)}</Td>
+              <Td>{compactYen(row.nisaCumulativeInvestment)}</Td>
+              <Td>{compactLimitYen(row.nisaRemainingLifetimeLimit)}</Td>
               <Td className={row.assetContributionFundingGap > 0 ? "text-destructive" : ""}>{compactYen(row.assetContributionFundingGap)}</Td>
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>

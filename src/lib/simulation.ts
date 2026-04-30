@@ -1007,6 +1007,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
     );
     const outflow = livingExpenseTotal + specialExpenseTotal + taxInsuranceTotal;
     let assetContributionTotal = 0;
+    let nisaContributionTotal = 0;
     let nisaContributionSkippedTotal = 0;
     let nisaAnnualLimitExceededTotal = 0;
     let handledNisaContributionThisMonth = false;
@@ -1114,6 +1115,9 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
         balances.cash -= contributionAmount;
       }
       assetContributionTotal += contributionAmount;
+      if (event.assetKey === "nisa") {
+        nisaContributionTotal += contributionAmount;
+      }
       balances[event.assetKey] += contributionAmount;
       if (isGainTrackedAsset(event.assetKey)) {
         taxableBasis[event.assetKey] += contributionAmount;
@@ -1135,6 +1139,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
       if (contributionAmount > 0) {
         fundFromLiquidBuffer(balances, contributionAmount);
         assetContributionTotal += contributionAmount;
+        nisaContributionTotal += contributionAmount;
         balances.nisa += contributionAmount;
         taxableBasis.nisa += contributionAmount;
       }
@@ -1253,6 +1258,10 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
     const endingAssets = sumBalances(balances);
     const netCashFlow = incomeTotal - outflow - assetContributionTotal - capitalGainsTaxTotal - plannedDrawdownTotal;
     const snapshots = getTrackedAssetSnapshots(balances, taxableBasis);
+    const nisaLifetimeLimit = getNisaLifetimeLimit(scenario);
+    const nisaRemainingLifetimeLimit = scenario.nisaInvestmentRules.enforceAnnualLimit
+      ? Math.max(0, nisaLifetimeLimit - nisaContributionUsedLifetime)
+      : Number.POSITIVE_INFINITY;
     monthly.push({
       yearMonth,
       ageYears: age.years,
@@ -1264,6 +1273,9 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
       optionIncomeSuspendedTotal: Math.round(optionIncomeSuspendedTotal),
       nisaContributionSkippedTotal: Math.round(nisaContributionSkippedTotal),
       nisaAnnualLimitExceededTotal: Math.round(nisaAnnualLimitExceededTotal),
+      nisaContributionTotal: Math.round(nisaContributionTotal),
+      nisaCumulativeInvestment: Math.round(nisaContributionUsedLifetime),
+      nisaRemainingLifetimeLimit: Number.isFinite(nisaRemainingLifetimeLimit) ? Math.round(nisaRemainingLifetimeLimit) : nisaRemainingLifetimeLimit,
       assetContributionTotal: Math.round(assetContributionTotal),
       assetContributionFundingGap: Math.round(assetContributionFundingGap),
       livingExpenseTotal: Math.round(livingExpenseTotal),
@@ -1345,6 +1357,9 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         optionIncomeSuspendedTotal: 0,
         nisaContributionSkippedTotal: 0,
         nisaAnnualLimitExceededTotal: 0,
+        nisaContributionTotal: 0,
+        nisaCumulativeInvestment: row.nisaCumulativeInvestment,
+        nisaRemainingLifetimeLimit: row.nisaRemainingLifetimeLimit,
         assetContributionTotal: 0,
         assetContributionFundingGap: 0,
         livingExpenseTotal: 0,
@@ -1377,6 +1392,9 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.optionIncomeSuspendedTotal += row.optionIncomeSuspendedTotal;
     current.nisaContributionSkippedTotal += row.nisaContributionSkippedTotal;
     current.nisaAnnualLimitExceededTotal += row.nisaAnnualLimitExceededTotal;
+    current.nisaContributionTotal += row.nisaContributionTotal;
+    current.nisaCumulativeInvestment = row.nisaCumulativeInvestment;
+    current.nisaRemainingLifetimeLimit = row.nisaRemainingLifetimeLimit;
     current.assetContributionTotal += row.assetContributionTotal;
     current.assetContributionFundingGap += row.assetContributionFundingGap;
     current.livingExpenseTotal += row.livingExpenseTotal;

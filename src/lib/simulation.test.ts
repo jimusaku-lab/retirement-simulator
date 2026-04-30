@@ -310,9 +310,17 @@ describe("simulation", () => {
 
     expect(result.monthly[0]).toMatchObject({
       assetContributionTotal: 100_000,
+      nisaContributionTotal: 100_000,
+      nisaCumulativeInvestment: 100_000,
+      nisaRemainingLifetimeLimit: 17_900_000,
       withdrawalAmount: 100_000,
       netCashFlow: -100_000,
       endingAssets: 1_000_000,
+    });
+    expect(result.annual[0]).toMatchObject({
+      nisaContributionTotal: 100_000,
+      nisaCumulativeInvestment: 100_000,
+      nisaRemainingLifetimeLimit: 17_900_000,
     });
   });
 
