@@ -327,6 +327,23 @@ function App() {
     event.target.value = "";
   };
 
+  const restoreBundledRecovery = async () => {
+    if (!window.confirm("復旧JSONから実データを復元しますか？現在の状態は復元前履歴として保存されます。")) return;
+    try {
+      const response = await fetch("/recovered_retirement_5173_from_chrome.json");
+      if (!response.ok) throw new Error("復旧JSONを読み込めませんでした。");
+      const restoredState = (await response.json()) as RetirementPlanState;
+      if (!Array.isArray(restoredState.scenarios) || restoredState.scenarios.length === 0) {
+        throw new Error("復旧JSONの形式が正しくありません。");
+      }
+      replaceState(restoredState);
+      setActiveTab("dashboard");
+      setRestoreMessage("復旧JSONから実データを復元しました。計算ロジックは現在の修正版のままです。");
+    } catch (error) {
+      setRestoreMessage(error instanceof Error ? error.message : "復旧処理に失敗しました。");
+    }
+  };
+
   return (
     <div className="min-h-screen">
       {restoreMessage && (
@@ -398,6 +415,7 @@ function App() {
             exportCsv={exportCsv}
             importJson={() => fileInputRef.current?.click()}
             resetToSample={resetToSample}
+            restoreBundledRecovery={restoreBundledRecovery}
             lastSavedAt={lastSavedAt}
             backups={backups}
             createBackup={createBackup}
@@ -3172,6 +3190,7 @@ function DataSection(props: {
   exportCsv: () => void;
   importJson: () => void;
   resetToSample: () => void;
+  restoreBundledRecovery: () => void;
   lastSavedAt?: string;
   backups: PlanBackup[];
   createBackup: (label?: string) => void;
@@ -3200,6 +3219,10 @@ function DataSection(props: {
             <Upload className="h-4 w-4" />
             JSONインポート
           </Button>
+          <Button variant="outline" onClick={props.restoreBundledRecovery}>
+            <RefreshCcw className="h-4 w-4" />
+            実データを復旧
+          </Button>
           <Button variant="outline" onClick={props.exportCsv}>
             <Download className="h-4 w-4" />
             月次CSV出力
@@ -3208,10 +3231,22 @@ function DataSection(props: {
             <FileJson className="h-4 w-4" />
             履歴に保存
           </Button>
-          <Button variant="secondary" onClick={props.resetToSample}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (window.confirm("サンプルデータに戻しますか？現在の状態は復元前履歴として保存されます。")) {
+                props.resetToSample();
+              }
+            }}
+          >
             <RefreshCcw className="h-4 w-4" />
             サンプルに戻す
           </Button>
+        </div>
+
+        <div className="rounded-lg border bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          シナリオが「現状ケース」などのサンプルに戻った場合は、まず「実データを復旧」を押してください。
+          復旧前の状態も履歴へ残します。
         </div>
 
         <div className="rounded-lg border bg-white">
