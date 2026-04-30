@@ -224,6 +224,9 @@ function App() {
     () => scenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) })),
     [scenarios],
   );
+  const isLikelySampleState =
+    scenarios.length === sampleState.scenarios.length &&
+    scenarios.every((scenario, index) => scenario.name === sampleState.scenarios[index]?.name);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -349,6 +352,17 @@ function App() {
       {restoreMessage && (
         <div className="border-b bg-emerald-50 px-4 py-2 text-sm text-emerald-900">
           {restoreMessage}
+        </div>
+      )}
+      {isLikelySampleState && !restoreMessage && (
+        <div className="border-b bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          <div className="container flex flex-wrap items-center justify-between gap-2">
+            <span>現在はサンプルシナリオが表示されています。実データが消えたように見える場合は復旧できます。</span>
+            <Button variant="outline" size="sm" onClick={restoreBundledRecovery}>
+              <RefreshCcw className="h-4 w-4" />
+              実データを復旧
+            </Button>
+          </div>
         </div>
       )}
       <header className="border-b bg-white/90 backdrop-blur">
