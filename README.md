@@ -11,6 +11,14 @@ npm run dev
 
 表示されたローカルURLをブラウザで開きます。
 
+作業中に `ERR_CONNECTION_REFUSED` が出る場合は、ローカルサーバーが止まっています。固定URLで再公開する場合は次を使います。
+
+```bash
+npm run serve:local
+```
+
+固定URLは `http://127.0.0.1:5174/` です。`serve:local` は本番ビルドを作成し、macOSのLaunchAgentで静的配信します。
+
 ## テスト
 
 ```bash

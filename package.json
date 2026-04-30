@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "serve:local": "bash scripts/ensure-local-server.sh",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest --run",
