@@ -155,9 +155,31 @@ function getSalaryIncomeDeduction(amount: number) {
   return 1_950_000;
 }
 
-function getPublicPensionDeduction(amount: number, ageAtYearEnd: number) {
-  if (ageAtYearEnd >= 65) return Math.min(amount, 1_100_000);
-  return Math.min(amount, 600_000);
+function getPublicPensionOtherIncomeBand(otherIncome: number) {
+  if (otherIncome <= 10_000_000) return 0;
+  if (otherIncome <= 20_000_000) return 1;
+  return 2;
+}
+
+function getPublicPensionIncome(amount: number, ageAtYearEnd: number, otherIncome: number) {
+  if (amount <= 0) return 0;
+  const band = getPublicPensionOtherIncomeBand(otherIncome);
+  const isOver65 = ageAtYearEnd >= 65;
+
+  // 令和2年分以後の国税庁「公的年金等に係る雑所得の速算表」。
+  // band 0: 年金以外の所得 <= 1,000万円、band 1: <= 2,000万円、band 2: > 2,000万円。
+  if (!isOver65) {
+    if (amount <= 600_000) return 0;
+    if (amount < 1_300_000) return amount - [600_000, 500_000, 400_000][band];
+  } else {
+    if (amount <= 1_100_000) return 0;
+    if (amount < 3_300_000) return amount - [1_100_000, 1_000_000, 900_000][band];
+  }
+
+  if (amount < 4_100_000) return amount * 0.75 - [275_000, 175_000, 75_000][band];
+  if (amount < 7_700_000) return amount * 0.85 - [685_000, 585_000, 485_000][band];
+  if (amount < 10_000_000) return amount * 0.95 - [1_455_000, 1_355_000, 1_255_000][band];
+  return amount - [1_955_000, 1_855_000, 1_755_000][band];
 }
 
 function getAgeAtDate(birthDate: string, date: dayjs.Dayjs) {
@@ -193,7 +215,8 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
 
   const ageAtYearEnd = getAgeAtDate(member.birthDate, dayjs(`${fiscalYear}-12-31`));
   const salaryIncome = Math.max(0, salary - getSalaryIncomeDeduction(salary));
-  const pensionIncome = Math.max(0, pension - getPublicPensionDeduction(pension, ageAtYearEnd));
+  const pensionIncome = Math.max(0, getPublicPensionIncome(pension, ageAtYearEnd, salaryIncome + miscellaneous));
+  const pensionDeduction = Math.max(0, pension - pensionIncome);
   const totalIncome = Math.round(salaryIncome + pensionIncome + miscellaneous);
 
   return {
@@ -201,7 +224,7 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
     salaryDeductionAnnual: Math.round(getSalaryIncomeDeduction(salary)),
     salaryIncome: Math.round(salaryIncome),
     pensionGrossAnnual: Math.round(pension),
-    pensionDeductionAnnual: Math.round(getPublicPensionDeduction(pension, ageAtYearEnd)),
+    pensionDeductionAnnual: Math.round(pensionDeduction),
     pensionIncome: Math.round(pensionIncome),
     miscellaneousIncome: Math.round(miscellaneous),
     totalIncome,
