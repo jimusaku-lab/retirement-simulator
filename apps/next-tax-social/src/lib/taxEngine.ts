@@ -54,6 +54,8 @@ export type AutoTaxMemberDetail = {
   retirementIncomeAnnual: number;
   retirementIncomeTaxAnnual: number;
   retirementResidentTaxAnnual: number;
+  socialInsuranceDeductionAnnual: number;
+  medicalExpenseDeductionAnnual: number;
   taxableIncomeBeforeBasicDeductionAnnual: number;
   basicDeductionAnnual: number;
   dependentDeductionsIncomeTaxAnnual: number;
@@ -274,6 +276,18 @@ function getDependentDeductions(scenario: ScenarioData, memberId: string) {
   };
 }
 
+function getItemizedDeductions(scenario: ScenarioData, memberId: string, fiscalYear: number) {
+  return (scenario.taxDeductionEvents ?? []).reduce(
+    (acc, row) => {
+      if (row.memberId !== memberId || row.fiscalYear !== fiscalYear) return acc;
+      acc.socialInsurance += Math.max(0, Math.round(row.socialInsuranceDeductionAnnual));
+      acc.medical += Math.max(0, Math.round(row.medicalExpenseDeductionAnnual));
+      return acc;
+    },
+    { socialInsurance: 0, medical: 0 },
+  );
+}
+
 function calculateIncomeTax(taxableIncome: number) {
   if (taxableIncome <= 0) return 0;
   let tax = 0;
@@ -422,8 +436,17 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
     const perMember = scenario.householdMembers.map((member) => {
       const income = getMemberIncomeBreakdown(scenario, member, fiscalYear);
       const deductions = getDependentDeductions(scenario, member.id);
-      const incomeTaxBase = Math.max(0, income.totalIncome - INCOME_TAX_BASIC_DEDUCTION - deductions.incomeTax);
-      const residentTaxBase = Math.max(0, income.totalIncome - RESIDENT_TAX_BASIC_DEDUCTION - deductions.residentTax);
+      const itemizedDeductions = getItemizedDeductions(scenario, member.id, fiscalYear);
+      const socialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
+      const medicalExpenseDeductionAnnual = itemizedDeductions.medical;
+      const incomeTaxBase = Math.max(
+        0,
+        income.totalIncome - INCOME_TAX_BASIC_DEDUCTION - deductions.incomeTax - socialInsuranceDeductionAnnual - medicalExpenseDeductionAnnual,
+      );
+      const residentTaxBase = Math.max(
+        0,
+        income.totalIncome - RESIDENT_TAX_BASIC_DEDUCTION - deductions.residentTax - socialInsuranceDeductionAnnual - medicalExpenseDeductionAnnual,
+      );
       const nationalPensionMonthly = countEligibleNationalPensionMonths(member, fiscalYear) > 0
         ? calculateNationalPensionMonthly(fiscalYear)
         : 0;
@@ -445,6 +468,8 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         retirementIncomeAnnual: income.retirementIncomeAnnual,
         retirementIncomeTaxAnnual: income.retirementIncomeTaxAnnual,
         retirementResidentTaxAnnual: income.retirementResidentTaxAnnual,
+        socialInsuranceDeductionAnnual,
+        medicalExpenseDeductionAnnual,
         taxableIncomeBeforeBasicDeductionAnnual: income.totalIncome,
         basicDeductionAnnual: INCOME_TAX_BASIC_DEDUCTION,
         dependentDeductionsIncomeTaxAnnual: deductions.incomeTax,

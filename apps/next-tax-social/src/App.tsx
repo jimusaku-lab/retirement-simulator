@@ -2507,6 +2507,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
 
         <div className="space-y-5">
           <RetirementIncomeSection scenario={scenario} updateScenario={updateScenario} />
+          <TaxDeductionSection scenario={scenario} updateScenario={updateScenario} />
           <div className="rounded-lg border bg-white px-4 py-3 space-y-3">
             <div>
               <h3 className="font-medium">退職所得の重複ルール確認</h3>
@@ -2607,6 +2608,112 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
+function TaxDeductionSection({ scenario, updateScenario }: SectionProps) {
+  const add = () =>
+    updateScenario((s) =>
+      s.taxDeductionEvents.push({
+        id: crypto.randomUUID(),
+        fiscalYear: new Date().getFullYear(),
+        memberId: s.householdProfile.headMemberId ?? s.householdMembers[0]?.id ?? "member-self",
+        socialInsuranceDeductionAnnual: 0,
+        medicalExpenseDeductionAnnual: 0,
+      }),
+    );
+
+  const copyLatest = () =>
+    updateScenario((s) => {
+      const latest = [...s.taxDeductionEvents].sort((a, b) => a.fiscalYear - b.fiscalYear).at(-1);
+      if (!latest) {
+        s.taxDeductionEvents.push({
+          id: crypto.randomUUID(),
+          fiscalYear: new Date().getFullYear(),
+          memberId: s.householdProfile.headMemberId ?? s.householdMembers[0]?.id ?? "member-self",
+          socialInsuranceDeductionAnnual: 0,
+          medicalExpenseDeductionAnnual: 0,
+        });
+        return;
+      }
+      s.taxDeductionEvents.push({
+        ...structuredClone(latest),
+        id: crypto.randomUUID(),
+        fiscalYear: latest.fiscalYear + 1,
+      });
+      s.taxDeductionEvents.sort((a, b) => a.fiscalYear - b.fiscalYear);
+    });
+
+  return (
+    <div className="rounded-lg border bg-white px-4 py-3 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-medium">所得控除入力</h3>
+          <p className="text-sm text-muted-foreground">
+            社会保険料控除と医療費控除を年度・メンバーごとに入力します。自動計算の所得税・住民税の課税ベースから差し引きます。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={copyLatest}>
+            <Copy className="h-4 w-4" />
+            前年度コピー
+          </Button>
+          <Button onClick={add}>
+            <Plus className="h-4 w-4" />
+            控除追加
+          </Button>
+        </div>
+      </div>
+
+      {scenario.taxDeductionEvents.length === 0 && <p className="text-sm text-muted-foreground">所得控除はまだありません。</p>}
+      {scenario.taxDeductionEvents.map((row, index) => (
+        <EventEditor
+          key={row.id}
+          title={`${row.fiscalYear}年度の控除`}
+          onDelete={() => updateScenario((s) => void s.taxDeductionEvents.splice(index, 1))}
+        >
+          <FormGrid>
+            <Field label="年度">
+              <Input
+                type="number"
+                value={row.fiscalYear}
+                onChange={(e) => updateScenario((s) => void (s.taxDeductionEvents[index].fiscalYear = numberOrZero(e.target.value)))}
+              />
+            </Field>
+            <Field label="世帯メンバー">
+              <Select
+                value={row.memberId}
+                onChange={(e) => updateScenario((s) => void (s.taxDeductionEvents[index].memberId = e.target.value))}
+              >
+                {scenario.householdMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="社会保険料控除">
+              <Input
+                type="number"
+                value={row.socialInsuranceDeductionAnnual}
+                onChange={(e) =>
+                  updateScenario((s) => void (s.taxDeductionEvents[index].socialInsuranceDeductionAnnual = numberOrZero(e.target.value)))
+                }
+              />
+            </Field>
+            <Field label="医療費控除">
+              <Input
+                type="number"
+                value={row.medicalExpenseDeductionAnnual}
+                onChange={(e) =>
+                  updateScenario((s) => void (s.taxDeductionEvents[index].medicalExpenseDeductionAnnual = numberOrZero(e.target.value)))
+                }
+              />
+            </Field>
+          </FormGrid>
+        </EventEditor>
+      ))}
+    </div>
+  );
+}
+
 function TaxRowsSummary({
   rows,
   emptyLabel,
@@ -2678,6 +2785,7 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
         <p className="font-medium text-foreground">計算の考え方</p>
         <p>所得税と住民税は、課税対象収入から給与所得控除・公的年金等控除・基礎控除・扶養控除などを差し引いて概算します。</p>
         <p>iDeCoの年金受取は、収入イベントの「種別」を「年金」、「課税区分」を「課税」にすると、公的年金等控除を使う年金収入として扱います。</p>
+        <p>社会保険料控除と医療費控除は、`所得控除入力` で入れた年度・メンバーごとの金額を所得税と住民税の課税ベースから差し引きます。</p>
         <p>国民年金は、20歳から59歳までの対象月数に年度額を掛けて月額換算します。</p>
         <p>国保は大田区の概算ルールで、世帯の国保加入者ごとの所得を集計して見ます。</p>
         <p>譲渡益課税は、特定口座と普通口座（オプション用）の売却時に、売却額のうち含み益部分へ 20.315% を掛けて概算します。取得原価は初期資産タブの入力値を使い、積立分はそのまま取得原価へ加算します。</p>
@@ -2716,6 +2824,8 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
                         <Th>退職一時金</Th>
                         <Th>退職所得控除</Th>
                         <Th>退職所得</Th>
+                        <Th>社保控除</Th>
+                        <Th>医療費控除</Th>
                         <Th>基礎控除前</Th>
                         <Th>基礎控除</Th>
                         <Th>扶養控除(所得税)</Th>
@@ -2741,6 +2851,8 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
                           <Td>{yen(member.retirementGrossAnnual)}</Td>
                           <Td>{yen(member.retirementIncomeDeductionAnnual)}</Td>
                           <Td>{yen(member.retirementIncomeAnnual)}</Td>
+                          <Td>{yen(member.socialInsuranceDeductionAnnual)}</Td>
+                          <Td>{yen(member.medicalExpenseDeductionAnnual)}</Td>
                           <Td>{yen(member.taxableIncomeBeforeBasicDeductionAnnual)}</Td>
                           <Td>{yen(member.basicDeductionAnnual)}</Td>
                           <Td>{yen(member.dependentDeductionsIncomeTaxAnnual)}</Td>

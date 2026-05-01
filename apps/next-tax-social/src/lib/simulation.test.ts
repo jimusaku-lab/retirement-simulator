@@ -86,6 +86,7 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
     withdrawalOrder: ["bankDeposit", "timeDeposit", "specificAccount", "ordinaryAccountForOptions", "ideco", "nisa"],
     specialExpenses: [],
     taxInsurance: [],
+    taxDeductionEvents: [],
     assetGrowthSettings: {
       enabled: false,
       rates: {
@@ -175,6 +176,55 @@ describe("simulation", () => {
     );
 
     expect(amount).toBe(53_000);
+  });
+
+  it("所得控除入力は所得税と住民税の課税ベースを下げる", () => {
+    const withoutDeduction = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      incomeEvents: [
+        {
+          id: "salary",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 800_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const withDeduction = simpleScenario({
+      userProfile: withoutDeduction.userProfile,
+      incomeEvents: withoutDeduction.incomeEvents,
+      taxDeductionEvents: [
+        {
+          id: "deduction-2026",
+          fiscalYear: 2026,
+          memberId: "member-self",
+          socialInsuranceDeductionAnnual: 600_000,
+          medicalExpenseDeductionAnnual: 200_000,
+        },
+      ],
+    });
+
+    const withoutDetail = calculateAutoTaxDetails(withoutDeduction).find((row) => row.fiscalYear === 2026);
+    const withDetail = calculateAutoTaxDetails(withDeduction).find((row) => row.fiscalYear === 2026);
+
+    expect(withDetail?.memberDetails[0].socialInsuranceDeductionAnnual).toBe(600_000);
+    expect(withDetail?.memberDetails[0].medicalExpenseDeductionAnnual).toBe(200_000);
+    expect(withDetail?.memberDetails[0].incomeTaxBaseAnnual).toBeLessThan(withoutDetail?.memberDetails[0].incomeTaxBaseAnnual ?? 0);
+    expect(withDetail?.memberDetails[0].residentTaxBaseAnnual).toBeLessThan(withoutDetail?.memberDetails[0].residentTaxBaseAnnual ?? 0);
+    expect(withDetail?.memberDetails[0].incomeTaxAnnual).toBeLessThan(withoutDetail?.memberDetails[0].incomeTaxAnnual ?? 0);
+    expect(withDetail?.memberDetails[0].residentTaxAnnual).toBeLessThan(withoutDetail?.memberDetails[0].residentTaxAnnual ?? 0);
   });
 
   it("税・社会保険は未入力年度で直近の前年度を引き継ぐ", () => {

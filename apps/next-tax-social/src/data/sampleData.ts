@@ -122,10 +122,11 @@ const baseScenario: ScenarioData = {
     },
   ],
   retirementIncomeEvents: [],
+  taxDeductionEvents: [],
   specialExpenses: [
-      { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000 },
-      { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000 },
-    ],
+    { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000 },
+    { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000 },
+  ],
   assetContributionEvents: [
     {
       id: "nisa-accumulate",

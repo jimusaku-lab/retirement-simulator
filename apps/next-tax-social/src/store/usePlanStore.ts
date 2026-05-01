@@ -13,6 +13,7 @@ import type {
   OptionSubAccount,
   AssetContributionEvent,
   RetirementIncomeEvent,
+  TaxDeductionByFiscalYear,
 } from "@/types";
 
 type PlanStore = RetirementPlanState & {
@@ -39,11 +40,13 @@ type LegacyMonthlyExpenses = Partial<ScenarioData["monthlyExpenses"]> & {
 };
 type LegacyIncomeEvent = Partial<ScenarioData["incomeEvents"][number]> & { taxable?: boolean };
 type LegacyRetirementIncomeEvent = Partial<RetirementIncomeEvent> & { alreadyReceived?: boolean };
+type LegacyTaxDeductionEvent = Partial<TaxDeductionByFiscalYear>;
 type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpenses" | "incomeEvents" | "retirementIncomeEvents" | "growthSettings"> & {
   initialAssets?: LegacyInitialAssets;
   monthlyExpenses?: LegacyMonthlyExpenses;
   incomeEvents?: LegacyIncomeEvent[];
   retirementIncomeEvents?: LegacyRetirementIncomeEvent[];
+  taxDeductionEvents?: LegacyTaxDeductionEvent[];
   growthSettings?: {
     enabled?: boolean;
     annualGrowthRate?: number;
@@ -135,6 +138,21 @@ function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] |
     alreadyReceived: event.alreadyReceived ?? false,
     retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? event.alreadyReceived ?? false,
     withholdingTaxPaid: Number.isFinite(event.withholdingTaxPaid) ? Number(event.withholdingTaxPaid) : 0,
+    note: event.note,
+  }));
+}
+
+function normalizeTaxDeductionEvents(source: LegacyScenario): TaxDeductionByFiscalYear[] {
+  return (source.taxDeductionEvents ?? []).map((event, index) => ({
+    id: event.id ?? `tax-deduction-${index}`,
+    fiscalYear: Number.isFinite(event.fiscalYear) ? Number(event.fiscalYear) : new Date().getFullYear(),
+    memberId: event.memberId ?? source.householdProfile?.headMemberId ?? "member-self",
+    socialInsuranceDeductionAnnual: Number.isFinite(event.socialInsuranceDeductionAnnual)
+      ? Number(event.socialInsuranceDeductionAnnual)
+      : 0,
+    medicalExpenseDeductionAnnual: Number.isFinite(event.medicalExpenseDeductionAnnual)
+      ? Number(event.medicalExpenseDeductionAnnual)
+      : 0,
     note: event.note,
   }));
 }
@@ -367,6 +385,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
         : structuredClone(baseScenario.withdrawalOrder),
     specialExpenses: source.specialExpenses ?? [],
     taxInsurance: source.taxInsurance ?? [],
+    taxDeductionEvents: normalizeTaxDeductionEvents(source),
     assetGrowthSettings: {
       enabled: source.assetGrowthSettings?.enabled ?? source.growthSettings?.enabled ?? true,
       rates: {

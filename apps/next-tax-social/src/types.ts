@@ -207,6 +207,15 @@ export type TaxInsuranceByFiscalYear = {
   otherPublicCostAnnual: number;
 };
 
+export type TaxDeductionByFiscalYear = {
+  id: string;
+  fiscalYear: number;
+  memberId: string;
+  socialInsuranceDeductionAnnual: number;
+  medicalExpenseDeductionAnnual: number;
+  note?: string;
+};
+
 export type GrowthSettings = {
   enabled: boolean;
   rates: Record<GrowthAssetKey, number>;
@@ -289,6 +298,7 @@ export type ScenarioData = {
   withdrawalOrder: WithdrawalAssetKey[];
   specialExpenses: SpecialExpenseEvent[];
   taxInsurance: TaxInsuranceByFiscalYear[];
+  taxDeductionEvents: TaxDeductionByFiscalYear[];
   assetGrowthSettings: GrowthSettings;
   inflationSettings: InflationSettings;
   optionAccountRules: OptionAccountRules;
