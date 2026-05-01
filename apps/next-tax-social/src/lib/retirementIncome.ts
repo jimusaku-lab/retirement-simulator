@@ -40,6 +40,17 @@ export type RetirementOverlapWarning = {
   severity: "warning" | "info";
 };
 
+export type RetirementFilingAdvice = {
+  id: string;
+  memberId: string;
+  memberName: string;
+  eventName: string;
+  paymentYearMonth: string;
+  taxPaidTotal: number;
+  status: "info" | "attention" | "review";
+  message: string;
+};
+
 export function getRetirementIncomeDeduction(years: number) {
   const serviceYears = Math.max(0, Math.floor(years));
   if (serviceYears <= 20) return Math.max(800_000, serviceYears * 400_000);
@@ -184,4 +195,69 @@ export function summarizeRetirementIncomeWarnings(warnings: RetirementOverlapWar
     severeCount: severe.length,
     messages: warnings.map((warning) => warning.message),
   };
+}
+
+export function getRetirementFilingAdvice(scenario: ScenarioData): RetirementFilingAdvice[] {
+  const records = buildRetirementIncomeRecords(scenario);
+  const warnings = getRetirementOverlapWarnings(scenario);
+  const warningEventIds = new Set(
+    warnings.flatMap((warning) => {
+      const currentRecord = records.find(
+        (record) =>
+          record.memberId === warning.memberId &&
+          record.name === warning.currentEventName &&
+          record.paymentYearMonth === warning.currentPaymentYearMonth,
+      );
+      const priorRecord = records.find(
+        (record) =>
+          record.memberId === warning.memberId &&
+          record.name === warning.priorEventName &&
+          record.paymentYearMonth === warning.priorPaymentYearMonth,
+      );
+      return [currentRecord?.id, priorRecord?.id].filter(Boolean) as string[];
+    }),
+  );
+
+  return records.map((record) => {
+    const taxPaidTotal = record.withholdingTaxPaid + record.residentTaxMunicipalPaid + record.residentTaxPrefecturalPaid;
+    const hasOverlapWarning = warningEventIds.has(record.id);
+    const hasTaxPayment = taxPaidTotal > 0;
+
+    if (hasTaxPayment) {
+      return {
+        id: record.id,
+        memberId: record.memberId,
+        memberName: record.memberName,
+        eventName: record.name,
+        paymentYearMonth: record.paymentYearMonth,
+        taxPaidTotal,
+        status: "attention" as const,
+        message: `${record.memberName} の ${record.name} は源泉徴収税額と住民税内訳を記録済みです。実績照合用のメモとして保持してください。`,
+      };
+    }
+
+    if (hasOverlapWarning) {
+      return {
+        id: record.id,
+        memberId: record.memberId,
+        memberName: record.memberName,
+        eventName: record.name,
+        paymentYearMonth: record.paymentYearMonth,
+        taxPaidTotal,
+        status: "review" as const,
+        message: `${record.memberName} の ${record.name} は退職所得の重複ルール警告に該当します。申告や控除の確認対象です。`,
+      };
+    }
+
+    return {
+      id: record.id,
+      memberId: record.memberId,
+      memberName: record.memberName,
+      eventName: record.name,
+      paymentYearMonth: record.paymentYearMonth,
+      taxPaidTotal,
+      status: "info" as const,
+      message: `${record.memberName} の ${record.name} は確認用の退職所得記録です。`,
+    };
+  });
 }

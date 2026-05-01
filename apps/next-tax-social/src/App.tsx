@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
-import { getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import { getRetirementFilingAdvice, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
@@ -2436,6 +2436,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const autoDetails = useMemo(() => calculateAutoTaxDetails(scenario), [scenario]);
   const autoRows = useMemo(() => calculateAutoTaxRows(scenario), [scenario]);
   const effectiveRows = useMemo(() => getEffectiveTaxRows(scenario), [scenario]);
+  const retirementFilingAdvice = useMemo(() => getRetirementFilingAdvice(scenario), [scenario]);
   const capitalGainsTaxByFiscalYear = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of simulationResult.monthly) {
@@ -2554,6 +2555,48 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
                   >
                     <div className="font-medium">{warning.memberName}</div>
                     <div>{warning.message}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg border bg-white px-4 py-3 space-y-3">
+            <div>
+              <h3 className="font-medium">退職所得の申告確認メモ</h3>
+              <p className="text-sm text-muted-foreground">
+                源泉徴収税額・住民税内訳・重複ルールを、申告や実績照合の確認材料として整理します。税額本体の判定ではありません。
+              </p>
+            </div>
+            {retirementFilingAdvice.length === 0 ? (
+              <p className="text-sm text-muted-foreground">退職所得の確認対象はまだありません。</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {retirementFilingAdvice.map((item) => (
+                  <div
+                    key={item.id}
+                    className={
+                      item.status === "attention"
+                        ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950"
+                        : item.status === "review"
+                          ? "rounded-md border border-sky-300 bg-sky-50 px-3 py-3 text-sm text-sky-950"
+                          : "rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700"
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{item.memberName}</div>
+                        <div className="text-xs opacity-75">
+                          {item.paymentYearMonth} / {item.eventName}
+                        </div>
+                      </div>
+                      <div className="text-xs font-medium">
+                        {item.status === "attention" ? "実績あり" : item.status === "review" ? "要確認" : "参考"}
+                      </div>
+                    </div>
+                    <div className="mt-2">{item.message}</div>
+                    <div className="mt-2 text-xs opacity-80">
+                      税額記録: {yen(item.taxPaidTotal)}
+                    </div>
                   </div>
                 ))}
               </div>

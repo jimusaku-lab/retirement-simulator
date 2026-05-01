@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
-import { getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import { getRetirementFilingAdvice, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   aggregateAnnualResults,
   getBalanceAtAge,
@@ -1201,6 +1201,33 @@ describe("simulation", () => {
     const warnings = getRetirementOverlapWarnings(scenario);
 
     expect(warnings.length).toBe(0);
+  });
+
+  it("退職所得の申告確認メモは源泉徴収税額と住民税内訳を拾う", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2025-09",
+          grossAmount: 17_246_247,
+          serviceYears: 29,
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 75_196,
+          residentTaxMunicipalPaid: 88_300,
+          residentTaxPrefecturalPaid: 58_900,
+        },
+      ],
+    });
+
+    const advice = getRetirementFilingAdvice(scenario);
+
+    expect(advice).toHaveLength(1);
+    expect(advice[0]?.taxPaidTotal).toBe(222_396);
+    expect(advice[0]?.status).toBe("attention");
   });
 
   it("公的年金等控除は年金以外の所得が1,000万円を超える場合の速算表を使う", () => {
