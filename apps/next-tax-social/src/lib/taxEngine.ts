@@ -49,6 +49,11 @@ export type AutoTaxMemberDetail = {
   pensionGrossAnnual: number;
   pensionDeductionAnnual: number;
   miscellaneousIncomeAnnual: number;
+  retirementGrossAnnual: number;
+  retirementIncomeDeductionAnnual: number;
+  retirementIncomeAnnual: number;
+  retirementIncomeTaxAnnual: number;
+  retirementResidentTaxAnnual: number;
   taxableIncomeBeforeBasicDeductionAnnual: number;
   basicDeductionAnnual: number;
   dependentDeductionsIncomeTaxAnnual: number;
@@ -197,6 +202,9 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
   let salary = 0;
   let pension = 0;
   let miscellaneous = 0;
+  let retirementGross = 0;
+  let retirementIncome = 0;
+  let retirementDeduction = 0;
 
   for (const month of months) {
     for (const event of events) {
@@ -207,6 +215,11 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
         salary += amount;
       } else if (event.type === "pension") {
         pension += amount;
+      } else if (event.type === "oneTime" && event.sourceAssetKey === "ideco") {
+        const retirement = calculateRetirementIncome(amount, event.idecoLumpSumContributionYears ?? 20);
+        retirementGross += amount;
+        retirementIncome += retirement.income;
+        retirementDeduction += retirement.deduction;
       } else {
         miscellaneous += amount;
       }
@@ -227,6 +240,11 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
     pensionDeductionAnnual: Math.round(pensionDeduction),
     pensionIncome: Math.round(pensionIncome),
     miscellaneousIncome: Math.round(miscellaneous),
+    retirementGrossAnnual: Math.round(retirementGross),
+    retirementIncomeDeductionAnnual: Math.round(retirementDeduction),
+    retirementIncomeAnnual: Math.round(retirementIncome),
+    retirementIncomeTaxAnnual: calculateIncomeTax(retirementIncome),
+    retirementResidentTaxAnnual: calculateResidentTax(retirementIncome),
     totalIncome,
     ageAtYearEnd,
   };
@@ -272,6 +290,21 @@ function calculateIncomeTax(taxableIncome: number) {
 function calculateResidentTax(taxableIncome: number) {
   if (taxableIncome <= 0) return 0;
   return Math.max(0, Math.round(taxableIncome * RESIDENT_TAX_RATE + RESIDENT_TAX_FLAT));
+}
+
+function getRetirementIncomeDeduction(years: number) {
+  const roundedYears = Math.max(1, Math.ceil(years));
+  if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
+  return 8_000_000 + (roundedYears - 20) * 700_000;
+}
+
+function calculateRetirementIncome(gross: number, contributionYears: number) {
+  if (gross <= 0) return { deduction: 0, income: 0 };
+  const deduction = getRetirementIncomeDeduction(contributionYears);
+  return {
+    deduction,
+    income: Math.max(0, Math.round((gross - deduction) / 2)),
+  };
 }
 
 function calculateNationalPensionMonthly(fiscalYear: number) {
@@ -407,6 +440,11 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         pensionGrossAnnual: income.pensionGrossAnnual,
         pensionDeductionAnnual: income.pensionDeductionAnnual,
         miscellaneousIncomeAnnual: income.miscellaneousIncome,
+        retirementGrossAnnual: income.retirementGrossAnnual,
+        retirementIncomeDeductionAnnual: income.retirementIncomeDeductionAnnual,
+        retirementIncomeAnnual: income.retirementIncomeAnnual,
+        retirementIncomeTaxAnnual: income.retirementIncomeTaxAnnual,
+        retirementResidentTaxAnnual: income.retirementResidentTaxAnnual,
         taxableIncomeBeforeBasicDeductionAnnual: income.totalIncome,
         basicDeductionAnnual: INCOME_TAX_BASIC_DEDUCTION,
         dependentDeductionsIncomeTaxAnnual: deductions.incomeTax,

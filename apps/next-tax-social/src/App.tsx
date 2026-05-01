@@ -1942,7 +1942,20 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                 </Select>
               </Field>
               <Field label="種別">
-                <Select value={event.type} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].type = e.target.value as IncomeEvent["type"]))}>
+                <Select
+                  value={event.type}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      const nextType = e.target.value as IncomeEvent["type"];
+                      s.incomeEvents[index].type = nextType;
+                      if (nextType === "oneTime" && s.incomeEvents[index].sourceAssetKey === "ideco") {
+                        s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
+                        s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
+                        s.incomeEvents[index].idecoLumpSumTaxMode ??= "retirementIncomeDeclaration";
+                      }
+                    })
+                  }
+                >
                   <option value="unemployment">失業手当</option>
                   <option value="pension">年金</option>
                   <option value="salary">就労収入</option>
@@ -1977,6 +1990,12 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                         s.incomeEvents[index].idecoPensionPayoutMode ??= "monexSchedule";
                         s.incomeEvents[index].idecoPensionYears ??= 10;
                         s.incomeEvents[index].idecoPensionPaymentsPerYear ??= 6;
+                      }
+                      if (nextValue === "ideco" && s.incomeEvents[index].type === "oneTime") {
+                        s.incomeEvents[index].sourceAssetPayoutMode = "cash";
+                        s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
+                        s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
+                        s.incomeEvents[index].idecoLumpSumTaxMode ??= "retirementIncomeDeclaration";
                       }
                     })
                   }
@@ -2104,6 +2123,45 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                       </Field>
                     </>
                   )}
+                </>
+              ) : event.type === "oneTime" && event.sourceAssetKey === "ideco" ? (
+                <>
+                  <Field label="受取年月">
+                    <Input
+                      type="month"
+                      value={event.startYearMonth}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          s.incomeEvents[index].startYearMonth = e.target.value;
+                          s.incomeEvents[index].endYearMonth = e.target.value;
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="一時金受取額">
+                    <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
+                  </Field>
+                  <Field label="加入年数">
+                    <Input
+                      type="number"
+                      value={event.idecoLumpSumContributionYears ?? 20}
+                      onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].idecoLumpSumContributionYears = numberOrZero(e.target.value)))}
+                    />
+                  </Field>
+                  <Field label="退職所得の申告">
+                    <Select
+                      value={event.idecoLumpSumTaxMode ?? "retirementIncomeDeclaration"}
+                      onChange={(e) =>
+                        updateScenario(
+                          (s) =>
+                            void (s.incomeEvents[index].idecoLumpSumTaxMode = e.target.value as "retirementIncomeDeclaration" | "noDeclaration"),
+                        )
+                      }
+                    >
+                      <option value="retirementIncomeDeclaration">提出あり（退職所得控除で概算）</option>
+                      <option value="noDeclaration">提出なし（20.42%源泉徴収）</option>
+                    </Select>
+                  </Field>
                 </>
               ) : (
                 <>
@@ -2411,6 +2469,9 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
                         <Th>年金収入</Th>
                         <Th>年金控除</Th>
                         <Th>雑所得</Th>
+                        <Th>退職一時金</Th>
+                        <Th>退職所得控除</Th>
+                        <Th>退職所得</Th>
                         <Th>基礎控除前</Th>
                         <Th>基礎控除</Th>
                         <Th>扶養控除(所得税)</Th>
@@ -2433,6 +2494,9 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
                           <Td>{yen(member.pensionGrossAnnual)}</Td>
                           <Td>{yen(member.pensionDeductionAnnual)}</Td>
                           <Td>{yen(member.miscellaneousIncomeAnnual)}</Td>
+                          <Td>{yen(member.retirementGrossAnnual)}</Td>
+                          <Td>{yen(member.retirementIncomeDeductionAnnual)}</Td>
+                          <Td>{yen(member.retirementIncomeAnnual)}</Td>
                           <Td>{yen(member.taxableIncomeBeforeBasicDeductionAnnual)}</Td>
                           <Td>{yen(member.basicDeductionAnnual)}</Td>
                           <Td>{yen(member.dependentDeductionsIncomeTaxAnnual)}</Td>

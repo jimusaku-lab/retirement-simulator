@@ -102,6 +102,8 @@ export function getIncomeEventAmountForMonth(
     return getIdecoMonexEstimatedPerPayment(scenario, event);
   }
 
+  if (event.type === "oneTime" && yearMonth !== event.startYearMonth) return 0;
+
   const base = getBaseAmount(event);
   if (event.type !== "pension" || pensionAdjustmentRate === 0) return base;
   const monthsFromStart = ym(yearMonth).diff(ym(scenario.userProfile.simulationStartYearMonth), "month");

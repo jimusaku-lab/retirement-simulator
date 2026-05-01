@@ -983,6 +983,61 @@ describe("simulation", () => {
     expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(870_000);
   });
 
+  it("iDeCo一時金は退職所得として扱い、公的年金等控除と国保所得ベースから分離する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1961-01-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 65,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1961-01-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-04",
+          monthlyAmount: 12_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 25,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const detail = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2026);
+
+    expect(detail?.memberDetails[0].retirementGrossAnnual).toBe(12_000_000);
+    expect(detail?.memberDetails[0].retirementIncomeDeductionAnnual).toBe(11_500_000);
+    expect(detail?.memberDetails[0].retirementIncomeAnnual).toBe(250_000);
+    expect(detail?.memberDetails[0].pensionGrossAnnual).toBe(0);
+    expect(detail?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(0);
+    expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(0);
+  });
+
   it("公的年金等控除は年金以外の所得が1,000万円を超える場合の速算表を使う", () => {
     const scenario = simpleScenario({
       userProfile: {
@@ -1403,6 +1458,78 @@ describe("simulation", () => {
 
     const finalMonth = result.monthly.at(-1);
     expect(finalMonth?.endingTrackedAssetBalances.ideco ?? 0).toBeLessThan(1_000);
+  });
+
+  it("iDeCo一時金は開始月だけiDeCoから現金化し、退職所得の概算税を差し引く", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1961-01-01",
+          simulationStartYearMonth: "2026-04",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-06",
+          targetBalanceAge: 65,
+          cashReserve: 0,
+        },
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 12_000_000,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 12_000_000,
+        },
+        monthlyExpenses: {
+          food: 0,
+          dailyGoods: 0,
+          hobbyEntertainment: 0,
+          social: 0,
+          transportation: 0,
+          clothingBeauty: 0,
+          healthMedical: 0,
+          car: 0,
+          educationCulture: 0,
+          specialExpense: 0,
+          cashCard: 0,
+          utilities: 0,
+          communication: 0,
+          housing: 0,
+          taxSocialInsurance: 0,
+          insurance: 0,
+          other: 0,
+        },
+        incomeEvents: [
+          {
+            id: "ideco-lump-sum",
+            memberId: "member-self",
+            name: "iDeCo一時金",
+            type: "oneTime",
+            startYearMonth: "2026-04",
+            monthlyAmount: 12_000_000,
+            taxTreatment: "taxable",
+            sourceAssetKey: "ideco",
+            idecoLumpSumContributionYears: 25,
+            idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].grossAssetWithdrawalAmount).toBe(12_000_000);
+    expect(result.monthly[0].idecoWithholdingTaxTotal).toBeGreaterThan(0);
+    expect(result.monthly[0].incomeTotal).toBeLessThan(12_000_000);
+    expect(result.monthly[1].incomeTotal).toBe(0);
+    expect(result.monthly[2].incomeTotal).toBe(0);
+    expect(result.monthly[0].endingTrackedAssetBalances.ideco).toBe(0);
   });
 
   it("取り崩し順はiDeCoがNISAより先", () => {

@@ -35,6 +35,7 @@ const ym = (value: YearMonth) => dayjs(`${value}-01`);
 const formatYm = (date: dayjs.Dayjs) => date.format("YYYY-MM");
 const LISTED_CAPITAL_GAINS_TAX_RATE = 0.20315;
 const IDECO_PENSION_WITHHOLDING_TAX_RATE = 0.076575;
+const IDECO_LUMP_SUM_NO_DECLARATION_WITHHOLDING_RATE = 0.2042;
 
 const growthAssetOrder: GrowthAssetKey[] = [
   "timeDeposit",
@@ -83,6 +84,27 @@ const gainTrackedAssetKeys: GainTrackedAssetKey[] = [
   "ordinaryAccountForOptions",
   "ideco",
 ];
+
+function getRetirementIncomeDeduction(years: number) {
+  const roundedYears = Math.max(1, Math.ceil(years));
+  if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
+  return 8_000_000 + (roundedYears - 20) * 700_000;
+}
+
+function calculateIdecoLumpSumEstimatedTax(gross: number, contributionYears: number) {
+  if (gross <= 0) return 0;
+  const retirementIncome = Math.max(0, Math.round((gross - getRetirementIncomeDeduction(contributionYears)) / 2));
+  if (retirementIncome <= 0) return 0;
+  let incomeTax = 0;
+  if (retirementIncome <= 1_949_000) incomeTax = retirementIncome * 0.05;
+  else if (retirementIncome <= 3_299_000) incomeTax = retirementIncome * 0.1 - 97_500;
+  else if (retirementIncome <= 6_949_000) incomeTax = retirementIncome * 0.2 - 427_500;
+  else if (retirementIncome <= 8_999_000) incomeTax = retirementIncome * 0.23 - 636_000;
+  else if (retirementIncome <= 17_999_000) incomeTax = retirementIncome * 0.33 - 1_536_000;
+  else if (retirementIncome <= 39_999_000) incomeTax = retirementIncome * 0.4 - 2_796_000;
+  else incomeTax = retirementIncome * 0.45 - 4_796_000;
+  return Math.max(0, Math.round(incomeTax * 1.021 + retirementIncome * 0.1));
+}
 
 export function getSimulationTargetAssets(scenario: ScenarioData) {
   const assets = scenario.initialAssets;
@@ -952,6 +974,18 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
           netCashAdded = Math.max(0, netCashAdded - IDECO_MONEX_PAYMENT_FEE - withholdingTax);
         } else if (event.sourceAssetKey === "ideco" && event.type === "pension") {
           const withholdingTax = event.taxTreatment === "nonTaxable" ? 0 : withdrawal.grossWithdrawal * IDECO_PENSION_WITHHOLDING_TAX_RATE;
+          idecoWithholdingTaxTotal += withholdingTax;
+          idecoWithholdingByIncomeYear.set(
+            cursor.year(),
+            (idecoWithholdingByIncomeYear.get(cursor.year()) ?? 0) + withholdingTax,
+          );
+          netCashAdded = Math.max(0, netCashAdded - withholdingTax);
+        } else if (event.sourceAssetKey === "ideco" && event.type === "oneTime") {
+          const withholdingTax = event.taxTreatment === "nonTaxable"
+            ? 0
+            : event.idecoLumpSumTaxMode === "noDeclaration"
+              ? withdrawal.grossWithdrawal * IDECO_LUMP_SUM_NO_DECLARATION_WITHHOLDING_RATE
+              : calculateIdecoLumpSumEstimatedTax(withdrawal.grossWithdrawal, event.idecoLumpSumContributionYears ?? 20);
           idecoWithholdingTaxTotal += withholdingTax;
           idecoWithholdingByIncomeYear.set(
             cursor.year(),
