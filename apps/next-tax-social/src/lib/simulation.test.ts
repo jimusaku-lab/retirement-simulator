@@ -827,6 +827,162 @@ describe("simulation", () => {
     expect(row2026?.memberDetails[0].pensionGrossAnnual).toBe(297_434);
   });
 
+  it("税社保改修前の基準値として、公的年金等控除の現行簡易ロジックを固定する", () => {
+    const under65 = calculateAutoTaxDetails(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1962-01-01",
+          simulationStartYearMonth: "2026-01",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-12",
+          targetBalanceAge: 64,
+          cashReserve: 0,
+        },
+        householdProfile: {
+          municipality: "東京都大田区",
+          headMemberId: "member-self",
+          taxCalculationMode: "auto",
+        },
+        householdMembers: [
+          {
+            id: "member-self",
+            name: "本人",
+            relationship: "self",
+            birthDate: "1962-01-01",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: false,
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "public-pension",
+            memberId: "member-self",
+            name: "公的年金",
+            type: "pension",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 200_000,
+            taxTreatment: "taxable",
+          },
+        ],
+      }),
+    ).find((row) => row.fiscalYear === 2026);
+
+    const over65 = calculateAutoTaxDetails(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1961-01-01",
+          simulationStartYearMonth: "2026-01",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-12",
+          targetBalanceAge: 65,
+          cashReserve: 0,
+        },
+        householdProfile: {
+          municipality: "東京都大田区",
+          headMemberId: "member-self",
+          taxCalculationMode: "auto",
+        },
+        householdMembers: [
+          {
+            id: "member-self",
+            name: "本人",
+            relationship: "self",
+            birthDate: "1961-01-01",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: false,
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "public-pension",
+            memberId: "member-self",
+            name: "公的年金",
+            type: "pension",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 200_000,
+            taxTreatment: "taxable",
+          },
+        ],
+      }),
+    ).find((row) => row.fiscalYear === 2026);
+
+    expect(under65?.memberDetails[0].pensionGrossAnnual).toBe(2_400_000);
+    expect(under65?.memberDetails[0].pensionDeductionAnnual).toBe(600_000);
+    expect(under65?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(1_800_000);
+    expect(over65?.memberDetails[0].pensionGrossAnnual).toBe(2_400_000);
+    expect(over65?.memberDetails[0].pensionDeductionAnnual).toBe(1_100_000);
+    expect(over65?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(1_300_000);
+  });
+
+  it("税社保改修前の基準値として、iDeCo年金は公的年金と合算した雑所得として扱う", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1961-01-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 65,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1961-01-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "public-pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 100_000,
+          taxTreatment: "taxable",
+        },
+        {
+          id: "ideco-pension",
+          memberId: "member-self",
+          name: "iDeCo年金受取",
+          type: "pension",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 100_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+        },
+      ],
+    });
+
+    const detail = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2026);
+
+    expect(detail?.memberDetails[0].pensionGrossAnnual).toBe(2_400_000);
+    expect(detail?.memberDetails[0].pensionDeductionAnnual).toBe(1_100_000);
+    expect(detail?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(1_300_000);
+    expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(870_000);
+  });
+
   it("iDeCo年金受取をマネックス受取設定で入れると年間回数どおりの月だけ発生する", () => {
     const result = simulateScenario(
       simpleScenario({
