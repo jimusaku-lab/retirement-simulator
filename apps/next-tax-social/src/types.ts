@@ -119,6 +119,27 @@ export type IncomeEventType =
   | "other"
   | "oneTime";
 
+export type RetirementIncomeEventType =
+  | "idecoLumpSum"
+  | "companyRetirementAllowance"
+  | "corporateDcLumpSum"
+  | "dbLumpSum"
+  | "otherRetirementAllowance";
+
+export type RetirementIncomeEvent = {
+  id: string;
+  memberId: string;
+  name: string;
+  type: RetirementIncomeEventType;
+  paymentYearMonth: YearMonth;
+  grossAmount: number;
+  serviceYears: number;
+  alreadyReceived?: boolean;
+  retirementIncomeDeductionUsed?: boolean;
+  withholdingTaxPaid?: number;
+  note?: string;
+};
+
 export type IncomeEvent = {
   id: string;
   memberId: string;
@@ -262,6 +283,7 @@ export type ScenarioData = {
   monthlyExpenses: MonthlyExpenseProfile;
   ageExpenseAdjustments: AgeExpenseAdjustment[];
   incomeEvents: IncomeEvent[];
+  retirementIncomeEvents?: RetirementIncomeEvent[];
   assetContributionEvents: AssetContributionEvent[];
   assetTransferEvents: AssetTransferEvent[];
   withdrawalOrder: WithdrawalAssetKey[];

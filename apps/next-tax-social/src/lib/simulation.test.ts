@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
+import { getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   aggregateAnnualResults,
   getBalanceAtAge,
@@ -1036,6 +1037,120 @@ describe("simulation", () => {
     expect(detail?.memberDetails[0].pensionGrossAnnual).toBe(0);
     expect(detail?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(0);
     expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(0);
+  });
+
+  it("退職所得イベントは過去退職金との間隔を警告する", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2020-03",
+          grossAmount: 8_000_000,
+          serviceYears: 30,
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 0,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2035-04",
+          endYearMonth: "2035-04",
+          monthlyAmount: 6_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 20,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const warnings = getRetirementOverlapWarnings(scenario);
+
+    expect(warnings.some((warning) => warning.ruleLabel.includes("退職金先取り後のiDeCoルール"))).toBe(true);
+  });
+
+  it("同一年に退職所得が重なると同一年合算の警告を出す", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2030-03",
+          grossAmount: 8_000_000,
+          serviceYears: 30,
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 0,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2030-12",
+          endYearMonth: "2030-12",
+          monthlyAmount: 6_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 20,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const warnings = getRetirementOverlapWarnings(scenario);
+
+    expect(warnings.some((warning) => warning.message.includes("同一年"))).toBe(true);
+  });
+
+  it("20年以上空いていれば退職所得の間隔警告を出さない", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2010-03",
+          grossAmount: 8_000_000,
+          serviceYears: 30,
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 0,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2035-04",
+          endYearMonth: "2035-04",
+          monthlyAmount: 6_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 20,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const warnings = getRetirementOverlapWarnings(scenario);
+
+    expect(warnings.length).toBe(0);
   });
 
   it("公的年金等控除は年金以外の所得が1,000万円を超える場合の速算表を使う", () => {

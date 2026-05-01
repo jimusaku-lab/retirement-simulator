@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
+import { getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
@@ -67,6 +68,7 @@ import type {
   AssetTransferTargetKey,
   WithdrawalAssetKey,
   OptionSubAccount,
+  RetirementIncomeEvent,
 } from "@/types";
 
 const tabs = [
@@ -2190,6 +2192,218 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
+const retirementIncomeTypeLabels: Record<RetirementIncomeEvent["type"], string> = {
+  idecoLumpSum: "iDeCo一時金",
+  companyRetirementAllowance: "会社退職金",
+  corporateDcLumpSum: "企業型DC一時金",
+  dbLumpSum: "DB一時金",
+  otherRetirementAllowance: "その他退職手当",
+};
+
+function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
+  const events = scenario.retirementIncomeEvents ?? [];
+  const add = () =>
+    updateScenario((s) => {
+      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+      s.retirementIncomeEvents.push({
+        id: crypto.randomUUID(),
+        memberId: s.householdProfile.headMemberId || s.householdMembers[0]?.id || "",
+        name: "退職所得イベント",
+        type: "companyRetirementAllowance",
+        paymentYearMonth: s.userProfile.simulationStartYearMonth,
+        grossAmount: 0,
+        serviceYears: 20,
+        alreadyReceived: false,
+        retirementIncomeDeductionUsed: false,
+        withholdingTaxPaid: 0,
+      });
+    });
+  const duplicate = (index: number) =>
+    updateScenario((s) => {
+      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+      const source = s.retirementIncomeEvents[index];
+      if (!source) return;
+      s.retirementIncomeEvents.splice(index + 1, 0, {
+        ...structuredClone(source),
+        id: crypto.randomUUID(),
+        name: source.name ? `${source.name} コピー` : "退職所得 コピー",
+      });
+    });
+
+  const typeOptions = Object.entries(retirementIncomeTypeLabels) as Array<[RetirementIncomeEvent["type"], string]>;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle>退職所得履歴</CardTitle>
+            <CardDescription>
+              会社退職金や iDeCo 一時金の受取履歴を登録します。過去の退職金も入れて、iDeCo との間隔ルールを警告表示します。
+            </CardDescription>
+          </div>
+          <Button onClick={add}>
+            <Plus className="h-4 w-4" />
+            追加
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {events.length === 0 && <p className="text-sm text-muted-foreground">退職所得イベントは未登録です。過去の退職金がある場合はここに追加してください。</p>}
+        {events.map((event, index) => (
+          <EventEditor
+            key={event.id}
+            title={event.name || retirementIncomeTypeLabels[event.type]}
+            onDelete={() => updateScenario((s) => void s.retirementIncomeEvents?.splice(index, 1))}
+            actions={
+              <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
+                <Copy className="h-4 w-4" />
+                複製
+              </Button>
+            }
+          >
+            <FormGrid>
+              <Field label="名称">
+                <Input
+                  value={event.name}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].name = e.target.value;
+                    })
+                  }
+                />
+              </Field>
+              <Field label="世帯メンバー">
+                <Select
+                  value={event.memberId}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].memberId = e.target.value;
+                    })
+                  }
+                >
+                  {scenario.householdMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="種別">
+                <Select
+                  value={event.type}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].type = e.target.value as RetirementIncomeEvent["type"];
+                    })
+                  }
+                >
+                  {typeOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="受取年月">
+                <Input
+                  type="month"
+                  value={event.paymentYearMonth}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].paymentYearMonth = e.target.value;
+                    })
+                  }
+                />
+              </Field>
+              <Field label="受取額">
+                <Input
+                  type="number"
+                  value={event.grossAmount}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].grossAmount = numberOrZero(e.target.value);
+                    })
+                  }
+                />
+              </Field>
+              <Field label="勤続/加入年数">
+                <Input
+                  type="number"
+                  value={event.serviceYears}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].serviceYears = numberOrZero(e.target.value);
+                    })
+                  }
+                />
+              </Field>
+              <Field label="既受給">
+                <Select
+                  value={event.alreadyReceived ? "yes" : "no"}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].alreadyReceived = e.target.value === "yes";
+                      if (e.target.value === "yes") s.retirementIncomeEvents[index].retirementIncomeDeductionUsed = true;
+                    })
+                  }
+                >
+                  <option value="no">これから受給</option>
+                  <option value="yes">過去に受給済み</option>
+                </Select>
+              </Field>
+              <Field label="控除使用済み">
+                <Select
+                  value={event.retirementIncomeDeductionUsed ? "yes" : "no"}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].retirementIncomeDeductionUsed = e.target.value === "yes";
+                    })
+                  }
+                >
+                  <option value="no">未使用</option>
+                  <option value="yes">使用済み</option>
+                </Select>
+              </Field>
+              <Field label="源泉徴収税額">
+                <Input
+                  type="number"
+                  value={event.withholdingTaxPaid ?? 0}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].withholdingTaxPaid = numberOrZero(e.target.value);
+                    })
+                  }
+                />
+              </Field>
+              <Field label="メモ">
+                <Input
+                  value={event.note ?? ""}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].note = e.target.value;
+                    })
+                  }
+                />
+              </Field>
+            </FormGrid>
+          </EventEditor>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function TaxSection({ scenario, updateScenario }: SectionProps) {
   const mode = scenario.householdProfile.taxCalculationMode;
   const simulationResult = useMemo(() => simulateScenario(scenario), [scenario]);
@@ -2207,6 +2421,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   }, [simulationResult]);
   const isManual = mode === "manual";
   const isAuto = mode === "auto";
+  const retirementOverlapWarnings = useMemo(() => getRetirementOverlapWarnings(scenario), [scenario]);
 
   const add = () =>
     updateScenario((s) =>
@@ -2288,6 +2503,35 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
           <p className="mt-2">
             特定口座と普通口座（オプション用）の取り崩しでは、譲渡益部分に 20.315% の課税を掛けて差し引きます。NISA には掛けません。
           </p>
+        </div>
+
+        <div className="space-y-5">
+          <RetirementIncomeSection scenario={scenario} updateScenario={updateScenario} />
+          <div className="rounded-lg border bg-white px-4 py-3 space-y-3">
+            <div>
+              <h3 className="font-medium">退職所得の重複ルール確認</h3>
+              <p className="text-sm text-muted-foreground">iDeCo一時金と退職金の受取間隔、同一年合算、既受給履歴を確認します。</p>
+            </div>
+            {retirementOverlapWarnings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">現時点で重複ルールの警告はありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {retirementOverlapWarnings.map((warning) => (
+                  <div
+                    key={warning.id}
+                    className={
+                      warning.severity === "warning"
+                        ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                        : "rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                    }
+                  >
+                    <div className="font-medium">{warning.memberName}</div>
+                    <div>{warning.message}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {(isAuto || mode === "autoWithAdjustment") && (

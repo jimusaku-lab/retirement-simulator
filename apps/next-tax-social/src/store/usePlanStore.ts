@@ -12,6 +12,7 @@ import type {
   ScenarioData,
   OptionSubAccount,
   AssetContributionEvent,
+  RetirementIncomeEvent,
 } from "@/types";
 
 type PlanStore = RetirementPlanState & {
@@ -37,10 +38,12 @@ type LegacyMonthlyExpenses = Partial<ScenarioData["monthlyExpenses"]> & {
   otherVariable?: number;
 };
 type LegacyIncomeEvent = Partial<ScenarioData["incomeEvents"][number]> & { taxable?: boolean };
-type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpenses" | "incomeEvents" | "growthSettings"> & {
+type LegacyRetirementIncomeEvent = Partial<RetirementIncomeEvent> & { alreadyReceived?: boolean };
+type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpenses" | "incomeEvents" | "retirementIncomeEvents" | "growthSettings"> & {
   initialAssets?: LegacyInitialAssets;
   monthlyExpenses?: LegacyMonthlyExpenses;
   incomeEvents?: LegacyIncomeEvent[];
+  retirementIncomeEvents?: LegacyRetirementIncomeEvent[];
   growthSettings?: {
     enabled?: boolean;
     annualGrowthRate?: number;
@@ -118,6 +121,22 @@ function normalizeAgeExpenseAdjustments(source: LegacyScenario): AgeExpenseAdjus
       note: adjustment.note,
     };
   });
+}
+
+function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] | undefined): RetirementIncomeEvent[] {
+  return (events ?? []).map((event, index) => ({
+    id: event.id ?? `retirement-${index}`,
+    memberId: event.memberId ?? "member-self",
+    name: event.name ?? "退職所得",
+    type: event.type ?? "companyRetirementAllowance",
+    paymentYearMonth: event.paymentYearMonth ?? "2026-04",
+    grossAmount: Number.isFinite(event.grossAmount) ? Number(event.grossAmount) : 0,
+    serviceYears: Number.isFinite(event.serviceYears) ? Number(event.serviceYears) : 20,
+    alreadyReceived: event.alreadyReceived ?? false,
+    retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? event.alreadyReceived ?? false,
+    withholdingTaxPaid: Number.isFinite(event.withholdingTaxPaid) ? Number(event.withholdingTaxPaid) : 0,
+    note: event.note,
+  }));
 }
 
 function normalizeAssetContributionEvents(events: AssetContributionEvent[]): AssetContributionEvent[] {
@@ -340,6 +359,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
         event.taxTreatment ?? (event.taxable === false ? "nonTaxable" : event.taxable === true ? "taxable" : "taxable"),
     })),
     assetContributionEvents: normalizeAssetContributionEvents(source.assetContributionEvents ?? []),
+    retirementIncomeEvents: normalizeRetirementIncomeEvents(source.retirementIncomeEvents),
     assetTransferEvents: source.assetTransferEvents ?? [],
     withdrawalOrder:
       source.withdrawalOrder?.length === 6
