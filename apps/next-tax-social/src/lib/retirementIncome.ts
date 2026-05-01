@@ -17,6 +17,8 @@ export type RetirementIncomeRecord = {
   alreadyReceived: boolean;
   retirementIncomeDeductionUsed: boolean;
   withholdingTaxPaid: number;
+  residentTaxMunicipalPaid: number;
+  residentTaxPrefecturalPaid: number;
   note?: string;
   source: RetirementIncomeSource;
 };
@@ -100,6 +102,8 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
     alreadyReceived: event.alreadyReceived ?? false,
     retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? !!event.alreadyReceived,
     withholdingTaxPaid: Math.max(0, Math.round(event.withholdingTaxPaid ?? 0)),
+    residentTaxMunicipalPaid: Math.max(0, Math.round(event.residentTaxMunicipalPaid ?? 0)),
+    residentTaxPrefecturalPaid: Math.max(0, Math.round(event.residentTaxPrefecturalPaid ?? 0)),
     note: event.note,
     source: { kind: "retirementEvent", eventId: event.id },
   }));
@@ -118,6 +122,8 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
       alreadyReceived: false,
       retirementIncomeDeductionUsed: true,
       withholdingTaxPaid: 0,
+      residentTaxMunicipalPaid: 0,
+      residentTaxPrefecturalPaid: 0,
       note: event.note,
       source: { kind: "incomeEvent", eventId: event.id },
     }));

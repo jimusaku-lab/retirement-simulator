@@ -2216,6 +2216,8 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
         alreadyReceived: false,
         retirementIncomeDeductionUsed: false,
         withholdingTaxPaid: 0,
+        residentTaxMunicipalPaid: 0,
+        residentTaxPrefecturalPaid: 0,
       });
     });
   const duplicate = (index: number) =>
@@ -2239,7 +2241,7 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
           <div>
             <CardTitle>退職所得履歴</CardTitle>
             <CardDescription>
-              会社退職金や iDeCo 一時金の受取履歴を登録します。過去の退職金も入れて、iDeCo との間隔ルールを警告表示します。
+              会社退職金や iDeCo 一時金の受取履歴を登録します。源泉徴収税額に加えて、市町村民税と道府県民税も記録できます。過去の退職金も入れて、iDeCo との間隔ルールを警告表示します。
             </CardDescription>
           </div>
           <Button onClick={add}>
@@ -2381,6 +2383,30 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
                     updateScenario((s) => {
                       if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
                       s.retirementIncomeEvents[index].withholdingTaxPaid = numberOrZero(e.target.value);
+                    })
+                  }
+                />
+              </Field>
+              <Field label="市町村民税">
+                <Input
+                  type="number"
+                  value={event.residentTaxMunicipalPaid ?? 0}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].residentTaxMunicipalPaid = numberOrZero(e.target.value);
+                    })
+                  }
+                />
+              </Field>
+              <Field label="道府県民税">
+                <Input
+                  type="number"
+                  value={event.residentTaxPrefecturalPaid ?? 0}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].residentTaxPrefecturalPaid = numberOrZero(e.target.value);
                     })
                   }
                 />

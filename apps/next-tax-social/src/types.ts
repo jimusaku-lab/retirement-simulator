@@ -137,6 +137,8 @@ export type RetirementIncomeEvent = {
   alreadyReceived?: boolean;
   retirementIncomeDeductionUsed?: boolean;
   withholdingTaxPaid?: number;
+  residentTaxMunicipalPaid?: number;
+  residentTaxPrefecturalPaid?: number;
   note?: string;
 };
 

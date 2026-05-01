@@ -138,6 +138,12 @@ function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] |
     alreadyReceived: event.alreadyReceived ?? false,
     retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? event.alreadyReceived ?? false,
     withholdingTaxPaid: Number.isFinite(event.withholdingTaxPaid) ? Number(event.withholdingTaxPaid) : 0,
+    residentTaxMunicipalPaid: Number.isFinite((event as RetirementIncomeEvent).residentTaxMunicipalPaid)
+      ? Number((event as RetirementIncomeEvent).residentTaxMunicipalPaid)
+      : 0,
+    residentTaxPrefecturalPaid: Number.isFinite((event as RetirementIncomeEvent).residentTaxPrefecturalPaid)
+      ? Number((event as RetirementIncomeEvent).residentTaxPrefecturalPaid)
+      : 0,
     note: event.note,
   }));
 }
