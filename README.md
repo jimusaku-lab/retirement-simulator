@@ -1,83 +1,22 @@
-# 退職後生活シミュレーション
+# Retirement Simulator Workspace
 
-本人専用の実用MVPとして作成した、退職後生活シミュレーション用Webアプリです。月次キャッシュフロー、年次集計、資産残高推移、資産枯渇判定、指定年齢時点残高、複数シナリオ比較を確認できます。
+This repository now keeps the stable app and the tax/social-insurance rewrite side by side.
 
-## 起動方法
+## Apps
 
-```bash
-npm install
-npm run dev
-```
+- `apps/current`: current stable retirement simulator
+- `apps/next-tax-social`: next version with detailed tax and social-insurance logic
 
-表示されたローカルURLをブラウザで開きます。
-
-作業中に `ERR_CONNECTION_REFUSED` が出る場合は、ローカルサーバーが止まっています。固定URLで再公開する場合は次を使います。
+## Common commands
 
 ```bash
 npm run serve:local
+npm run serve:current
+npm run serve:next-tax-social
+npm run build:current
+npm run build:next-tax-social
+npm run test:current
+npm run test:next-tax-social
 ```
 
-固定URLは `http://127.0.0.1:5174/` です。`serve:local` は本番ビルドを作成し、macOSのLaunchAgentで静的配信します。
-
-## テスト
-
-```bash
-npm test
-```
-
-## ビルド
-
-```bash
-npm run build
-```
-
-## 構成
-
-- `src/types.ts`: 入力データ、シナリオ、計算結果の型定義
-- `src/data/sampleData.ts`: 起動直後に使えるサンプルシナリオ
-- `src/lib/simulation.ts`: UIから分離した月次シミュレーションエンジン
-- `src/store/usePlanStore.ts`: Zustandによる状態管理とLocalStorage保存
-- `src/App.tsx`: 日本語UI、入力フォーム、結果表示、シナリオ比較、JSON/CSV入出力
-- `src/lib/simulation.test.ts`: 主要計算ロジックと代表シナリオのテスト
-
-## MVPの計算前提
-
-- 金額は円単位です。
-- 収入イベントは開始月から終了月まで有効です。終了月未設定の場合は継続します。
-- 特別支出は該当月のみ反映します。
-- 税・社会保険は年度単位の手入力値を月割りします。年度は4月から翌3月として扱います。
-- 国民年金は月額入力をそのまま毎月反映します。
-- 税・社会保険は、該当年度が未入力の場合、入力済みの直近過去年の金額を引き継ぎます。
-- インフレはON/OFFできます。
-- 資産別利回りは `現金`、`普通預金`、`定期預金`、`NISA`、`特定口座`、`普通口座（オプション用）`、`iDeCo` ごとに個別設定できます。
-- 毎月の追加投資は資産別に入力でき、現金、収入、不足時の取り崩しから投資口座へ振り替える前提で反映します。
-- 取り崩し額は、生活費等と追加投資を収入で賄えない分として表示します。
-- 生活費は現在の費目別入力を起点に、満年齢ごとの変更ルールを追加できます。
-- 年齢別生活費変更は、生活費全体または個別費目に対して、月額指定または倍率指定で反映します。
-- ダッシュボードの資産推移グラフは、横軸に西暦と年齢を表示します。
-
-## 保存とバックアップ
-
-- 入力内容はブラウザのLocalStorageへ自動保存されます。
-- 「データ」タブに最終保存時刻を表示します。
-- 「JSONバックアップ作成」で外部保管用のJSONをダウンロードできます。
-- 「履歴に保存」でLocalStorage内に履歴バックアップを残せます。
-- 履歴バックアップは最大5件まで保持します。
-- JSON読込、サンプル復元、履歴復元などの前には、現在状態を復元前履歴として保存します。
-
-## 初版で未実装または簡略化した項目
-
-- マネーフォワードAPI、証券会社API、サーバー連携、認証、課金
-- 厳密な所得税・住民税・国民健康保険料の自動計算
-- オプション取引の詳細損益モデル
-- モンテカルロ法や資産区分別の精密な運用モデル
-- レポートPDF出力
-
-## 今後の拡張候補
-
-- 税・社会保険の概算ロジック追加
-- CSVインポートとマネーフォワード整形取込
-- 生活費の年度別上書き
-- 資産区分別の成長率設定
-- シナリオの差分保持方式への移行
-- 共有用レポート出力
+The stable local URL remains `http://127.0.0.1:5174/`.

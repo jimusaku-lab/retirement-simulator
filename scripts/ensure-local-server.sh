@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+APP_NAME="${1:-current}"
 PORT="${PORT:-5174}"
 HOST="${HOST:-127.0.0.1}"
-LABEL="com.motomichi.retirement-simulator-static"
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LABEL="com.motomichi.retirement-simulator-static-${APP_NAME}-${PORT}"
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP_DIR="${APP_ROOT}/apps/${APP_NAME}"
 RUNTIME_ROOT="${HOME}/.retirement-simulator"
-SITE_DIR="${RUNTIME_ROOT}/site"
+SITE_DIR="${RUNTIME_ROOT}/site-${APP_NAME}-${PORT}"
 LOG_DIR="${RUNTIME_ROOT}/logs"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/${LABEL}.plist"
 URL="http://${HOST}:${PORT}/"
 UID_VALUE="$(id -u)"
 PYTHON_BIN="$(command -v python3)"
+
+if [[ ! -f "${APP_DIR}/package.json" ]]; then
+  echo "App package not found: ${APP_DIR}/package.json" >&2
+  exit 1
+fi
 
 cd "$APP_DIR"
 npm run build

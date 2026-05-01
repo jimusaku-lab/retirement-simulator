@@ -4,12 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "serve:local": "bash scripts/ensure-local-server.sh",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "test": "vitest --run",
-    "test:watch": "vitest"
+    "dev": "npm --prefix apps/current run dev",
+    "dev:current": "npm --prefix apps/current run dev",
+    "dev:next-tax-social": "npm --prefix apps/next-tax-social run dev",
+    "serve:local": "bash scripts/ensure-local-server.sh current",
+    "serve:current": "bash scripts/ensure-local-server.sh current",
+    "serve:next-tax-social": "PORT=5175 bash scripts/ensure-local-server.sh next-tax-social",
+    "build": "npm --prefix apps/current run build",
+    "build:current": "npm --prefix apps/current run build",
+    "build:next-tax-social": "npm --prefix apps/next-tax-social run build",
+    "preview": "npm --prefix apps/current run preview",
+    "test": "npm --prefix apps/current run test",
+    "test:current": "npm --prefix apps/current run test",
+    "test:next-tax-social": "npm --prefix apps/next-tax-social run test",
+    "test:watch": "npm --prefix apps/current run test:watch"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.2",

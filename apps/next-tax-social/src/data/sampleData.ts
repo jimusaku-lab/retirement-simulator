@@ -1,0 +1,314 @@
+import type { RetirementPlanState, ScenarioData } from "@/types";
+
+const baseScenario: ScenarioData = {
+  id: "base",
+  name: "現状ケース",
+  description: "現在の生活費と想定収入を反映したベースケース",
+  compare: true,
+  userProfile: {
+    birthDate: "1966-04-01",
+    simulationStartYearMonth: "2026-04",
+    simulationEndMode: "age",
+    simulationEndAge: 95,
+    targetBalanceAge: 90,
+    targetBalanceAmount: 5_000_000,
+    plannedDrawdownEnabled: false,
+    cashReserve: 500_000,
+    municipality: "東京都大田区",
+    hasSpouse: false,
+    note: "税・社会保険は自動計算を基本にし、必要なら補正します。",
+  },
+  householdProfile: {
+    municipality: "東京都大田区",
+    headMemberId: "member-self",
+    taxCalculationMode: "auto",
+    notes: "まずは本人中心の世帯モデル。",
+  },
+  householdMembers: [
+    {
+      id: "member-self",
+      name: "本人",
+      relationship: "self",
+      birthDate: "1966-04-01",
+      isResident: true,
+      isNationalHealthInsuranceMember: true,
+      isLateElderlyMedicalMember: false,
+      isLongTermCareInsured: false,
+      isDependent: false,
+    },
+  ],
+  initialAssets: {
+    cash: 600_000,
+    bankDeposit: 12_000_000,
+    timeDeposit: 3_000_000,
+    nisa: 8_000_000,
+    specificAccount: 10_000_000,
+    ordinaryAccountForOptions: 4_000_000,
+    ideco: 6_000_000,
+    excludedAssets: 2_000_000,
+    debt: 0,
+  },
+  initialAssetCostBasis: {
+    nisa: 6_800_000,
+    specificAccount: 8_200_000,
+    ordinaryAccountForOptions: 3_200_000,
+    ideco: 4_900_000,
+  },
+  monthlyExpenses: {
+    food: 75_000,
+    dailyGoods: 20_000,
+    hobbyEntertainment: 35_000,
+    social: 25_000,
+    transportation: 18_000,
+    clothingBeauty: 12_000,
+    healthMedical: 15_000,
+    car: 10_000,
+    educationCulture: 8_000,
+    specialExpense: 12_000,
+    cashCard: 15_000,
+    utilities: 28_000,
+    communication: 12_000,
+    housing: 90_000,
+    taxSocialInsurance: 55_000,
+    insurance: 15_000,
+    other: 18_000,
+  },
+  ageExpenseAdjustments: [
+    {
+      id: "expense-70",
+      name: "70歳以降の生活費抑制",
+      startAge: 70,
+      target: "all",
+      mode: "multiplier",
+      value: 0.9,
+    },
+    {
+      id: "medical-75",
+      name: "75歳以降の医療費増",
+      startAge: 75,
+      target: "healthMedical",
+      mode: "multiplier",
+      value: 1.4,
+    },
+  ],
+  incomeEvents: [
+    {
+      id: "unemployment",
+      memberId: "member-self",
+      name: "失業手当",
+      type: "unemployment",
+      startYearMonth: "2026-04",
+      endYearMonth: "2026-12",
+      monthlyAmount: 180_000,
+      taxTreatment: "nonTaxable",
+    },
+    {
+      id: "pension",
+      memberId: "member-self",
+      name: "公的年金",
+      type: "pension",
+      startYearMonth: "2031-04",
+      monthlyAmount: 150_000,
+      taxTreatment: "taxable",
+    },
+    {
+      id: "investment-income",
+      memberId: "member-self",
+      name: "投資由来の定期入金",
+      type: "investmentIncome",
+      startYearMonth: "2026-04",
+      monthlyAmount: 50_000,
+      taxTreatment: "withholding",
+    },
+  ],
+    specialExpenses: [
+      { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000 },
+      { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000 },
+    ],
+  assetContributionEvents: [
+    {
+      id: "nisa-accumulate",
+      assetKey: "nisa",
+      name: "NISA追加投資",
+      startYearMonth: "2026-04",
+      endYearMonth: "2028-03",
+      monthlyAmount: 100_000,
+      nisaInvestmentSlot: "tsumitate",
+      contributionPriority: 1,
+      carryOverSkipped: false,
+    },
+    {
+      id: "specific-accumulate",
+      assetKey: "specificAccount",
+      name: "特定口座追加投資",
+      startYearMonth: "2026-04",
+      monthlyAmount: 50_000,
+    },
+  ],
+  assetTransferEvents: [],
+  withdrawalOrder: ["bankDeposit", "timeDeposit", "specificAccount", "ordinaryAccountForOptions", "ideco", "nisa"],
+  taxInsurance: [
+    {
+      id: "tax-2026",
+      fiscalYear: 2026,
+      residentTaxAnnual: 420_000,
+      incomeTaxAnnual: 120_000,
+      nationalHealthInsuranceAnnual: 650_000,
+      nationalPensionMonthly: 17_000,
+      nursingCareAnnual: 0,
+      otherPublicCostAnnual: 0,
+    },
+    {
+      id: "tax-2027",
+      fiscalYear: 2027,
+      residentTaxAnnual: 120_000,
+      incomeTaxAnnual: 40_000,
+      nationalHealthInsuranceAnnual: 260_000,
+      nationalPensionMonthly: 17_000,
+      nursingCareAnnual: 0,
+      otherPublicCostAnnual: 0,
+    },
+    {
+      id: "tax-2031",
+      fiscalYear: 2031,
+      residentTaxAnnual: 120_000,
+      incomeTaxAnnual: 50_000,
+      nationalHealthInsuranceAnnual: 240_000,
+      nationalPensionMonthly: 0,
+      nursingCareAnnual: 80_000,
+      otherPublicCostAnnual: 0,
+    },
+  ],
+  assetGrowthSettings: {
+    enabled: true,
+    rates: {
+      cash: 0,
+      bankDeposit: 0.001,
+      timeDeposit: 0.002,
+      nisa: 0.05,
+      specificAccount: 0.03,
+      ordinaryAccountForOptions: 0.03,
+      ideco: 0.04,
+    },
+  },
+  inflationSettings: {
+    enabled: true,
+    livingCostAnnualInflationRate: 0.015,
+    medicalAnnualInflationRate: 0.025,
+    pensionAnnualAdjustmentRate: 0.005,
+  },
+  optionAccountRules: {
+    enabled: true,
+    minimumBalance: 0,
+    targetBalance: 0,
+    protectFromWithdrawal: true,
+    suspendIncomeWhenBelowMinimum: true,
+    profitSweepEnabled: false,
+    profitSweepDestination: "bankDeposit",
+    profitSweepTiming: "monthly",
+    profitSweepMethod: "excessOverTarget",
+    fixedSweepAmount: 0,
+  },
+  optionSubAccounts: [
+    {
+      id: "option-cfd",
+      name: "CFD",
+      initialValue: 2_000_000,
+      initialCostBasis: 1_700_000,
+      startYearMonth: "2026-04",
+      enabled: true,
+      minimumBalance: 1_000_000,
+      targetBalance: 2_000_000,
+      withdrawalPriority: 1,
+      protectFromWithdrawal: true,
+      releaseProtectionAfterEnd: true,
+      suspendIncomeWhenBelowMinimum: true,
+      profitSweepEnabled: false,
+      profitSweepDestination: "bankDeposit",
+      profitSweepTiming: "monthly",
+      profitSweepMethod: "excessOverTarget",
+      fixedSweepAmount: 0,
+    },
+    {
+      id: "option-us",
+      name: "米国株オプション",
+      initialValue: 2_000_000,
+      initialCostBasis: 1_500_000,
+      startYearMonth: "2026-07",
+      enabled: true,
+      minimumBalance: 1_500_000,
+      targetBalance: 2_500_000,
+      withdrawalPriority: 2,
+      protectFromWithdrawal: true,
+      releaseProtectionAfterEnd: true,
+      suspendIncomeWhenBelowMinimum: true,
+      profitSweepEnabled: false,
+      profitSweepDestination: "bankDeposit",
+      profitSweepTiming: "monthly",
+      profitSweepMethod: "excessOverTarget",
+      fixedSweepAmount: 0,
+    },
+  ],
+  nisaInvestmentRules: {
+    annualLimit: 3_600_000,
+    lifetimeLimitPerInvestor: 18_000_000,
+    usedLifetimeLimitAtStart: 0,
+    investorCount: 1,
+    enforceAnnualLimit: true,
+    protectDuringContribution: true,
+    insufficientFundingMode: "skip",
+    carryOverSkippedMode: "none",
+  },
+  taxableAccountSettings: {
+    specificAccountWithholding: "withholding",
+  },
+};
+
+function scenarioWith(id: string, name: string, mutate: (scenario: ScenarioData) => void): ScenarioData {
+  const scenario = structuredClone(baseScenario);
+  scenario.id = id;
+  scenario.name = name;
+  scenario.description = undefined;
+  mutate(scenario);
+  return scenario;
+}
+
+export const sampleState: RetirementPlanState = {
+  version: 1,
+  activeScenarioId: "base",
+  lastSavedAt: undefined,
+  backups: [],
+  scenarios: [
+    baseScenario,
+    scenarioWith("income-100k", "月10万円追加入金", (scenario) => {
+      scenario.incomeEvents.push({
+        id: "extra-100k",
+        memberId: "member-self",
+        name: "追加定期入金",
+        type: "investmentIncome",
+        startYearMonth: "2026-04",
+        monthlyAmount: 100_000,
+        taxTreatment: "withholding",
+      });
+    }),
+    scenarioWith("expense-low", "生活費10%削減", (scenario) => {
+      for (const key of Object.keys(scenario.monthlyExpenses) as (keyof typeof scenario.monthlyExpenses)[]) {
+        scenario.monthlyExpenses[key] = Math.round(scenario.monthlyExpenses[key] * 0.9);
+      }
+    }),
+    scenarioWith("expense-shock", "特別支出発生", (scenario) => {
+      scenario.specialExpenses.push({
+        id: "care-shock",
+        name: "大きめの臨時支出",
+        yearMonth: "2030-03",
+        amount: 2_500_000,
+      });
+    }),
+    scenarioWith("growth-zero", "利回り0%", (scenario) => {
+      scenario.assetGrowthSettings.enabled = false;
+      for (const key of Object.keys(scenario.assetGrowthSettings.rates) as (keyof typeof scenario.assetGrowthSettings.rates)[]) {
+        scenario.assetGrowthSettings.rates[key] = 0;
+      }
+    }),
+  ],
+};
