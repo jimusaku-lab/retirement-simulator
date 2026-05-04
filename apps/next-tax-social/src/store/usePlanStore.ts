@@ -135,6 +135,8 @@ function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] |
     paymentYearMonth: event.paymentYearMonth ?? "2026-04",
     grossAmount: Number.isFinite(event.grossAmount) ? Number(event.grossAmount) : 0,
     serviceYears: Number.isFinite(event.serviceYears) ? Number(event.serviceYears) : 20,
+    serviceStartDate: event.serviceStartDate,
+    serviceEndDate: event.serviceEndDate,
     alreadyReceived: event.alreadyReceived ?? false,
     retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? event.alreadyReceived ?? false,
     withholdingTaxPaid: Number.isFinite(event.withholdingTaxPaid) ? Number(event.withholdingTaxPaid) : 0,

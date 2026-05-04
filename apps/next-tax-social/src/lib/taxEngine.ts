@@ -308,6 +308,7 @@ function calculateResidentTax(taxableIncome: number) {
 
 function getRetirementIncomeDeduction(years: number) {
   const roundedYears = Math.max(1, Math.ceil(years));
+  if (years <= 0) return 0;
   if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
   return 8_000_000 + (roundedYears - 20) * 700_000;
 }

@@ -134,6 +134,8 @@ export type RetirementIncomeEvent = {
   paymentYearMonth: YearMonth;
   grossAmount: number;
   serviceYears: number;
+  serviceStartDate?: string;
+  serviceEndDate?: string;
   alreadyReceived?: boolean;
   retirementIncomeDeductionUsed?: boolean;
   withholdingTaxPaid?: number;

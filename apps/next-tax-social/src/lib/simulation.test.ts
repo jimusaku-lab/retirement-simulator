@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
-import { getRetirementFilingAdvice, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   aggregateAnnualResults,
   getBalanceAtAge,
@@ -1228,6 +1228,52 @@ describe("simulation", () => {
     expect(advice).toHaveLength(1);
     expect(advice[0]?.taxPaidTotal).toBe(222_396);
     expect(advice[0]?.status).toBe("attention");
+  });
+
+  it("退職所得控除の重複調整は期間重複から概算控除を出す", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2025-09",
+          grossAmount: 17_246_247,
+          serviceYears: 29,
+          serviceStartDate: "1997-05-26",
+          serviceEndDate: "2025-09-30",
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 75_196,
+          residentTaxMunicipalPaid: 88_300,
+          residentTaxPrefecturalPaid: 58_900,
+        },
+        {
+          id: "ideco-lump",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "idecoLumpSum",
+          paymentYearMonth: "2030-04",
+          grossAmount: 8_000_000,
+          serviceYears: 20,
+          serviceStartDate: "2005-01-01",
+          serviceEndDate: "2024-12-31",
+          alreadyReceived: false,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 0,
+        },
+      ],
+    });
+
+    const adjustments = getRetirementOverlapAdjustments(scenario);
+
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]?.precision).toBe("dateBased");
+    expect(adjustments[0]?.estimatedOverlapYears).toBe(20);
+    expect(adjustments[0]?.baseDeduction).toBe(8_000_000);
+    expect(adjustments[0]?.adjustedDeduction).toBe(0);
+    expect(adjustments[0]?.estimatedIncomeAfterAdjustment).toBe(4_000_000);
   });
 
   it("公的年金等控除は年金以外の所得が1,000万円を超える場合の速算表を使う", () => {

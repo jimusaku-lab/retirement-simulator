@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
-import { getRetirementFilingAdvice, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
@@ -2213,6 +2213,8 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
         paymentYearMonth: s.userProfile.simulationStartYearMonth,
         grossAmount: 0,
         serviceYears: 20,
+        serviceStartDate: "",
+        serviceEndDate: "",
         alreadyReceived: false,
         retirementIncomeDeductionUsed: false,
         withholdingTaxPaid: 0,
@@ -2346,6 +2348,30 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
                   }
                 />
               </Field>
+              <Field label="勤続/加入開始日">
+                <Input
+                  type="date"
+                  value={event.serviceStartDate ?? ""}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].serviceStartDate = e.target.value || undefined;
+                    })
+                  }
+                />
+              </Field>
+              <Field label="勤続/加入終了日">
+                <Input
+                  type="date"
+                  value={event.serviceEndDate ?? ""}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
+                      s.retirementIncomeEvents[index].serviceEndDate = e.target.value || undefined;
+                    })
+                  }
+                />
+              </Field>
               <Field label="既受給">
                 <Select
                   value={event.alreadyReceived ? "yes" : "no"}
@@ -2449,6 +2475,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const isManual = mode === "manual";
   const isAuto = mode === "auto";
   const retirementOverlapWarnings = useMemo(() => getRetirementOverlapWarnings(scenario), [scenario]);
+  const retirementOverlapAdjustments = useMemo(() => getRetirementOverlapAdjustments(scenario), [scenario]);
 
   const add = () =>
     updateScenario((s) =>
@@ -2557,6 +2584,58 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
                     <div>{warning.message}</div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-lg border bg-white px-4 py-3 space-y-3">
+            <div>
+              <h3 className="font-medium">退職所得控除の重複調整概算</h3>
+              <p className="text-sm text-muted-foreground">
+                重複ルールに該当するイベントについて、勤続/加入期間の重複分を概算します。ここでは税額本体にはまだ反映していません。
+              </p>
+            </div>
+            {retirementOverlapAdjustments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">概算調整が必要な退職所得イベントはありません。</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <thead>
+                    <Tr>
+                      <Th>対象</Th>
+                      <Th>過去イベント</Th>
+                      <Th>重複年数</Th>
+                      <Th>調整前控除</Th>
+                      <Th>重複控除概算</Th>
+                      <Th>調整後控除</Th>
+                      <Th>退職所得 概算前</Th>
+                      <Th>退職所得 概算後</Th>
+                      <Th>根拠</Th>
+                    </Tr>
+                  </thead>
+                  <tbody>
+                    {retirementOverlapAdjustments.map((item) => (
+                      <Tr key={item.id}>
+                        <Td>
+                          <div className="font-medium">{item.currentEventName}</div>
+                          <div className="text-xs text-muted-foreground">{item.currentPaymentYearMonth}</div>
+                        </Td>
+                        <Td>
+                          <div>{item.priorEventName}</div>
+                          <div className="text-xs text-muted-foreground">{item.priorPaymentYearMonth}</div>
+                        </Td>
+                        <Td>{item.estimatedOverlapYears}年</Td>
+                        <Td>{yen(item.baseDeduction)}</Td>
+                        <Td>{yen(item.estimatedOverlapDeduction)}</Td>
+                        <Td>{yen(item.adjustedDeduction)}</Td>
+                        <Td>{yen(item.estimatedIncomeBeforeAdjustment)}</Td>
+                        <Td>{yen(item.estimatedIncomeAfterAdjustment)}</Td>
+                        <Td className="min-w-[18rem] text-sm text-muted-foreground">
+                          {item.precision === "dateBased" ? "期間入力ベース" : "年数ベース"}。{item.note}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
               </div>
             )}
           </div>

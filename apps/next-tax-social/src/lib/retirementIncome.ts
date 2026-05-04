@@ -14,6 +14,8 @@ export type RetirementIncomeRecord = {
   paymentYearMonth: string;
   grossAmount: number;
   serviceYears: number;
+  serviceStartDate?: string;
+  serviceEndDate?: string;
   alreadyReceived: boolean;
   retirementIncomeDeductionUsed: boolean;
   withholdingTaxPaid: number;
@@ -51,8 +53,27 @@ export type RetirementFilingAdvice = {
   message: string;
 };
 
+export type RetirementOverlapAdjustment = {
+  id: string;
+  memberId: string;
+  memberName: string;
+  currentEventName: string;
+  priorEventName: string;
+  currentPaymentYearMonth: string;
+  priorPaymentYearMonth: string;
+  baseDeduction: number;
+  estimatedOverlapYears: number;
+  estimatedOverlapDeduction: number;
+  adjustedDeduction: number;
+  estimatedIncomeBeforeAdjustment: number;
+  estimatedIncomeAfterAdjustment: number;
+  precision: "dateBased" | "serviceYearsOnly";
+  note: string;
+};
+
 export function getRetirementIncomeDeduction(years: number) {
   const serviceYears = Math.max(0, Math.floor(years));
+  if (serviceYears <= 0) return 0;
   if (serviceYears <= 20) return Math.max(800_000, serviceYears * 400_000);
   return 8_000_000 + (serviceYears - 20) * 700_000;
 }
@@ -72,6 +93,22 @@ function toDate(yearMonth: string) {
 
 function monthDiff(currentYearMonth: string, priorYearMonth: string) {
   return toDate(currentYearMonth).diff(toDate(priorYearMonth), "month");
+}
+
+function getDateRangeOverlapYears(current: RetirementIncomeRecord, prior: RetirementIncomeRecord) {
+  if (!current.serviceStartDate || !current.serviceEndDate || !prior.serviceStartDate || !prior.serviceEndDate) return null;
+  const currentStart = dayjs(current.serviceStartDate);
+  const currentEnd = dayjs(current.serviceEndDate);
+  const priorStart = dayjs(prior.serviceStartDate);
+  const priorEnd = dayjs(prior.serviceEndDate);
+  if (!currentStart.isValid() || !currentEnd.isValid() || !priorStart.isValid() || !priorEnd.isValid()) return null;
+
+  const overlapStart = currentStart.isAfter(priorStart) ? currentStart : priorStart;
+  const overlapEnd = currentEnd.isBefore(priorEnd) ? currentEnd : priorEnd;
+  if (overlapEnd.isBefore(overlapStart, "day")) return 0;
+
+  const overlapMonths = overlapEnd.startOf("month").diff(overlapStart.startOf("month"), "month") + 1;
+  return Math.max(0, Math.ceil(overlapMonths / 12));
 }
 
 function isIdecoType(type: RetirementIncomeEventType) {
@@ -110,6 +147,8 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
     paymentYearMonth: event.paymentYearMonth,
     grossAmount: Math.max(0, Math.round(event.grossAmount)),
     serviceYears: Math.max(0, Math.round(event.serviceYears)),
+    serviceStartDate: event.serviceStartDate,
+    serviceEndDate: event.serviceEndDate,
     alreadyReceived: event.alreadyReceived ?? false,
     retirementIncomeDeductionUsed: event.retirementIncomeDeductionUsed ?? !!event.alreadyReceived,
     withholdingTaxPaid: Math.max(0, Math.round(event.withholdingTaxPaid ?? 0)),
@@ -130,6 +169,8 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
       paymentYearMonth: event.startYearMonth,
       grossAmount: Math.max(0, Math.round(event.monthlyAmount)),
       serviceYears: Math.max(0, Math.round(event.idecoLumpSumContributionYears ?? 20)),
+      serviceStartDate: undefined,
+      serviceEndDate: undefined,
       alreadyReceived: false,
       retirementIncomeDeductionUsed: true,
       withholdingTaxPaid: 0,
@@ -195,6 +236,61 @@ export function summarizeRetirementIncomeWarnings(warnings: RetirementOverlapWar
     severeCount: severe.length,
     messages: warnings.map((warning) => warning.message),
   };
+}
+
+export function getRetirementOverlapAdjustments(scenario: ScenarioData): RetirementOverlapAdjustment[] {
+  const records = buildRetirementIncomeRecords(scenario);
+  const adjustments: RetirementOverlapAdjustment[] = [];
+
+  for (let i = 0; i < records.length; i += 1) {
+    const current = records[i];
+    for (let j = 0; j < i; j += 1) {
+      const prior = records[j];
+      if (current.memberId !== prior.memberId) continue;
+
+      const gapMonths = monthDiff(current.paymentYearMonth, prior.paymentYearMonth);
+      if (gapMonths < 0) continue;
+
+      const sameYear = toDate(current.paymentYearMonth).year() === toDate(prior.paymentYearMonth).year();
+      const { requiredGapYears } = getRuleDetails(current.type, prior.type);
+      const needsAdjustment = sameYear || gapMonths < requiredGapYears * 12;
+      if (!needsAdjustment) continue;
+
+      const dateBasedOverlapYears = getDateRangeOverlapYears(current, prior);
+      const estimatedOverlapYears = dateBasedOverlapYears ?? Math.min(current.serviceYears, prior.serviceYears);
+      const baseDeduction = getRetirementIncomeDeduction(current.serviceYears);
+      const estimatedOverlapDeduction = Math.min(baseDeduction, getRetirementIncomeDeduction(estimatedOverlapYears));
+      const adjustedDeduction = Math.max(0, baseDeduction - estimatedOverlapDeduction);
+      const estimatedIncomeBeforeAdjustment = calculateRetirementIncome(current.grossAmount, current.serviceYears).income;
+      const estimatedIncomeAfterAdjustment = Math.max(0, Math.round((current.grossAmount - adjustedDeduction) / 2));
+      const priorBaseDeduction = getRetirementIncomeDeduction(prior.serviceYears);
+      const priorUnderUsed = prior.grossAmount > 0 && prior.grossAmount < priorBaseDeduction;
+
+      adjustments.push({
+        id: `${current.id}-${prior.id}`,
+        memberId: current.memberId,
+        memberName: current.memberName,
+        currentEventName: current.name,
+        priorEventName: prior.name,
+        currentPaymentYearMonth: current.paymentYearMonth,
+        priorPaymentYearMonth: prior.paymentYearMonth,
+        baseDeduction,
+        estimatedOverlapYears,
+        estimatedOverlapDeduction,
+        adjustedDeduction,
+        estimatedIncomeBeforeAdjustment,
+        estimatedIncomeAfterAdjustment,
+        precision: dateBasedOverlapYears === null ? "serviceYearsOnly" : "dateBased",
+        note: priorUnderUsed
+          ? "前回の退職手当等が前回控除額未満のため、実際の調整額はこの概算より小さくなる可能性があります。"
+          : dateBasedOverlapYears === null
+            ? "勤続/加入期間の日付が未入力のため、双方の年数の小さい方を重複候補として使った概算です。"
+            : "勤続/加入期間の日付から重複期間を概算しています。",
+      });
+    }
+  }
+
+  return adjustments;
 }
 
 export function getRetirementFilingAdvice(scenario: ScenarioData): RetirementFilingAdvice[] {
