@@ -3365,7 +3365,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   const annualNisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
   const annualNisaLimitExceeded = result.annual.reduce((sum, row) => sum + row.nisaAnnualLimitExceededTotal, 0);
   const annualLiving = result.annual.reduce((sum, row) => sum + row.livingExpenseTotal, 0);
-  const annualTax = result.annual.reduce((sum, row) => sum + row.taxInsuranceTotal + row.capitalGainsTaxTotal, 0);
+  const annualTaxSocial = result.annual.reduce((sum, row) => sum + row.taxInsuranceTotal, 0);
+  const annualCapitalGainsTax = result.annual.reduce((sum, row) => sum + row.capitalGainsTaxTotal, 0);
   const annualIdecoWithholding = result.annual.reduce((sum, row) => sum + row.idecoWithholdingTaxTotal, 0);
   const annualSpecial = result.annual.reduce((sum, row) => sum + row.specialExpenseTotal, 0);
   const annualContribution = result.annual.reduce((sum, row) => sum + row.assetContributionTotal, 0);
@@ -3385,7 +3386,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     label: `${row.year} / ${row.ageYears}歳`,
     income: row.incomeTotal,
     living: -row.livingExpenseTotal,
-    tax: -(row.taxInsuranceTotal + row.capitalGainsTaxTotal),
+    tax: -row.taxInsuranceTotal,
+    capitalGainsTax: -row.capitalGainsTaxTotal,
     withholding: -row.idecoWithholdingTaxTotal,
     special: -row.specialExpenseTotal,
     contribution: -row.assetContributionTotal,
@@ -3428,7 +3430,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="NISA累計投資額" value={compactYen(latestNisaCumulativeInvestment)} sub={latestAnnual ? `${latestAnnual.year}年末時点` : "年末時点"} />
         <Metric title="残りNISA枠" value={compactLimitYen(latestNisaRemainingLifetimeLimit)} sub="生涯投資枠の残り" />
         <Metric title="累計生活費" value={compactYen(annualLiving)} sub="税社保を除く生活費" />
-        <Metric title="累計税社保支払" value={compactYen(annualTax)} sub="翌年反映分を含む現金支出" />
+        <Metric title="累計税社保支払" value={compactYen(annualTaxSocial)} sub="前年所得等に対する現金支出" />
+        <Metric title="累計譲渡益税" value={compactYen(annualCapitalGainsTax)} sub="課税口座売却時または翌年反映" />
         <Metric title="累計iDeCo源泉" value={compactYen(annualIdecoWithholding)} sub="受取時に差し引き" />
         <Metric title="累計特別支出" value={compactYen(annualSpecial)} sub="単発支出" />
         <Metric title="累計追加投資" value={compactYen(annualContribution)} sub="毎月の積立" />
@@ -3500,6 +3503,41 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
+          <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
+          <CardDescription>
+            税額の発生根拠と、実際に現金が出ていく年を分けて確認します。自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <thead>
+              <Tr>
+                <Th>支払年</Th>
+                <Th>税社保支払</Th>
+                <Th>譲渡益税</Th>
+                <Th>iDeCo源泉</Th>
+                <Th>読み方</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {result.annual.map((row) => (
+                <Tr key={`tax-cash-${row.year}`}>
+                  <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td>{compactYen(row.taxInsuranceTotal)}</Td>
+                  <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
+                  <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
+                  <Td className="min-w-[420px] text-sm text-muted-foreground">
+                    税社保支払は主に前年所得に対する当年の現金支出です。iDeCo源泉は受取月に差し引かれます。譲渡益税は口座区分により売却時控除または翌年支払へ回します。
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>NISA枠の進捗</CardTitle>
           <CardDescription>累計投資額、残り生涯枠、年ごとの追加投資と未実行額を確認します。</CardDescription>
         </CardHeader>
@@ -3536,6 +3574,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
+              <Bar dataKey="capitalGainsTax" name="譲渡益税" fill="#b91c1c" />
               <Bar dataKey="withholding" name="iDeCo源泉" fill="#f97316" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
               <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
@@ -4003,6 +4042,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>現金収入</Th>
           <Th>生活費</Th>
           <Th>税社保支払</Th>
+          <Th>譲渡益税</Th>
           <Th>特別支出</Th>
           <Th>純収支</Th>
           <Th>計画取り崩し</Th>
@@ -4037,7 +4077,8 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{`${row.ageYears}歳${row.ageMonths}か月`}</Td>
               <Td>{compactYen(row.incomeTotal)}</Td>
               <Td>{compactYen(row.livingExpenseTotal)}</Td>
-              <Td>{compactYen(row.taxInsuranceTotal + row.capitalGainsTaxTotal)}</Td>
+              <Td>{compactYen(row.taxInsuranceTotal)}</Td>
+              <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
               <Td>{compactYen(row.plannedDrawdownTotal)}</Td>
@@ -4074,7 +4115,8 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td className={stickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
               <Td>{compactYen(row.incomeTotal)}</Td>
               <Td>{compactYen(row.livingExpenseTotal)}</Td>
-              <Td>{compactYen(row.taxInsuranceTotal + row.capitalGainsTaxTotal)}</Td>
+              <Td>{compactYen(row.taxInsuranceTotal)}</Td>
+              <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
               <Td>{compactYen(row.plannedDrawdownTotal)}</Td>
