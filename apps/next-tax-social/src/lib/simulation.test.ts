@@ -796,6 +796,95 @@ describe("simulation", () => {
     expect(rows[0].nationalPensionMonthly).toBeGreaterThan(0);
   });
 
+  it("国保介護分は40歳から64歳の国保加入者だけに発生する", () => {
+    const base = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1962-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: true,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "income",
+          memberId: "member-self",
+          name: "年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const under65 = calculateAutoTaxRows(base);
+    const over65 = calculateAutoTaxRows({
+      ...base,
+      householdMembers: [
+        {
+          ...base.householdMembers[0],
+          birthDate: "1961-04-01",
+        },
+      ],
+    });
+
+    expect(under65[0].nursingCareAnnual).toBeGreaterThan(0);
+    expect(over65[0].nursingCareAnnual).toBe(0);
+  });
+
+  it("後期高齢者医療は国保とは別に算出する", () => {
+    const scenario = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: true,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const rows = calculateAutoTaxRows(scenario);
+
+    expect(rows[0].nationalHealthInsuranceAnnual).toBe(0);
+    expect(rows[0].lateElderlyMedicalAnnual).toBeGreaterThan(0);
+  });
+
   it("iDeCo年金受取を年金種別で入れると公的年金等控除を使う", () => {
     const scenario = simpleScenario({
       householdProfile: {

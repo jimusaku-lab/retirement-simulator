@@ -206,6 +206,7 @@ export type TaxInsuranceByFiscalYear = {
   residentTaxAnnual: number;
   incomeTaxAnnual: number;
   nationalHealthInsuranceAnnual: number;
+  lateElderlyMedicalAnnual?: number;
   nationalPensionMonthly: number;
   nursingCareAnnual: number;
   otherPublicCostAnnual: number;

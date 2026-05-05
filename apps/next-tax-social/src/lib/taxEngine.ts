@@ -40,6 +40,16 @@ const OTA_NHI = {
   careCap: 170_000,
 };
 
+const TOKYO_LATE_ELDERLY_MEDICAL = {
+  baseIncomeDeduction: 430_000,
+  medicalIncomeRate: 0.0988,
+  medicalPerCapita: 53_300,
+  medicalCap: 850_000,
+  childSupportIncomeRate: 0.0026,
+  childSupportPerCapita: 1_300,
+  childSupportCap: 21_000,
+};
+
 export type AutoTaxMemberDetail = {
   memberId: string;
   memberName: string;
@@ -73,6 +83,7 @@ export type AutoTaxYearDetail = {
   fiscalYear: number;
   memberDetails: AutoTaxMemberDetail[];
   nationalHealthInsuranceAnnual: number;
+  lateElderlyMedicalAnnual: number;
   nursingCareAnnual: number;
   otherPublicCostAnnual: number;
   nationalHealthInsuranceBreakdown: {
@@ -82,6 +93,18 @@ export type AutoTaxYearDetail = {
     support: number;
     childSupport: number;
     care: number;
+    insuredMemberDetails: Array<{
+      memberId: string;
+      memberName: string;
+      ageAtYearEnd: number;
+      baseIncome: number;
+    }>;
+  };
+  lateElderlyMedicalBreakdown: {
+    insuredMemberCount: number;
+    totalBaseIncome: number;
+    medical: number;
+    childSupport: number;
     insuredMemberDetails: Array<{
       memberId: string;
       memberName: string;
@@ -457,6 +480,64 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
   };
 }
 
+function emptyLateElderlyMedicalBreakdown() {
+  return {
+    insuredMemberCount: 0,
+    totalBaseIncome: 0,
+    medical: 0,
+    childSupport: 0,
+    insuredMemberDetails: [],
+  };
+}
+
+function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: number) {
+  const insuredMembers = scenario.householdMembers.filter((member) => member.isLateElderlyMedicalMember);
+  if (insuredMembers.length === 0) {
+    return {
+      lateElderlyMedicalAnnual: 0,
+      lateElderlyMedicalBreakdown: emptyLateElderlyMedicalBreakdown(),
+    };
+  }
+
+  const memberIncomes = insuredMembers.map((member) => {
+    const breakdown = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+    const baseIncome = Math.max(0, breakdown.totalIncome - TOKYO_LATE_ELDERLY_MEDICAL.baseIncomeDeduction);
+    return {
+      member,
+      age: breakdown.ageAtYearEnd,
+      baseIncome,
+    };
+  });
+
+  const totalBaseIncome = memberIncomes.reduce((sum, item) => sum + item.baseIncome, 0);
+  const medical = Math.min(
+    Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.medicalIncomeRate) +
+      insuredMembers.length * TOKYO_LATE_ELDERLY_MEDICAL.medicalPerCapita,
+    TOKYO_LATE_ELDERLY_MEDICAL.medicalCap,
+  );
+  const childSupport = Math.min(
+    Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.childSupportIncomeRate) +
+      insuredMembers.length * TOKYO_LATE_ELDERLY_MEDICAL.childSupportPerCapita,
+    TOKYO_LATE_ELDERLY_MEDICAL.childSupportCap,
+  );
+
+  return {
+    lateElderlyMedicalAnnual: medical + childSupport,
+    lateElderlyMedicalBreakdown: {
+      insuredMemberCount: insuredMembers.length,
+      totalBaseIncome,
+      medical,
+      childSupport,
+      insuredMemberDetails: memberIncomes.map((item) => ({
+        memberId: item.member.id,
+        memberName: item.member.name,
+        ageAtYearEnd: item.age,
+        baseIncome: item.baseIncome,
+      })),
+    },
+  };
+}
+
 export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDetail[] {
   const fiscalYears = listFiscalYearsForScenario(scenario);
   const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
@@ -512,14 +593,17 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
     });
 
     const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear);
+    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear);
 
     return {
       fiscalYear,
       memberDetails: perMember,
       nationalHealthInsuranceAnnual: otaNhi.nationalHealthInsuranceAnnual,
+      lateElderlyMedicalAnnual: lateElderlyMedical.lateElderlyMedicalAnnual,
       nursingCareAnnual: otaNhi.nursingCareAnnual,
       otherPublicCostAnnual: 0,
       nationalHealthInsuranceBreakdown: otaNhi.nationalHealthInsuranceBreakdown,
+      lateElderlyMedicalBreakdown: lateElderlyMedical.lateElderlyMedicalBreakdown,
     };
   });
 }
@@ -531,6 +615,7 @@ export function calculateAutoTaxRows(scenario: ScenarioData): TaxInsuranceByFisc
     residentTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual + member.retirementResidentTaxAnnual, 0),
     incomeTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual + member.retirementIncomeTaxAnnual, 0),
     nationalHealthInsuranceAnnual: detail.nationalHealthInsuranceAnnual,
+    lateElderlyMedicalAnnual: detail.lateElderlyMedicalAnnual,
     nationalPensionMonthly: detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionMonthly, 0),
     nursingCareAnnual: detail.nursingCareAnnual,
     otherPublicCostAnnual: detail.otherPublicCostAnnual,
@@ -547,6 +632,7 @@ function mergeTaxRows(autoRows: TaxInsuranceByFiscalYear[], manualRows: TaxInsur
       residentTaxAnnual: row.residentTaxAnnual + adjustment.residentTaxAnnual,
       incomeTaxAnnual: row.incomeTaxAnnual + adjustment.incomeTaxAnnual,
       nationalHealthInsuranceAnnual: row.nationalHealthInsuranceAnnual + adjustment.nationalHealthInsuranceAnnual,
+      lateElderlyMedicalAnnual: (row.lateElderlyMedicalAnnual ?? 0) + (adjustment.lateElderlyMedicalAnnual ?? 0),
       nationalPensionMonthly: row.nationalPensionMonthly + adjustment.nationalPensionMonthly,
       nursingCareAnnual: row.nursingCareAnnual + adjustment.nursingCareAnnual,
       otherPublicCostAnnual: row.otherPublicCostAnnual + adjustment.otherPublicCostAnnual,

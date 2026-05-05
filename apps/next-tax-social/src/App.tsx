@@ -2492,6 +2492,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
         residentTaxAnnual: 0,
         incomeTaxAnnual: 0,
         nationalHealthInsuranceAnnual: 0,
+        lateElderlyMedicalAnnual: 0,
         nationalPensionMonthly: 0,
         nursingCareAnnual: 0,
         otherPublicCostAnnual: 0,
@@ -2508,6 +2509,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
           residentTaxAnnual: 0,
           incomeTaxAnnual: 0,
           nationalHealthInsuranceAnnual: 0,
+          lateElderlyMedicalAnnual: 0,
           nationalPensionMonthly: 0,
           nursingCareAnnual: 0,
           otherPublicCostAnnual: 0,
@@ -2695,7 +2697,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <div>
               <h3 className="font-medium">自動計算結果</h3>
               <p className="text-sm text-muted-foreground">
-                現時点では、所得税・住民税・国民年金・大田区の国民健康保険概算に加え、特定口座と普通口座（オプション用）の取り崩し時の譲渡益課税を反映します。収入集計は暦年ベースです。通知書との差がある場合は補正してください。
+                現時点では、所得税・住民税・国民年金・大田区の国民健康保険・東京都の後期高齢者医療の概算に加え、特定口座と普通口座（オプション用）の取り崩し時の譲渡益課税を反映します。収入集計は暦年ベースです。通知書との差がある場合は補正してください。
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
@@ -2720,7 +2722,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
                     <Field key={key} label={label}>
                       <Input
                         type="number"
-                        value={row[key]}
+                        value={row[key] ?? 0}
                         onChange={(e) => updateScenario((s) => void (s.taxInsurance[index][key] = numberOrZero(e.target.value)))}
                       />
                     </Field>
@@ -2750,7 +2752,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
                     <Field key={key} label={label}>
                       <Input
                         type="number"
-                        value={row[key]}
+                        value={row[key] ?? 0}
                         onChange={(e) => updateScenario((s) => void (s.taxInsurance[index][key] = numberOrZero(e.target.value)))}
                       />
                     </Field>
@@ -2893,6 +2895,7 @@ function TaxRowsSummary({
             <Th>住民税(通常+退職)</Th>
             <Th>所得税(通常+退職)</Th>
             <Th>国保</Th>
+            <Th>後期高齢者医療</Th>
             <Th>国民年金(月額)</Th>
             <Th>介護</Th>
             <Th>譲渡益課税</Th>
@@ -2907,6 +2910,7 @@ function TaxRowsSummary({
               row.residentTaxAnnual +
               row.incomeTaxAnnual +
               row.nationalHealthInsuranceAnnual +
+              (row.lateElderlyMedicalAnnual ?? 0) +
               row.nationalPensionMonthly * 12 +
               row.nursingCareAnnual +
               capitalGainsTaxAnnual +
@@ -2917,6 +2921,7 @@ function TaxRowsSummary({
                 <Td>{yen(row.residentTaxAnnual)}</Td>
                 <Td>{yen(row.incomeTaxAnnual)}</Td>
                 <Td>{yen(row.nationalHealthInsuranceAnnual)}</Td>
+                <Td>{yen(row.lateElderlyMedicalAnnual ?? 0)}</Td>
                 <Td>{yen(row.nationalPensionMonthly)}</Td>
                 <Td>{yen(row.nursingCareAnnual)}</Td>
                 <Td>{yen(capitalGainsTaxAnnual)}</Td>
@@ -2952,6 +2957,7 @@ function TaxCashTimingSummary({
       retirementIncomeTaxTotal +
       retirementResidentTaxTotal +
       detail.nationalHealthInsuranceAnnual +
+      detail.lateElderlyMedicalAnnual +
       detail.nursingCareAnnual +
       detail.otherPublicCostAnnual;
     const paymentYear = detail.fiscalYear + 1;
@@ -3042,6 +3048,7 @@ function TaxCalculationDetails({
           retirementResidentTaxTotal +
           nationalPensionAnnualTotal +
           detail.nationalHealthInsuranceAnnual +
+          detail.lateElderlyMedicalAnnual +
           detail.nursingCareAnnual +
           detail.otherPublicCostAnnual;
         const monthlyEquivalent = Math.round(annualTotal / 12);
@@ -3072,6 +3079,7 @@ function TaxCalculationDetails({
                         <Th>住民税</Th>
                         <Th>国民年金</Th>
                         <Th>国保</Th>
+                        <Th>後期高齢者医療</Th>
                         <Th>介護</Th>
                         <Th>その他</Th>
                         <Th>年額合計</Th>
@@ -3084,6 +3092,7 @@ function TaxCalculationDetails({
                         <Td>{yen(regularResidentTaxTotal)}</Td>
                         <Td>{yen(nationalPensionAnnualTotal)}</Td>
                         <Td>{yen(detail.nationalHealthInsuranceAnnual)}</Td>
+                        <Td>{yen(detail.lateElderlyMedicalAnnual)}</Td>
                         <Td>{yen(detail.nursingCareAnnual)}</Td>
                         <Td>{yen(detail.otherPublicCostAnnual)}</Td>
                         <Td className="font-medium">
@@ -3092,6 +3101,7 @@ function TaxCalculationDetails({
                               regularResidentTaxTotal +
                               nationalPensionAnnualTotal +
                               detail.nationalHealthInsuranceAnnual +
+                              detail.lateElderlyMedicalAnnual +
                               detail.nursingCareAnnual +
                               detail.otherPublicCostAnnual,
                           )}
@@ -3105,6 +3115,7 @@ function TaxCalculationDetails({
                         <Td>{yen(0)}</Td>
                         <Td>{yen(0)}</Td>
                         <Td>{yen(0)}</Td>
+                        <Td>{yen(0)}</Td>
                         <Td className="font-medium">{yen(retirementIncomeTaxTotal + retirementResidentTaxTotal)}</Td>
                       </Tr>
                       <Tr>
@@ -3113,6 +3124,7 @@ function TaxCalculationDetails({
                         <Td>{yen(regularResidentTaxTotal + retirementResidentTaxTotal)}</Td>
                         <Td>{yen(nationalPensionAnnualTotal)}</Td>
                         <Td>{yen(detail.nationalHealthInsuranceAnnual)}</Td>
+                        <Td>{yen(detail.lateElderlyMedicalAnnual)}</Td>
                         <Td>{yen(detail.nursingCareAnnual)}</Td>
                         <Td>{yen(detail.otherPublicCostAnnual)}</Td>
                         <Td className="font-medium">{yen(annualTotal)}</Td>
@@ -3322,7 +3334,7 @@ function TaxCalculationDetails({
               </section>
 
               <section className="space-y-3">
-                <h4 className="font-medium">国民健康保険と介護保険の概算</h4>
+                <h4 className="font-medium">公的医療・介護保険の概算</h4>
                 <div className="overflow-x-auto rounded-lg border">
                   <Table>
                     <thead>
@@ -3351,6 +3363,17 @@ function TaxCalculationDetails({
                         <Td>{yen(detail.nursingCareAnnual)}</Td>
                         <Td>40歳から64歳の国保加入者の所得をもとに概算</Td>
                       </Tr>
+                      <Tr>
+                        <Td>後期高齢者医療</Td>
+                        <Td>
+                          {detail.lateElderlyMedicalBreakdown.insuredMemberCount}人 / {yen(detail.lateElderlyMedicalBreakdown.totalBaseIncome)}
+                        </Td>
+                        <Td>{yen(detail.lateElderlyMedicalAnnual)}</Td>
+                        <Td>
+                          医療 {yen(detail.lateElderlyMedicalBreakdown.medical)} / 子ども
+                          {yen(detail.lateElderlyMedicalBreakdown.childSupport)}
+                        </Td>
+                      </Tr>
                     </tbody>
                   </Table>
                 </div>
@@ -3359,6 +3382,18 @@ function TaxCalculationDetails({
                     <p>国保は大田区の概算で、加入者ごとの baseIncome を集計しています。</p>
                     <ul className="list-disc space-y-1 pl-5">
                       {detail.nationalHealthInsuranceBreakdown.insuredMemberDetails.map((member) => (
+                        <li key={member.memberId}>
+                          {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {detail.lateElderlyMedicalBreakdown.insuredMemberDetails.length > 0 && (
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>後期高齢者医療は東京都広域連合の料率で、被保険者ごとの baseIncome を集計しています。</p>
+                    <ul className="list-disc space-y-1 pl-5">
+                      {detail.lateElderlyMedicalBreakdown.insuredMemberDetails.map((member) => (
                         <li key={member.memberId}>
                           {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)}
                         </li>
@@ -3382,6 +3417,7 @@ const taxFields: [TaxNumberKey, string][] = [
   ["residentTaxAnnual", "住民税年額"],
   ["incomeTaxAnnual", "所得税年額"],
   ["nationalHealthInsuranceAnnual", "国民健康保険料年額"],
+  ["lateElderlyMedicalAnnual", "後期高齢者医療保険料年額"],
   ["nationalPensionMonthly", "国民年金月額"],
   ["nursingCareAnnual", "介護保険関連年額"],
   ["otherPublicCostAnnual", "その他公的負担年額"],

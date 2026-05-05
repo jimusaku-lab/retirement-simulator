@@ -275,6 +275,7 @@ export function getTaxInsuranceForMonth(
     row.residentTaxAnnual / 12 +
     row.incomeTaxAnnual / 12 +
     row.nationalHealthInsuranceAnnual / 12 +
+    (row.lateElderlyMedicalAnnual ?? 0) / 12 +
     row.nationalPensionMonthly +
     row.nursingCareAnnual / 12 +
     row.otherPublicCostAnnual / 12
@@ -306,6 +307,7 @@ function getAutoTaxCashPaymentForMonth(
         priorYearRow.residentTaxAnnual +
         incomeTaxSettlement +
         priorYearRow.nationalHealthInsuranceAnnual +
+        (priorYearRow.lateElderlyMedicalAnnual ?? 0) +
         priorYearRow.nursingCareAnnual +
         priorYearRow.otherPublicCostAnnual
       ) / 12
