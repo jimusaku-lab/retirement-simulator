@@ -276,10 +276,14 @@ export function getTaxInsuranceForMonth(
     row.incomeTaxAnnual / 12 +
     row.nationalHealthInsuranceAnnual / 12 +
     (row.lateElderlyMedicalAnnual ?? 0) / 12 +
-    row.nationalPensionMonthly +
+    getNationalPensionAnnual(row) / 12 +
     row.nursingCareAnnual / 12 +
     row.otherPublicCostAnnual / 12
   );
+}
+
+function getNationalPensionAnnual(row: TaxInsuranceByFiscalYear) {
+  return row.nationalPensionAnnual ?? row.nationalPensionMonthly * 12;
 }
 
 function getTaxRowForYear(taxRows: TaxInsuranceByFiscalYear[], year: number) {
@@ -313,7 +317,7 @@ function getAutoTaxCashPaymentForMonth(
       ) / 12
     : 0;
 
-  return delayedPriorYearCosts + (currentYearRow?.nationalPensionMonthly ?? 0);
+  return delayedPriorYearCosts + (currentYearRow ? getNationalPensionAnnual(currentYearRow) / 12 : 0);
 }
 
 function getTaxInsuranceCashPaymentForMonth(

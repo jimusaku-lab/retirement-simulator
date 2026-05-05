@@ -65,6 +65,8 @@ export type AutoTaxMemberDetail = {
   retirementIncomeAnnual: number;
   retirementIncomeTaxAnnual: number;
   retirementResidentTaxAnnual: number;
+  manualSocialInsuranceDeductionAnnual: number;
+  autoSocialInsuranceDeductionAnnual: number;
   socialInsuranceDeductionAnnual: number;
   medicalExpenseDeductionAnnual: number;
   taxableIncomeBeforeBasicDeductionAnnual: number;
@@ -538,16 +540,60 @@ function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: nu
   };
 }
 
+function getAutoSocialInsuranceDeductionAnnual(
+  scenario: ScenarioData,
+  member: HouseholdMember,
+  fiscalYear: number,
+  insuranceByIncomeYear: Map<
+    number,
+    Pick<AutoTaxYearDetail, "nationalHealthInsuranceAnnual" | "lateElderlyMedicalAnnual" | "nursingCareAnnual">
+  >,
+) {
+  const nationalPensionAnnual = countEligibleNationalPensionMonths(member, fiscalYear) * calculateNationalPensionMonthly(fiscalYear);
+  const priorYearInsurance = insuranceByIncomeYear.get(fiscalYear - 1);
+  const householdPublicInsurancePaidThisYear =
+    member.id === scenario.householdProfile.headMemberId && priorYearInsurance
+      ? priorYearInsurance.nationalHealthInsuranceAnnual +
+        priorYearInsurance.lateElderlyMedicalAnnual +
+        priorYearInsurance.nursingCareAnnual
+      : 0;
+
+  return Math.max(0, Math.round(nationalPensionAnnual + householdPublicInsurancePaidThisYear));
+}
+
 export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDetail[] {
   const fiscalYears = listFiscalYearsForScenario(scenario);
   const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
+  const insuranceByIncomeYear = new Map<
+    number,
+    Pick<AutoTaxYearDetail, "nationalHealthInsuranceAnnual" | "lateElderlyMedicalAnnual" | "nursingCareAnnual">
+  >();
+
+  for (const fiscalYear of fiscalYears) {
+    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear);
+    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear);
+    insuranceByIncomeYear.set(fiscalYear, {
+      nationalHealthInsuranceAnnual: otaNhi.nationalHealthInsuranceAnnual,
+      lateElderlyMedicalAnnual: lateElderlyMedical.lateElderlyMedicalAnnual,
+      nursingCareAnnual: otaNhi.nursingCareAnnual,
+    });
+  }
+
   return fiscalYears.map((fiscalYear) => {
     const perMember = scenario.householdMembers.map((member) => {
       const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
       const deductions = getDependentDeductions(scenario, member.id);
       const itemizedDeductions = getItemizedDeductions(scenario, member.id, fiscalYear);
-      const socialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
+      const manualSocialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
+      const autoSocialInsuranceDeductionAnnual = getAutoSocialInsuranceDeductionAnnual(
+        scenario,
+        member,
+        fiscalYear,
+        insuranceByIncomeYear,
+      );
+      const socialInsuranceDeductionAnnual = manualSocialInsuranceDeductionAnnual + autoSocialInsuranceDeductionAnnual;
       const medicalExpenseDeductionAnnual = itemizedDeductions.medical;
+      const nationalPensionEligibleMonths = countEligibleNationalPensionMonths(member, fiscalYear);
       const incomeTaxBase = Math.max(
         0,
         income.totalIncome - INCOME_TAX_BASIC_DEDUCTION - deductions.incomeTax - socialInsuranceDeductionAnnual - medicalExpenseDeductionAnnual,
@@ -556,9 +602,7 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         0,
         income.totalIncome - RESIDENT_TAX_BASIC_DEDUCTION - deductions.residentTax - socialInsuranceDeductionAnnual - medicalExpenseDeductionAnnual,
       );
-      const nationalPensionMonthly = countEligibleNationalPensionMonths(member, fiscalYear) > 0
-        ? calculateNationalPensionMonthly(fiscalYear)
-        : 0;
+      const nationalPensionMonthly = nationalPensionEligibleMonths > 0 ? calculateNationalPensionMonthly(fiscalYear) : 0;
       const incomeTaxAnnual = calculateIncomeTax(incomeTaxBase);
       const residentTaxAnnual = calculateResidentTax(residentTaxBase);
 
@@ -577,6 +621,8 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         retirementIncomeAnnual: income.retirementIncomeAnnual,
         retirementIncomeTaxAnnual: income.retirementIncomeTaxAnnual,
         retirementResidentTaxAnnual: income.retirementResidentTaxAnnual,
+        manualSocialInsuranceDeductionAnnual,
+        autoSocialInsuranceDeductionAnnual,
         socialInsuranceDeductionAnnual,
         medicalExpenseDeductionAnnual,
         taxableIncomeBeforeBasicDeductionAnnual: income.totalIncome,
@@ -588,7 +634,7 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         incomeTaxAnnual,
         residentTaxAnnual,
         nationalPensionMonthly,
-        nationalPensionAnnual: nationalPensionMonthly * 12,
+        nationalPensionAnnual: nationalPensionMonthly * nationalPensionEligibleMonths,
       };
     });
 
@@ -617,6 +663,7 @@ export function calculateAutoTaxRows(scenario: ScenarioData): TaxInsuranceByFisc
     nationalHealthInsuranceAnnual: detail.nationalHealthInsuranceAnnual,
     lateElderlyMedicalAnnual: detail.lateElderlyMedicalAnnual,
     nationalPensionMonthly: detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionMonthly, 0),
+    nationalPensionAnnual: detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionAnnual, 0),
     nursingCareAnnual: detail.nursingCareAnnual,
     otherPublicCostAnnual: detail.otherPublicCostAnnual,
   }));
@@ -634,6 +681,7 @@ function mergeTaxRows(autoRows: TaxInsuranceByFiscalYear[], manualRows: TaxInsur
       nationalHealthInsuranceAnnual: row.nationalHealthInsuranceAnnual + adjustment.nationalHealthInsuranceAnnual,
       lateElderlyMedicalAnnual: (row.lateElderlyMedicalAnnual ?? 0) + (adjustment.lateElderlyMedicalAnnual ?? 0),
       nationalPensionMonthly: row.nationalPensionMonthly + adjustment.nationalPensionMonthly,
+      nationalPensionAnnual: (row.nationalPensionAnnual ?? row.nationalPensionMonthly * 12) + (adjustment.nationalPensionAnnual ?? adjustment.nationalPensionMonthly * 12),
       nursingCareAnnual: row.nursingCareAnnual + adjustment.nursingCareAnnual,
       otherPublicCostAnnual: row.otherPublicCostAnnual + adjustment.otherPublicCostAnnual,
     };

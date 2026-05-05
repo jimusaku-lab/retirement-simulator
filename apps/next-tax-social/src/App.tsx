@@ -3221,6 +3221,8 @@ function TaxCalculationDetails({
                         <Th>退職所得控除</Th>
                         <Th>退職所得</Th>
                         <Th>社保控除</Th>
+                        <Th>自動社保控除</Th>
+                        <Th>手入力社保控除</Th>
                         <Th>医療費控除</Th>
                         <Th>基礎控除前</Th>
                         <Th>基礎控除</Th>
@@ -3248,6 +3250,8 @@ function TaxCalculationDetails({
                           <Td>{yen(member.retirementIncomeDeductionAnnual)}</Td>
                           <Td>{yen(member.retirementIncomeAnnual)}</Td>
                           <Td>{yen(member.socialInsuranceDeductionAnnual)}</Td>
+                          <Td>{yen(member.autoSocialInsuranceDeductionAnnual)}</Td>
+                          <Td>{yen(member.manualSocialInsuranceDeductionAnnual)}</Td>
                           <Td>{yen(member.medicalExpenseDeductionAnnual)}</Td>
                           <Td>{yen(member.taxableIncomeBeforeBasicDeductionAnnual)}</Td>
                           <Td>{yen(member.basicDeductionAnnual)}</Td>
@@ -3265,7 +3269,7 @@ function TaxCalculationDetails({
               <section className="space-y-3">
                 <h4 className="font-medium">所得控除の反映確認</h4>
                 <p className="text-sm text-muted-foreground">
-                  所得控除入力で入れた社会保険料控除と医療費控除が、所得税・住民税の課税ベースをどれだけ下げたかを確認します。
+                  自動計算した公的保険料と、所得控除入力で入れた社会保険料控除・医療費控除が、所得税・住民税の課税ベースをどれだけ下げたかを確認します。
                 </p>
                 <div className="overflow-x-auto rounded-lg border">
                   <Table>

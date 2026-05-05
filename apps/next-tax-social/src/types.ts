@@ -208,6 +208,7 @@ export type TaxInsuranceByFiscalYear = {
   nationalHealthInsuranceAnnual: number;
   lateElderlyMedicalAnnual?: number;
   nationalPensionMonthly: number;
+  nationalPensionAnnual?: number;
   nursingCareAnnual: number;
   otherPublicCostAnnual: number;
 };

@@ -220,7 +220,12 @@ describe("simulation", () => {
     const withoutDetail = calculateAutoTaxDetails(withoutDeduction).find((row) => row.fiscalYear === 2026);
     const withDetail = calculateAutoTaxDetails(withDeduction).find((row) => row.fiscalYear === 2026);
 
-    expect(withDetail?.memberDetails[0].socialInsuranceDeductionAnnual).toBe(600_000);
+    expect(withDetail?.memberDetails[0].manualSocialInsuranceDeductionAnnual).toBe(600_000);
+    expect(withDetail?.memberDetails[0].autoSocialInsuranceDeductionAnnual).toBeGreaterThan(0);
+    expect(withDetail?.memberDetails[0].socialInsuranceDeductionAnnual).toBe(
+      (withDetail?.memberDetails[0].manualSocialInsuranceDeductionAnnual ?? 0) +
+        (withDetail?.memberDetails[0].autoSocialInsuranceDeductionAnnual ?? 0),
+    );
     expect(withDetail?.memberDetails[0].medicalExpenseDeductionAnnual).toBe(200_000);
     expect(withDetail?.memberDetails[0].incomeTaxBaseAnnual).toBeLessThan(withoutDetail?.memberDetails[0].incomeTaxBaseAnnual ?? 0);
     expect(withDetail?.memberDetails[0].residentTaxBaseAnnual).toBeLessThan(withoutDetail?.memberDetails[0].residentTaxBaseAnnual ?? 0);
@@ -3284,6 +3289,78 @@ describe("simulation", () => {
 
     expect(tax2026).toBe(0);
     expect(tax2027).toBeGreaterThan(0);
+  });
+
+  it("自動計算した公的保険料は翌年の社会保険料控除として所得税と住民税を下げる", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1950-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-12",
+        targetBalanceAge: 77,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension-2026",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+        {
+          id: "salary-2027",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2027-01",
+          endYearMonth: "2027-12",
+          monthlyAmount: 800_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const detail2026 = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2026);
+    const detail2027 = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2027);
+    const member2027 = detail2027?.memberDetails[0];
+    const expectedAutoDeduction =
+      (detail2026?.nationalHealthInsuranceAnnual ?? 0) +
+      (detail2026?.lateElderlyMedicalAnnual ?? 0) +
+      (detail2026?.nursingCareAnnual ?? 0);
+
+    expect(expectedAutoDeduction).toBeGreaterThan(0);
+    expect(member2027?.autoSocialInsuranceDeductionAnnual).toBe(expectedAutoDeduction);
+    expect(member2027?.incomeTaxBaseAnnual).toBe(
+      Math.max(
+        0,
+        (member2027?.taxableIncomeBeforeBasicDeductionAnnual ?? 0) -
+          (member2027?.basicDeductionAnnual ?? 0) -
+          expectedAutoDeduction,
+      ),
+    );
   });
 
   it("代表的サンプルシナリオで比較に必要な結果が出る", () => {
