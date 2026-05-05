@@ -2596,7 +2596,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <div>
               <h3 className="font-medium">退職所得控除の重複調整概算</h3>
               <p className="text-sm text-muted-foreground">
-                重複ルールに該当するイベントについて、勤続/加入期間の重複分を概算します。ここでは税額本体にはまだ反映していません。
+                重複ルールに該当するイベントについて、勤続/加入期間の重複分を概算します。収入イベントとして登録したiDeCo一時金は、この調整後控除を税額計算に使います。
               </p>
             </div>
             {retirementOverlapAdjustments.length === 0 ? (
@@ -2886,8 +2886,8 @@ function TaxRowsSummary({
         <thead>
           <Tr>
             <Th>年度</Th>
-            <Th>住民税</Th>
-            <Th>所得税</Th>
+            <Th>住民税(通常+退職)</Th>
+            <Th>所得税(通常+退職)</Th>
             <Th>国保</Th>
             <Th>国民年金(月額)</Th>
             <Th>介護</Th>
@@ -2951,17 +2951,17 @@ function TaxCalculationDetails({
       </div>
 
       {details.map((detail) => {
+        const regularIncomeTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual, 0);
+        const regularResidentTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual, 0);
+        const retirementIncomeTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.retirementIncomeTaxAnnual, 0);
+        const retirementResidentTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.retirementResidentTaxAnnual, 0);
+        const nationalPensionAnnualTotal = detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionAnnual, 0);
         const annualTotal =
-          detail.memberDetails.reduce(
-            (sum, member) =>
-              sum +
-              member.incomeTaxAnnual +
-              member.residentTaxAnnual +
-              member.retirementIncomeTaxAnnual +
-              member.retirementResidentTaxAnnual +
-              member.nationalPensionAnnual,
-            0,
-          ) +
+          regularIncomeTaxTotal +
+          regularResidentTaxTotal +
+          retirementIncomeTaxTotal +
+          retirementResidentTaxTotal +
+          nationalPensionAnnualTotal +
           detail.nationalHealthInsuranceAnnual +
           detail.nursingCareAnnual +
           detail.otherPublicCostAnnual;
@@ -2979,6 +2979,70 @@ function TaxCalculationDetails({
               </span>
             </summary>
             <div className="mt-4 space-y-6">
+              <section className="space-y-3">
+                <h4 className="font-medium">年度税額の内訳</h4>
+                <p className="text-sm text-muted-foreground">
+                  通常所得分と退職一時金分を分けて表示します。自動計算の最終行では、これらを合算した所得税・住民税を使います。
+                </p>
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <thead>
+                      <Tr>
+                        <Th>区分</Th>
+                        <Th>所得税</Th>
+                        <Th>住民税</Th>
+                        <Th>国民年金</Th>
+                        <Th>国保</Th>
+                        <Th>介護</Th>
+                        <Th>その他</Th>
+                        <Th>年額合計</Th>
+                      </Tr>
+                    </thead>
+                    <tbody>
+                      <Tr>
+                        <Td>通常所得分</Td>
+                        <Td>{yen(regularIncomeTaxTotal)}</Td>
+                        <Td>{yen(regularResidentTaxTotal)}</Td>
+                        <Td>{yen(nationalPensionAnnualTotal)}</Td>
+                        <Td>{yen(detail.nationalHealthInsuranceAnnual)}</Td>
+                        <Td>{yen(detail.nursingCareAnnual)}</Td>
+                        <Td>{yen(detail.otherPublicCostAnnual)}</Td>
+                        <Td className="font-medium">
+                          {yen(
+                            regularIncomeTaxTotal +
+                              regularResidentTaxTotal +
+                              nationalPensionAnnualTotal +
+                              detail.nationalHealthInsuranceAnnual +
+                              detail.nursingCareAnnual +
+                              detail.otherPublicCostAnnual,
+                          )}
+                        </Td>
+                      </Tr>
+                      <Tr>
+                        <Td>退職一時金分</Td>
+                        <Td>{yen(retirementIncomeTaxTotal)}</Td>
+                        <Td>{yen(retirementResidentTaxTotal)}</Td>
+                        <Td>{yen(0)}</Td>
+                        <Td>{yen(0)}</Td>
+                        <Td>{yen(0)}</Td>
+                        <Td>{yen(0)}</Td>
+                        <Td className="font-medium">{yen(retirementIncomeTaxTotal + retirementResidentTaxTotal)}</Td>
+                      </Tr>
+                      <Tr>
+                        <Td className="font-medium">合計</Td>
+                        <Td>{yen(regularIncomeTaxTotal + retirementIncomeTaxTotal)}</Td>
+                        <Td>{yen(regularResidentTaxTotal + retirementResidentTaxTotal)}</Td>
+                        <Td>{yen(nationalPensionAnnualTotal)}</Td>
+                        <Td>{yen(detail.nationalHealthInsuranceAnnual)}</Td>
+                        <Td>{yen(detail.nursingCareAnnual)}</Td>
+                        <Td>{yen(detail.otherPublicCostAnnual)}</Td>
+                        <Td className="font-medium">{yen(annualTotal)}</Td>
+                      </Tr>
+                    </tbody>
+                  </Table>
+                </div>
+              </section>
+
               <section className="space-y-3">
                 <h4 className="font-medium">メンバー別の課税対象収入と控除</h4>
                 <p className="text-sm text-muted-foreground">この表の収入は {detail.fiscalYear}年1月から12月までの課税対象収入を集計しています。</p>
@@ -3041,7 +3105,7 @@ function TaxCalculationDetails({
                 <section className="space-y-3">
                   <h4 className="font-medium">退職所得控除の重複調整概算</h4>
                   <p className="text-sm text-muted-foreground">
-                    この年に受け取る退職所得イベントについて、過去の退職金やiDeCo一時金との重複期間を概算しています。現時点では検証用の表示で、税額本体にはまだ反映していません。
+                    この年に受け取る退職所得イベントについて、過去の退職金やiDeCo一時金との重複期間を概算しています。収入イベントとして登録したiDeCo一時金は、この調整後控除を税額計算に反映します。
                   </p>
                   <div className="overflow-x-auto rounded-lg border">
                     <Table>
@@ -3093,8 +3157,12 @@ function TaxCalculationDetails({
                     <thead>
                       <Tr>
                         <Th>メンバー</Th>
-                        <Th>所得税</Th>
-                        <Th>住民税</Th>
+                        <Th>所得税(通常所得)</Th>
+                        <Th>住民税(通常所得)</Th>
+                        <Th>所得税(退職一時金)</Th>
+                        <Th>住民税(退職一時金)</Th>
+                        <Th>所得税合計</Th>
+                        <Th>住民税合計</Th>
                         <Th>国民年金(月額)</Th>
                         <Th>国民年金(年額)</Th>
                       </Tr>
@@ -3105,6 +3173,10 @@ function TaxCalculationDetails({
                           <Td>{member.memberName}</Td>
                           <Td>{yen(member.incomeTaxAnnual)}</Td>
                           <Td>{yen(member.residentTaxAnnual)}</Td>
+                          <Td>{yen(member.retirementIncomeTaxAnnual)}</Td>
+                          <Td>{yen(member.retirementResidentTaxAnnual)}</Td>
+                          <Td>{yen(member.incomeTaxAnnual + member.retirementIncomeTaxAnnual)}</Td>
+                          <Td>{yen(member.residentTaxAnnual + member.retirementResidentTaxAnnual)}</Td>
                           <Td>{yen(member.nationalPensionMonthly)}</Td>
                           <Td>{yen(member.nationalPensionAnnual)}</Td>
                         </Tr>
