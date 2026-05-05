@@ -973,6 +973,81 @@ describe("simulation", () => {
     expect(over65?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(1_300_000);
   });
 
+  it("公的年金等控除の主要な収入階層を国税庁速算表どおりに計算する", () => {
+    const pensionDetail = (birthDate: string, annualPension: number) =>
+      calculateAutoTaxDetails(
+        simpleScenario({
+          userProfile: {
+            birthDate,
+            simulationStartYearMonth: "2026-01",
+            simulationEndMode: "yearMonth",
+            simulationEndYearMonth: "2026-12",
+            targetBalanceAge: 65,
+            cashReserve: 0,
+          },
+          householdProfile: {
+            municipality: "東京都大田区",
+            headMemberId: "member-self",
+            taxCalculationMode: "auto",
+          },
+          householdMembers: [
+            {
+              id: "member-self",
+              name: "本人",
+              relationship: "self",
+              birthDate,
+              isResident: true,
+              isNationalHealthInsuranceMember: false,
+              isLateElderlyMedicalMember: false,
+              isLongTermCareInsured: false,
+              isDependent: false,
+            },
+          ],
+          incomeEvents: [
+            {
+              id: "public-pension",
+              memberId: "member-self",
+              name: "公的年金",
+              type: "pension",
+              startYearMonth: "2026-01",
+              endYearMonth: "2026-12",
+              monthlyAmount: annualPension,
+              amountInputMode: "annual",
+              taxTreatment: "taxable",
+            },
+          ],
+        }),
+      ).find((row) => row.fiscalYear === 2026)?.memberDetails[0];
+
+    const under65Cases = [
+      [600_000, 600_000, 0],
+      [1_200_000, 600_000, 600_000],
+      [4_500_000, 1_360_000, 3_140_000],
+      [8_000_000, 1_855_000, 6_145_000],
+      [11_000_000, 1_955_000, 9_045_000],
+    ];
+    for (const [gross, deduction, income] of under65Cases) {
+      const detail = pensionDetail("1962-01-01", gross);
+      expect(detail?.pensionGrossAnnual).toBe(gross);
+      expect(detail?.pensionDeductionAnnual).toBe(deduction);
+      expect(detail?.taxableIncomeBeforeBasicDeductionAnnual).toBe(income);
+    }
+
+    const over65Cases = [
+      [1_100_000, 1_100_000, 0],
+      [2_400_000, 1_100_000, 1_300_000],
+      [4_500_000, 1_360_000, 3_140_000],
+      [7_000_000, 1_735_000, 5_265_000],
+      [11_000_000, 1_955_000, 9_045_000],
+    ];
+    for (const [gross, deduction, income] of over65Cases) {
+      const detail = pensionDetail("1961-01-01", gross);
+      expect(detail?.pensionGrossAnnual).toBe(gross);
+      expect(detail?.pensionDeductionAnnual).toBe(deduction);
+      expect(detail?.taxableIncomeBeforeBasicDeductionAnnual).toBe(income);
+    }
+  });
+
   it("iDeCo年金は公的年金と合算した雑所得として扱う", () => {
     const scenario = simpleScenario({
       userProfile: {
