@@ -96,6 +96,8 @@ type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
 
+const RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY = 430_000;
+
 const expenseLabels: Record<ExpenseKey, string> = {
   food: "食費",
   dailyGoods: "日用品",
@@ -3173,6 +3175,59 @@ function TaxCalculationDetails({
                           <Td>{yen(member.residentTaxBaseAnnual)}</Td>
                         </Tr>
                       ))}
+                    </tbody>
+                  </Table>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h4 className="font-medium">所得控除の反映確認</h4>
+                <p className="text-sm text-muted-foreground">
+                  所得控除入力で入れた社会保険料控除と医療費控除が、所得税・住民税の課税ベースをどれだけ下げたかを確認します。
+                </p>
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <thead>
+                      <Tr>
+                        <Th>メンバー</Th>
+                        <Th>社保控除</Th>
+                        <Th>医療費控除</Th>
+                        <Th>所得税ベース 控除前</Th>
+                        <Th>所得税ベース 控除後</Th>
+                        <Th>所得税ベース減少</Th>
+                        <Th>住民税ベース 控除前</Th>
+                        <Th>住民税ベース 控除後</Th>
+                        <Th>住民税ベース減少</Th>
+                      </Tr>
+                    </thead>
+                    <tbody>
+                      {detail.memberDetails.map((member) => {
+                        const incomeTaxBaseBeforeManualDeductions = Math.max(
+                          0,
+                          member.taxableIncomeBeforeBasicDeductionAnnual -
+                            member.basicDeductionAnnual -
+                            member.dependentDeductionsIncomeTaxAnnual,
+                        );
+                        const residentTaxBaseBeforeManualDeductions = Math.max(
+                          0,
+                          member.taxableIncomeBeforeBasicDeductionAnnual -
+                            RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY -
+                            member.dependentDeductionsResidentTaxAnnual,
+                        );
+                        return (
+                          <Tr key={`${member.memberId}-deduction-impact`}>
+                            <Td>{member.memberName}</Td>
+                            <Td>{yen(member.socialInsuranceDeductionAnnual)}</Td>
+                            <Td>{yen(member.medicalExpenseDeductionAnnual)}</Td>
+                            <Td>{yen(incomeTaxBaseBeforeManualDeductions)}</Td>
+                            <Td>{yen(member.incomeTaxBaseAnnual)}</Td>
+                            <Td>{yen(Math.max(0, incomeTaxBaseBeforeManualDeductions - member.incomeTaxBaseAnnual))}</Td>
+                            <Td>{yen(residentTaxBaseBeforeManualDeductions)}</Td>
+                            <Td>{yen(member.residentTaxBaseAnnual)}</Td>
+                            <Td>{yen(Math.max(0, residentTaxBaseBeforeManualDeductions - member.residentTaxBaseAnnual))}</Td>
+                          </Tr>
+                        );
+                      })}
                     </tbody>
                   </Table>
                 </div>
