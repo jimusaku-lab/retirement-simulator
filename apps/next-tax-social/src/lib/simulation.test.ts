@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
+import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import {
   aggregateAnnualResults,
@@ -883,6 +884,47 @@ describe("simulation", () => {
 
     expect(rows[0].nationalHealthInsuranceAnnual).toBe(0);
     expect(rows[0].lateElderlyMedicalAnnual).toBeGreaterThan(0);
+  });
+
+  it("公的年金等の申告不要制度の確認対象を判定する", () => {
+    const scenario = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: true,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const advice = getTaxFilingAdvice(calculateAutoTaxDetails(scenario));
+
+    expect(advice[0].status).toBe("notRequiredLikely");
+    expect(advice[0].pensionGrossAnnual).toBeLessThanOrEqual(4_000_000);
+    expect(advice[0].nonPensionIncomeAnnual).toBeLessThanOrEqual(200_000);
   });
 
   it("iDeCo年金受取を年金種別で入れると公的年金等控除を使う", () => {

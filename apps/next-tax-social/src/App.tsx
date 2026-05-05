@@ -40,6 +40,7 @@ import {
   getRetirementOverlapWarnings,
   type RetirementOverlapAdjustment,
 } from "@/lib/retirementIncome";
+import { getTaxFilingAdvice, type TaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
@@ -2470,6 +2471,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const autoRows = useMemo(() => calculateAutoTaxRows(scenario), [scenario]);
   const effectiveRows = useMemo(() => getEffectiveTaxRows(scenario), [scenario]);
   const retirementFilingAdvice = useMemo(() => getRetirementFilingAdvice(scenario), [scenario]);
+  const taxFilingAdvice = useMemo(() => getTaxFilingAdvice(autoDetails), [autoDetails]);
   const capitalGainsTaxByFiscalYear = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of simulationResult.monthly) {
@@ -2701,6 +2703,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
+            <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
@@ -2735,6 +2738,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               <p className="text-sm text-muted-foreground">自動計算と補正を合算した、シミュレーションに使う最終値です。</p>
             </div>
             <TaxRowsSummary rows={effectiveRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="反映後の年度データはまだありません。" />
+            <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
@@ -2932,6 +2936,54 @@ function TaxRowsSummary({
           })}
         </tbody>
       </Table>
+    </div>
+  );
+}
+
+function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
+  if (advice.length === 0) return null;
+
+  const visibleAdvice = advice.filter((item) => item.status !== "notRequiredLikely" || item.pensionGrossAnnual > 0);
+  if (visibleAdvice.length === 0) return null;
+
+  const styleByStatus: Record<TaxFilingAdvice["status"], string> = {
+    attention: "border-amber-300 bg-amber-50 text-amber-950",
+    review: "border-sky-300 bg-sky-50 text-sky-950",
+    notRequiredLikely: "border-slate-200 bg-slate-50 text-slate-700",
+  };
+  const labelByStatus: Record<TaxFilingAdvice["status"], string> = {
+    attention: "要確認",
+    review: "申告確認",
+    notRequiredLikely: "申告不要制度の可能性",
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-white px-4 py-3">
+      <div>
+        <h3 className="font-medium">申告不要・申告確認の判定</h3>
+        <p className="text-sm text-muted-foreground">
+          公的年金等の申告不要制度を、年金収入400万円以下・年金以外の所得20万円以下を目安に判定します。住民税申告や還付申告の要否は別確認です。
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {visibleAdvice.map((item) => (
+          <div key={item.id} className={`rounded-md border px-3 py-3 text-sm ${styleByStatus[item.status]}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">
+                  {item.fiscalYear}年 / {item.memberName}
+                </div>
+                <p className="mt-1">{item.message}</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
+            </div>
+            <div className="mt-2 text-xs opacity-80">
+              年金収入 {yen(item.pensionGrossAnnual)} / 年金以外の所得 {yen(item.nonPensionIncomeAnnual)} / 所得税 {yen(item.incomeTaxAnnual)} / 住民税
+              {yen(item.residentTaxAnnual)}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
