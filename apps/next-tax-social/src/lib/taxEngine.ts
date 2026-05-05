@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { getIncomeEventAmountForMonth, isIdecoMonexPensionEvent } from "@/lib/incomeEvents";
+import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import type {
   HouseholdMember,
   IncomeEvent,
@@ -152,6 +153,18 @@ function getMonthlyIncomeAmount(event: IncomeEvent, yearMonth: YearMonth, scenar
   );
 }
 
+function getRetirementAdjustmentByIncomeEventId(scenario: ScenarioData) {
+  const map = new Map<string, RetirementOverlapAdjustment>();
+  for (const adjustment of getRetirementOverlapAdjustments(scenario)) {
+    if (adjustment.currentSource.kind !== "incomeEvent") continue;
+    const current = map.get(adjustment.currentSource.eventId);
+    if (!current || adjustment.adjustedDeduction < current.adjustedDeduction) {
+      map.set(adjustment.currentSource.eventId, adjustment);
+    }
+  }
+  return map;
+}
+
 function getSalaryIncomeDeduction(amount: number) {
   if (amount <= 1_625_000) return 650_000;
   if (amount <= 1_800_000) return amount * 0.4 - 100_000;
@@ -198,7 +211,12 @@ function getAgeAtDate(birthDate: string, date: dayjs.Dayjs) {
   return age;
 }
 
-function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
+function getMemberIncomeBreakdown(
+  scenario: ScenarioData,
+  member: HouseholdMember,
+  fiscalYear: number,
+  retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario),
+) {
   const months = getCalendarYearMonths(fiscalYear);
   const events = scenario.incomeEvents.filter((event) => event.memberId === member.id);
   let salary = 0;
@@ -218,7 +236,10 @@ function getMemberIncomeBreakdown(scenario: ScenarioData, member: HouseholdMembe
       } else if (event.type === "pension") {
         pension += amount;
       } else if (event.type === "oneTime" && event.sourceAssetKey === "ideco") {
-        const retirement = calculateRetirementIncome(amount, event.idecoLumpSumContributionYears ?? 20);
+        const overlapAdjustment = retirementAdjustmentByIncomeEventId.get(event.id);
+        const retirement = overlapAdjustment
+          ? calculateRetirementIncomeWithDeduction(amount, overlapAdjustment.adjustedDeduction)
+          : calculateRetirementIncome(amount, event.idecoLumpSumContributionYears ?? 20);
         retirementGross += amount;
         retirementIncome += retirement.income;
         retirementDeduction += retirement.deduction;
@@ -316,6 +337,11 @@ function getRetirementIncomeDeduction(years: number) {
 function calculateRetirementIncome(gross: number, contributionYears: number) {
   if (gross <= 0) return { deduction: 0, income: 0 };
   const deduction = getRetirementIncomeDeduction(contributionYears);
+  return calculateRetirementIncomeWithDeduction(gross, deduction);
+}
+
+function calculateRetirementIncomeWithDeduction(gross: number, deduction: number) {
+  if (gross <= 0) return { deduction: 0, income: 0 };
   return {
     deduction,
     income: Math.max(0, Math.round((gross - deduction) / 2)),
@@ -433,9 +459,10 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
 
 export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDetail[] {
   const fiscalYears = listFiscalYearsForScenario(scenario);
+  const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
   return fiscalYears.map((fiscalYear) => {
     const perMember = scenario.householdMembers.map((member) => {
-      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
       const deductions = getDependentDeductions(scenario, member.id);
       const itemizedDeductions = getItemizedDeductions(scenario, member.id, fiscalYear);
       const socialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
@@ -501,8 +528,8 @@ export function calculateAutoTaxRows(scenario: ScenarioData): TaxInsuranceByFisc
   return calculateAutoTaxDetails(scenario).map((detail) => ({
     id: `auto-tax-${detail.fiscalYear}`,
     fiscalYear: detail.fiscalYear,
-    residentTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual, 0),
-    incomeTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual, 0),
+    residentTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual + member.retirementResidentTaxAnnual, 0),
+    incomeTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual + member.retirementIncomeTaxAnnual, 0),
     nationalHealthInsuranceAnnual: detail.nationalHealthInsuranceAnnual,
     nationalPensionMonthly: detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionMonthly, 0),
     nursingCareAnnual: detail.nursingCareAnnual,

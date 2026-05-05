@@ -57,6 +57,8 @@ export type RetirementOverlapAdjustment = {
   id: string;
   memberId: string;
   memberName: string;
+  currentSource: RetirementIncomeSource;
+  priorSource: RetirementIncomeSource;
   currentEventName: string;
   priorEventName: string;
   currentPaymentYearMonth: string;
@@ -270,6 +272,8 @@ export function getRetirementOverlapAdjustments(scenario: ScenarioData): Retirem
         id: `${current.id}-${prior.id}`,
         memberId: current.memberId,
         memberName: current.memberName,
+        currentSource: current.source,
+        priorSource: prior.source,
         currentEventName: current.name,
         priorEventName: prior.name,
         currentPaymentYearMonth: current.paymentYearMonth,

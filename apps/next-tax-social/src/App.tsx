@@ -2952,7 +2952,16 @@ function TaxCalculationDetails({
 
       {details.map((detail) => {
         const annualTotal =
-          detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual + member.residentTaxAnnual + member.nationalPensionAnnual, 0) +
+          detail.memberDetails.reduce(
+            (sum, member) =>
+              sum +
+              member.incomeTaxAnnual +
+              member.residentTaxAnnual +
+              member.retirementIncomeTaxAnnual +
+              member.retirementResidentTaxAnnual +
+              member.nationalPensionAnnual,
+            0,
+          ) +
           detail.nationalHealthInsuranceAnnual +
           detail.nursingCareAnnual +
           detail.otherPublicCostAnnual;
