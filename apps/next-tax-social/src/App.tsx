@@ -34,7 +34,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
-import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import {
+  getRetirementFilingAdvice,
+  getRetirementOverlapAdjustments,
+  getRetirementOverlapWarnings,
+  type RetirementOverlapAdjustment,
+} from "@/lib/retirementIncome";
 import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
@@ -2692,7 +2697,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
-            <TaxCalculationDetails details={autoDetails} />
+            <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
 
@@ -2725,7 +2730,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               <p className="text-sm text-muted-foreground">自動計算と補正を合算した、シミュレーションに使う最終値です。</p>
             </div>
             <TaxRowsSummary rows={effectiveRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="反映後の年度データはまだありません。" />
-            <TaxCalculationDetails details={autoDetails} />
+            <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
 
@@ -2922,7 +2927,13 @@ function TaxRowsSummary({
   );
 }
 
-function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
+function TaxCalculationDetails({
+  details,
+  retirementOverlapAdjustments = [],
+}: {
+  details: AutoTaxYearDetail[];
+  retirementOverlapAdjustments?: RetirementOverlapAdjustment[];
+}) {
   if (details.length === 0) {
     return <p className="text-sm text-muted-foreground">自動計算の根拠はまだありません。</p>;
   }
@@ -2946,6 +2957,9 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
           detail.nursingCareAnnual +
           detail.otherPublicCostAnnual;
         const monthlyEquivalent = Math.round(annualTotal / 12);
+        const retirementAdjustmentsForYear = retirementOverlapAdjustments.filter(
+          (item) => Number(item.currentPaymentYearMonth.slice(0, 4)) === detail.fiscalYear,
+        );
 
         return (
           <details key={detail.fiscalYear} className="rounded-lg border bg-white px-4 py-3">
@@ -3013,6 +3027,55 @@ function TaxCalculationDetails({ details }: { details: AutoTaxYearDetail[] }) {
                   </Table>
                 </div>
               </section>
+
+              {retirementAdjustmentsForYear.length > 0 && (
+                <section className="space-y-3">
+                  <h4 className="font-medium">退職所得控除の重複調整概算</h4>
+                  <p className="text-sm text-muted-foreground">
+                    この年に受け取る退職所得イベントについて、過去の退職金やiDeCo一時金との重複期間を概算しています。現時点では検証用の表示で、税額本体にはまだ反映していません。
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border">
+                    <Table>
+                      <thead>
+                        <Tr>
+                          <Th>対象</Th>
+                          <Th>過去イベント</Th>
+                          <Th>重複年数</Th>
+                          <Th>調整前控除</Th>
+                          <Th>重複控除概算</Th>
+                          <Th>調整後控除</Th>
+                          <Th>退職所得 概算前</Th>
+                          <Th>退職所得 概算後</Th>
+                          <Th>根拠</Th>
+                        </Tr>
+                      </thead>
+                      <tbody>
+                        {retirementAdjustmentsForYear.map((item) => (
+                          <Tr key={`${detail.fiscalYear}-${item.id}`}>
+                            <Td>
+                              <div className="font-medium">{item.currentEventName}</div>
+                              <div className="text-xs text-muted-foreground">{item.currentPaymentYearMonth}</div>
+                            </Td>
+                            <Td>
+                              <div>{item.priorEventName}</div>
+                              <div className="text-xs text-muted-foreground">{item.priorPaymentYearMonth}</div>
+                            </Td>
+                            <Td>{item.estimatedOverlapYears}年</Td>
+                            <Td>{yen(item.baseDeduction)}</Td>
+                            <Td>{yen(item.estimatedOverlapDeduction)}</Td>
+                            <Td>{yen(item.adjustedDeduction)}</Td>
+                            <Td>{yen(item.estimatedIncomeBeforeAdjustment)}</Td>
+                            <Td>{yen(item.estimatedIncomeAfterAdjustment)}</Td>
+                            <Td className="min-w-[18rem] text-sm text-muted-foreground">
+                              {item.precision === "dateBased" ? "期間入力ベース" : "年数ベース"}。{item.note}
+                            </Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+                </section>
+              )}
 
               <section className="space-y-3">
                 <h4 className="font-medium">所得税と住民税の結果</h4>
