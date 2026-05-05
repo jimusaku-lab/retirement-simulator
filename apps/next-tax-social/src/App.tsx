@@ -98,6 +98,24 @@ type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
 
 const RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY = 430_000;
+const RESIDENT_TAX_RATE_FOR_DISPLAY = 0.1;
+const RESIDENT_TAX_FLAT_FOR_DISPLAY = 5_000;
+
+function incomeTaxFormulaLabel(taxableIncome: number) {
+  if (taxableIncome <= 0) return "課税ベース0円のため0円";
+  if (taxableIncome <= 1_949_000) return "課税ベース × 5% × 復興特別税1.021";
+  if (taxableIncome <= 3_299_000) return "(課税ベース × 10% - 97,500円) × 1.021";
+  if (taxableIncome <= 6_949_000) return "(課税ベース × 20% - 427,500円) × 1.021";
+  if (taxableIncome <= 8_999_000) return "(課税ベース × 23% - 636,000円) × 1.021";
+  if (taxableIncome <= 17_999_000) return "(課税ベース × 33% - 1,536,000円) × 1.021";
+  if (taxableIncome <= 39_999_000) return "(課税ベース × 40% - 2,796,000円) × 1.021";
+  return "(課税ベース × 45% - 4,796,000円) × 1.021";
+}
+
+function residentTaxFormulaLabel(taxableIncome: number) {
+  if (taxableIncome <= 0) return "課税ベース0円のため0円";
+  return `課税ベース × ${(RESIDENT_TAX_RATE_FOR_DISPLAY * 100).toFixed(0)}% + 均等割 ${yen(RESIDENT_TAX_FLAT_FOR_DISPLAY)}`;
+}
 
 const expenseLabels: Record<ExpenseKey, string> = {
   food: "食費",
@@ -3386,6 +3404,41 @@ function TaxCalculationDetails({
               </section>
 
               <section className="space-y-3">
+                <h4 className="font-medium">所得税・住民税の計算式確認</h4>
+                <p className="text-sm text-muted-foreground">
+                  課税ベースに対して、どの税率式を当てているかを確認します。ここは通知書との差異確認用で、表示値は自動計算結果と同じ値を分解しています。
+                </p>
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <thead>
+                      <Tr>
+                        <Th>メンバー</Th>
+                        <Th>所得税課税ベース</Th>
+                        <Th>所得税の式</Th>
+                        <Th>所得税</Th>
+                        <Th>住民税課税ベース</Th>
+                        <Th>住民税の式</Th>
+                        <Th>住民税</Th>
+                      </Tr>
+                    </thead>
+                    <tbody>
+                      {detail.memberDetails.map((member) => (
+                        <Tr key={`${member.memberId}-tax-formula`}>
+                          <Td>{member.memberName}</Td>
+                          <Td>{yen(member.incomeTaxBaseAnnual)}</Td>
+                          <Td className="min-w-[16rem] text-sm text-muted-foreground">{incomeTaxFormulaLabel(member.incomeTaxBaseAnnual)}</Td>
+                          <Td>{yen(member.incomeTaxAnnual)}</Td>
+                          <Td>{yen(member.residentTaxBaseAnnual)}</Td>
+                          <Td className="min-w-[14rem] text-sm text-muted-foreground">{residentTaxFormulaLabel(member.residentTaxBaseAnnual)}</Td>
+                          <Td>{yen(member.residentTaxAnnual)}</Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              </section>
+
+              <section className="space-y-3">
                 <h4 className="font-medium">公的医療・介護保険の概算</h4>
                 <div className="overflow-x-auto rounded-lg border">
                   <Table>
@@ -3453,6 +3506,12 @@ function TaxCalculationDetails({
                     </ul>
                   </div>
                 )}
+                <div className="rounded-md border bg-slate-50 px-3 py-3 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">保険料率メモ</p>
+                  <p>国保: 医療分は所得割7.51%・均等割47,600円、支援分は所得割2.80%・均等割17,600円、こども分は所得割0.27%・均等割1,873円で概算します。</p>
+                  <p>国保の介護分: 40歳から64歳の国保加入者について、所得割2.43%・均等割17,800円で概算します。</p>
+                  <p>後期高齢者医療: 東京都の令和8・9年度料率として、医療分は所得割9.88%・均等割53,300円、子ども分は所得割0.26%・均等割1,300円で概算します。</p>
+                </div>
               </section>
             </div>
           </details>
