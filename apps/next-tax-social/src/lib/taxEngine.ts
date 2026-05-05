@@ -292,7 +292,7 @@ function getMemberIncomeBreakdown(
     retirementIncomeDeductionAnnual: Math.round(retirementDeduction),
     retirementIncomeAnnual: Math.round(retirementIncome),
     retirementIncomeTaxAnnual: calculateIncomeTax(retirementIncome),
-    retirementResidentTaxAnnual: calculateResidentTax(retirementIncome),
+    retirementResidentTaxAnnual: calculateResidentTax(retirementIncome, false),
     totalIncome,
     ageAtYearEnd,
   };
@@ -347,9 +347,9 @@ function calculateIncomeTax(taxableIncome: number) {
   return Math.max(0, Math.round(tax * (1 + RECOVERY_SPECIAL_TAX_RATE)));
 }
 
-function calculateResidentTax(taxableIncome: number) {
+function calculateResidentTax(taxableIncome: number, includeFlat = true) {
   if (taxableIncome <= 0) return 0;
-  return Math.max(0, Math.round(taxableIncome * RESIDENT_TAX_RATE + RESIDENT_TAX_FLAT));
+  return Math.max(0, Math.round(taxableIncome * RESIDENT_TAX_RATE + (includeFlat ? RESIDENT_TAX_FLAT : 0)));
 }
 
 function getRetirementIncomeDeduction(years: number) {

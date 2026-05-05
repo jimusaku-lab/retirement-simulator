@@ -2055,6 +2055,74 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ideco).toBe(0);
   });
 
+  it("iDeCo一時金の受取月源泉は過去退職金との重複調整後の控除で概算する", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-01-01",
+          simulationStartYearMonth: "2030-04",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2030-04",
+          targetBalanceAge: 65,
+          cashReserve: 0,
+        },
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 8_000_000,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 8_000_000,
+        },
+        retirementIncomeEvents: [
+          {
+            id: "company-retirement",
+            memberId: "member-self",
+            name: "会社退職金",
+            type: "companyRetirementAllowance",
+            paymentYearMonth: "2025-09",
+            grossAmount: 17_246_247,
+            serviceYears: 29,
+            serviceStartDate: "1997-05-26",
+            serviceEndDate: "2025-09-30",
+            alreadyReceived: true,
+            retirementIncomeDeductionUsed: true,
+            withholdingTaxPaid: 75_196,
+            residentTaxMunicipalPaid: 88_300,
+            residentTaxPrefecturalPaid: 58_900,
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "ideco-lump-sum",
+            memberId: "member-self",
+            name: "iDeCo一時金",
+            type: "oneTime",
+            startYearMonth: "2030-04",
+            monthlyAmount: 8_000_000,
+            taxTreatment: "taxable",
+            sourceAssetKey: "ideco",
+            idecoLumpSumContributionYears: 20,
+            idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].grossAssetWithdrawalAmount).toBe(8_000_000);
+    expect(result.monthly[0].idecoWithholdingTaxTotal).toBe(780_323);
+    expect(result.monthly[0].incomeTotal).toBe(7_219_677);
+  });
+
   it("取り崩し順はiDeCoがNISAより先", () => {
     const result = simulateScenario(
       simpleScenario({

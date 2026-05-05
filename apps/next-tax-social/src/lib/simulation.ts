@@ -10,6 +10,7 @@ import {
   getIncomeEventAmountForMonth,
   isIdecoMonexPensionEvent,
 } from "@/lib/incomeEvents";
+import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows } from "@/lib/taxEngine";
 import type {
   AnnualResult,
@@ -91,9 +92,10 @@ function getRetirementIncomeDeduction(years: number) {
   return 8_000_000 + (roundedYears - 20) * 700_000;
 }
 
-function calculateIdecoLumpSumEstimatedTax(gross: number, contributionYears: number) {
+function calculateIdecoLumpSumEstimatedTax(gross: number, contributionYears: number, adjustedDeduction?: number) {
   if (gross <= 0) return 0;
-  const retirementIncome = Math.max(0, Math.round((gross - getRetirementIncomeDeduction(contributionYears)) / 2));
+  const deduction = adjustedDeduction ?? getRetirementIncomeDeduction(contributionYears);
+  const retirementIncome = Math.max(0, Math.round((gross - deduction) / 2));
   if (retirementIncome <= 0) return 0;
   let incomeTax = 0;
   if (retirementIncome <= 1_949_000) incomeTax = retirementIncome * 0.05;
@@ -104,6 +106,18 @@ function calculateIdecoLumpSumEstimatedTax(gross: number, contributionYears: num
   else if (retirementIncome <= 39_999_000) incomeTax = retirementIncome * 0.4 - 2_796_000;
   else incomeTax = retirementIncome * 0.45 - 4_796_000;
   return Math.max(0, Math.round(incomeTax * 1.021 + retirementIncome * 0.1));
+}
+
+function getRetirementAdjustmentByIncomeEventId(scenario: ScenarioData) {
+  const map = new Map<string, RetirementOverlapAdjustment>();
+  for (const adjustment of getRetirementOverlapAdjustments(scenario)) {
+    if (adjustment.currentSource.kind !== "incomeEvent") continue;
+    const current = map.get(adjustment.currentSource.eventId);
+    if (!current || adjustment.adjustedDeduction < current.adjustedDeduction) {
+      map.set(adjustment.currentSource.eventId, adjustment);
+    }
+  }
+  return map;
 }
 
 export function getSimulationTargetAssets(scenario: ScenarioData) {
@@ -865,6 +879,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
   const withdrawOrder = getScenarioWithdrawOrder(scenario);
   const idecoWithholdingByIncomeYear = new Map<number, number>();
   const deferredCapitalGainsTaxByIncomeYear = new Map<number, number>();
+  const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
   const nisaContributionUsedByYear = new Map<number, number>();
   const nisaProtectedYears = getNisaContributionPlannedYears(scenario, start, end);
   const nisaWithdrawalYears = new Set<number>();
@@ -987,11 +1002,16 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
           );
           netCashAdded = Math.max(0, netCashAdded - withholdingTax);
         } else if (event.sourceAssetKey === "ideco" && event.type === "oneTime") {
+          const retirementAdjustment = retirementAdjustmentByIncomeEventId.get(event.id);
           const withholdingTax = event.taxTreatment === "nonTaxable"
             ? 0
             : event.idecoLumpSumTaxMode === "noDeclaration"
               ? withdrawal.grossWithdrawal * IDECO_LUMP_SUM_NO_DECLARATION_WITHHOLDING_RATE
-              : calculateIdecoLumpSumEstimatedTax(withdrawal.grossWithdrawal, event.idecoLumpSumContributionYears ?? 20);
+              : calculateIdecoLumpSumEstimatedTax(
+                  withdrawal.grossWithdrawal,
+                  event.idecoLumpSumContributionYears ?? 20,
+                  retirementAdjustment?.adjustedDeduction,
+                );
           idecoWithholdingTaxTotal += withholdingTax;
           idecoWithholdingByIncomeYear.set(
             cursor.year(),
