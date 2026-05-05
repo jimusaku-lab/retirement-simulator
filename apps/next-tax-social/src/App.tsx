@@ -2697,6 +2697,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
+            <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
@@ -2730,6 +2731,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               <p className="text-sm text-muted-foreground">自動計算と補正を合算した、シミュレーションに使う最終値です。</p>
             </div>
             <TaxRowsSummary rows={effectiveRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="反映後の年度データはまだありません。" />
+            <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
@@ -2923,6 +2925,81 @@ function TaxRowsSummary({
           })}
         </tbody>
       </Table>
+    </div>
+  );
+}
+
+function TaxCashTimingSummary({
+  details,
+  annualRows,
+}: {
+  details: AutoTaxYearDetail[];
+  annualRows: AnnualResult[];
+}) {
+  if (details.length === 0) return null;
+
+  const rows = details.map((detail) => {
+    const regularIncomeTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual, 0);
+    const regularResidentTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual, 0);
+    const retirementIncomeTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.retirementIncomeTaxAnnual, 0);
+    const retirementResidentTaxTotal = detail.memberDetails.reduce((sum, member) => sum + member.retirementResidentTaxAnnual, 0);
+    const nationalPensionAnnualTotal = detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionAnnual, 0);
+    const nextYearPaymentBasis =
+      regularIncomeTaxTotal +
+      regularResidentTaxTotal +
+      retirementIncomeTaxTotal +
+      retirementResidentTaxTotal +
+      detail.nationalHealthInsuranceAnnual +
+      detail.nursingCareAnnual +
+      detail.otherPublicCostAnnual;
+    const paymentYear = detail.fiscalYear + 1;
+    const paymentRow = annualRows.find((row) => row.year === paymentYear);
+    return {
+      incomeYear: detail.fiscalYear,
+      paymentYear,
+      nextYearPaymentBasis,
+      nationalPensionAnnualTotal,
+      simulatedPaymentTotal: paymentRow?.taxInsuranceTotal ?? 0,
+    };
+  });
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-white px-4 py-3">
+      <div>
+        <h3 className="font-medium">税・社会保険の発生年と支払年</h3>
+        <p className="text-sm text-muted-foreground">
+          自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。国民年金は対象年の月額支払として扱います。
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <thead>
+            <Tr>
+              <Th>所得年</Th>
+              <Th>翌年支払対象</Th>
+              <Th>国民年金(当年)</Th>
+              <Th>主な支払年</Th>
+              <Th>シミュレーション上の支払額</Th>
+              <Th>読み方</Th>
+            </Tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <Tr key={`tax-cash-basis-${row.incomeYear}`}>
+                <Td>{row.incomeYear}</Td>
+                <Td>{yen(row.nextYearPaymentBasis)}</Td>
+                <Td>{yen(row.nationalPensionAnnualTotal)}</Td>
+                <Td>{row.paymentYear}</Td>
+                <Td>{yen(row.simulatedPaymentTotal)}</Td>
+                <Td className="min-w-[28rem] text-sm text-muted-foreground">
+                  {row.incomeYear}年の所得に基づく税・社会保険は、主に{row.paymentYear}年の現金支出として反映します。
+                  iDeCo源泉徴収と譲渡益税は、結果タブでは別列で確認します。
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
     </div>
   );
 }
