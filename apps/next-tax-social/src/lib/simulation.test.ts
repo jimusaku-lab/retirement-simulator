@@ -3595,74 +3595,85 @@ describe("simulation", () => {
     expect(result.monthly[0].withdrawalAmount).toBe(110_000);
   });
 
-  it("自動計算の住民税と国保は前年所得を翌年の現金支出として反映する", () => {
-    const result = simulateScenario(
-      simpleScenario({
-        userProfile: {
+  it("自動計算の住民税と公的保険料は前年所得を翌年の現金支出として反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1950-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-12",
+        targetBalanceAge: 77,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
           birthDate: "1950-04-01",
-          simulationStartYearMonth: "2026-04",
-          simulationEndMode: "yearMonth",
-          simulationEndYearMonth: "2027-12",
-          targetBalanceAge: 77,
-          cashReserve: 0,
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
         },
-        householdProfile: {
-          municipality: "東京都大田区",
-          headMemberId: "member-self",
-          taxCalculationMode: "auto",
+      ],
+      monthlyExpenses: {
+        food: 0,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 0,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 0,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
         },
-        householdMembers: [
-          {
-            id: "member-self",
-            name: "本人",
-            relationship: "self",
-            birthDate: "1950-04-01",
-            isResident: true,
-            isNationalHealthInsuranceMember: true,
-            isLateElderlyMedicalMember: false,
-            isLongTermCareInsured: false,
-            isDependent: false,
-          },
-        ],
-        monthlyExpenses: {
-          food: 0,
-          dailyGoods: 0,
-          hobbyEntertainment: 0,
-          social: 0,
-          transportation: 0,
-          clothingBeauty: 0,
-          healthMedical: 0,
-          car: 0,
-          educationCulture: 0,
-          specialExpense: 0,
-          cashCard: 0,
-          utilities: 0,
-          communication: 0,
-          housing: 0,
-          taxSocialInsurance: 0,
-          insurance: 0,
-          other: 0,
-        },
-        incomeEvents: [
-          {
-            id: "pension",
-            memberId: "member-self",
-            name: "公的年金",
-            type: "pension",
-            startYearMonth: "2026-04",
-            endYearMonth: "2026-12",
-            monthlyAmount: 300_000,
-            taxTreatment: "taxable",
-          },
-        ],
-      }),
-    );
+      ],
+    });
+    const autoRows = calculateAutoTaxRows(scenario);
+    const result = simulateScenario(scenario);
 
     const tax2026 = result.annual.find((row) => row.year === 2026)?.taxInsuranceTotal ?? 0;
     const tax2027 = result.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+    const taxMonth2027 = result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal ?? 0;
+    const incomeYear2026 = autoRows.find((row) => row.fiscalYear === 2026);
+    const expectedPriorYearCosts =
+      (incomeYear2026?.residentTaxAnnual ?? 0) +
+      (incomeYear2026?.incomeTaxAnnual ?? 0) +
+      (incomeYear2026?.nationalHealthInsuranceAnnual ?? 0) +
+      (incomeYear2026?.lateElderlyMedicalAnnual ?? 0) +
+      (incomeYear2026?.nursingCareAnnual ?? 0) +
+      (incomeYear2026?.otherPublicCostAnnual ?? 0);
 
     expect(tax2026).toBe(0);
-    expect(tax2027).toBeGreaterThan(0);
+    expect(expectedPriorYearCosts).toBeGreaterThan(0);
+    expect(taxMonth2027).toBe(Math.round(expectedPriorYearCosts / 12));
+    expect(tax2027).toBe(Math.round(expectedPriorYearCosts / 12) * 12);
   });
 
   it("iDeCo年金と公的年金の合算所得は翌年の税社保支払いに反映する", () => {
