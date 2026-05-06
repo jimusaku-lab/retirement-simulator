@@ -3359,6 +3359,117 @@ describe("simulation", () => {
     expect(tax2027).toBeGreaterThan(0);
   });
 
+  it("iDeCo年金と公的年金の合算所得は翌年の税社保支払いに反映する", () => {
+    const baseScenario = simpleScenario({
+      userProfile: {
+        birthDate: "1950-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-12",
+        targetBalanceAge: 77,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      initialAssets: {
+        cash: 5_000_000,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 3_000_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 3_000_000,
+      },
+      monthlyExpenses: {
+        food: 0,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 0,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 0,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      incomeEvents: [
+        {
+          id: "public-pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 200_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+    const withIdecoPension = simpleScenario({
+      ...baseScenario,
+      incomeEvents: [
+        ...baseScenario.incomeEvents,
+        {
+          id: "ideco-pension",
+          memberId: "member-self",
+          name: "iDeCo年金受取",
+          type: "pension",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 200_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+        },
+      ],
+    });
+
+    const publicOnlyDetail = calculateAutoTaxDetails(baseScenario).find((row) => row.fiscalYear === 2026);
+    const combinedDetail = calculateAutoTaxDetails(withIdecoPension).find((row) => row.fiscalYear === 2026);
+    const publicOnlyResult = simulateScenario(baseScenario);
+    const combinedResult = simulateScenario(withIdecoPension);
+    const publicOnlyTax2027 = publicOnlyResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+    const combinedTax2027 = combinedResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+
+    expect(publicOnlyDetail?.memberDetails[0].pensionGrossAnnual).toBe(1_800_000);
+    expect(combinedDetail?.memberDetails[0].pensionGrossAnnual).toBe(3_600_000);
+    expect(combinedDetail?.nationalHealthInsuranceAnnual ?? 0).toBeGreaterThan(
+      publicOnlyDetail?.nationalHealthInsuranceAnnual ?? 0,
+    );
+    expect(publicOnlyTax2027).toBeGreaterThan(0);
+    expect(combinedTax2027).toBeGreaterThan(publicOnlyTax2027);
+  });
+
   it("自動計算した公的保険料は翌年の社会保険料控除として所得税と住民税を下げる", () => {
     const scenario = simpleScenario({
       userProfile: {
