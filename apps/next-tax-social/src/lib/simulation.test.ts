@@ -3575,6 +3575,96 @@ describe("simulation", () => {
     expect(externalTax2027 - idecoTax2027).toBe(idecoWithholding2026);
   });
 
+  it("iDeCo年金の源泉徴収が所得税を上回る場合は翌年の現金収支で戻りとして扱う", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1950-04-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-12",
+        targetBalanceAge: 77,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      initialAssets: {
+        cash: 5_000_000,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 600_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 600_000,
+      },
+      monthlyExpenses: {
+        food: 0,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 0,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 0,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      incomeEvents: [
+        {
+          id: "small-ideco-pension",
+          memberId: "member-self",
+          name: "少額iDeCo年金",
+          type: "pension",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 50_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+        },
+      ],
+    });
+
+    const taxRow2026 = calculateAutoTaxRows(scenario).find((row) => row.fiscalYear === 2026);
+    const result = simulateScenario(scenario);
+    const withholding2026 = result.annual.find((row) => row.year === 2026)?.idecoWithholdingTaxTotal ?? 0;
+    const taxSettlement2027 = result.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+
+    expect(taxRow2026?.incomeTaxAnnual).toBe(0);
+    expect(withholding2026).toBeGreaterThan(0);
+    expect(taxSettlement2027).toBeLessThan(0);
+    expect(taxSettlement2027).toBeCloseTo(-withholding2026, -1);
+  });
+
   it("自動計算した公的保険料は翌年の社会保険料控除として所得税と住民税を下げる", () => {
     const scenario = simpleScenario({
       userProfile: {
