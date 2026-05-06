@@ -891,6 +891,55 @@ describe("simulation", () => {
     expect(rows[0].lateElderlyMedicalAnnual).toBeGreaterThan(0);
   });
 
+  it("75歳到達後は国保から後期高齢者医療へ自動で切り替える", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2030-01",
+        simulationEndYearMonth: "2031-12",
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1956-10-22",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2030-01",
+          endYearMonth: "2031-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const rows = calculateAutoTaxRows(scenario);
+    const before75 = rows.find((row) => row.fiscalYear === 2030);
+    const after75 = rows.find((row) => row.fiscalYear === 2031);
+
+    expect(before75?.nationalHealthInsuranceAnnual).toBeGreaterThan(0);
+    expect(before75?.lateElderlyMedicalAnnual).toBe(0);
+    expect(after75?.nationalHealthInsuranceAnnual).toBe(0);
+    expect(after75?.lateElderlyMedicalAnnual).toBeGreaterThan(0);
+  });
+
   it("公的年金等の申告不要制度の確認対象を判定する", () => {
     const scenario = simpleScenario({
       householdProfile: {
@@ -3615,11 +3664,11 @@ describe("simulation", () => {
   it("iDeCo年金と公的年金の合算所得は翌年の税社保支払いに反映する", () => {
     const baseScenario = simpleScenario({
       userProfile: {
-        birthDate: "1950-04-01",
+        birthDate: "1962-04-01",
         simulationStartYearMonth: "2026-04",
         simulationEndMode: "yearMonth",
         simulationEndYearMonth: "2027-12",
-        targetBalanceAge: 77,
+        targetBalanceAge: 65,
         cashReserve: 0,
       },
       householdProfile: {
@@ -3632,7 +3681,7 @@ describe("simulation", () => {
           id: "member-self",
           name: "本人",
           relationship: "self",
-          birthDate: "1950-04-01",
+          birthDate: "1962-04-01",
           isResident: true,
           isNationalHealthInsuranceMember: true,
           isLateElderlyMedicalMember: false,
@@ -3831,11 +3880,11 @@ describe("simulation", () => {
   it("iDeCo年金の源泉徴収が所得税を上回る場合は翌年の現金収支で戻りとして扱う", () => {
     const scenario = simpleScenario({
       userProfile: {
-        birthDate: "1950-04-01",
+        birthDate: "1961-04-01",
         simulationStartYearMonth: "2026-01",
         simulationEndMode: "yearMonth",
         simulationEndYearMonth: "2027-12",
-        targetBalanceAge: 77,
+        targetBalanceAge: 66,
         cashReserve: 0,
       },
       householdProfile: {
@@ -3848,7 +3897,7 @@ describe("simulation", () => {
           id: "member-self",
           name: "本人",
           relationship: "self",
-          birthDate: "1950-04-01",
+          birthDate: "1961-04-01",
           isResident: true,
           isNationalHealthInsuranceMember: false,
           isLateElderlyMedicalMember: false,

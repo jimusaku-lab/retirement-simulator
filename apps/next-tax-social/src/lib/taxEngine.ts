@@ -393,6 +393,12 @@ function countEligibleNationalPensionMonths(member: HouseholdMember, fiscalYear:
   return count;
 }
 
+function isLateElderlyMedicalMemberForFiscalYear(member: HouseholdMember, fiscalYear: number) {
+  if (!member.isResident) return false;
+  if (member.isLateElderlyMedicalMember) return true;
+  return getAgeAtDate(member.birthDate, dayjs(`${fiscalYear}-12-31`)) >= 75;
+}
+
 function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear: number) {
   if (!scenario.householdProfile.municipality.includes("大田区")) {
     return {
@@ -411,7 +417,7 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
   }
 
   const insuredMembers = scenario.householdMembers.filter(
-    (member) => member.isNationalHealthInsuranceMember && !member.isLateElderlyMedicalMember,
+    (member) => member.isNationalHealthInsuranceMember && !isLateElderlyMedicalMemberForFiscalYear(member, fiscalYear),
   );
   if (insuredMembers.length === 0) {
     return {
@@ -493,7 +499,9 @@ function emptyLateElderlyMedicalBreakdown() {
 }
 
 function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: number) {
-  const insuredMembers = scenario.householdMembers.filter((member) => member.isLateElderlyMedicalMember);
+  const insuredMembers = scenario.householdMembers.filter((member) =>
+    isLateElderlyMedicalMemberForFiscalYear(member, fiscalYear),
+  );
   if (insuredMembers.length === 0) {
     return {
       lateElderlyMedicalAnnual: 0,
