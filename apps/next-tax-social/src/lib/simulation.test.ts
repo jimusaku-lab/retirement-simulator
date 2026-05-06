@@ -848,7 +848,8 @@ describe("simulation", () => {
     });
 
     expect(under65[0].nursingCareAnnual).toBeGreaterThan(0);
-    expect(over65[0].nursingCareAnnual).toBe(0);
+    expect(over65[0].nursingCareAnnual).toBeGreaterThan(0);
+    expect(over65[0].nursingCareAnnual).toBeLessThan(under65[0].nursingCareAnnual);
   });
 
   it("後期高齢者医療は国保とは別に算出する", () => {
@@ -896,7 +897,7 @@ describe("simulation", () => {
       userProfile: {
         ...simpleScenario().userProfile,
         simulationStartYearMonth: "2030-01",
-        simulationEndYearMonth: "2031-12",
+        simulationEndYearMonth: "2032-12",
       },
       householdProfile: {
         municipality: "東京都大田区",
@@ -923,7 +924,7 @@ describe("simulation", () => {
           name: "公的年金",
           type: "pension",
           startYearMonth: "2030-01",
-          endYearMonth: "2031-12",
+          endYearMonth: "2032-12",
           monthlyAmount: 300_000,
           taxTreatment: "taxable",
         },
@@ -932,10 +933,13 @@ describe("simulation", () => {
 
     const rows = calculateAutoTaxRows(scenario);
     const before75 = rows.find((row) => row.fiscalYear === 2030);
-    const after75 = rows.find((row) => row.fiscalYear === 2031);
+    const turning75 = rows.find((row) => row.fiscalYear === 2031);
+    const after75 = rows.find((row) => row.fiscalYear === 2032);
 
     expect(before75?.nationalHealthInsuranceAnnual).toBeGreaterThan(0);
     expect(before75?.lateElderlyMedicalAnnual).toBe(0);
+    expect(turning75?.nationalHealthInsuranceAnnual).toBeGreaterThan(0);
+    expect(turning75?.lateElderlyMedicalAnnual).toBeGreaterThan(0);
     expect(after75?.nationalHealthInsuranceAnnual).toBe(0);
     expect(after75?.lateElderlyMedicalAnnual).toBeGreaterThan(0);
   });

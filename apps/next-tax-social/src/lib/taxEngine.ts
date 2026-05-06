@@ -386,17 +386,34 @@ function countEligibleNationalPensionMonths(member: HouseholdMember, fiscalYear:
   let count = 0;
   for (const month of getCalendarYearMonths(fiscalYear)) {
     const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
-    if (age >= 20 && age < 60 && member.isResident && !member.isLateElderlyMedicalMember) {
+    if (age >= 20 && age < 60 && member.isResident && !isLateElderlyMedicalMemberForMonth(member, month)) {
       count += 1;
     }
   }
   return count;
 }
 
-function isLateElderlyMedicalMemberForFiscalYear(member: HouseholdMember, fiscalYear: number) {
+function isLateElderlyMedicalMemberForMonth(member: HouseholdMember, yearMonth: YearMonth) {
   if (!member.isResident) return false;
   if (member.isLateElderlyMedicalMember) return true;
-  return getAgeAtDate(member.birthDate, dayjs(`${fiscalYear}-12-31`)) >= 75;
+  return getAgeAtDate(member.birthDate, ym(yearMonth).endOf("month")) >= 75;
+}
+
+function countLateElderlyMedicalMonths(member: HouseholdMember, fiscalYear: number) {
+  return getCalendarYearMonths(fiscalYear).filter((month) => isLateElderlyMedicalMemberForMonth(member, month)).length;
+}
+
+function countNationalHealthInsuranceMonths(member: HouseholdMember, fiscalYear: number) {
+  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
+  return getCalendarYearMonths(fiscalYear).filter((month) => !isLateElderlyMedicalMemberForMonth(member, month)).length;
+}
+
+function countNursingCareInsuranceMonths(member: HouseholdMember, fiscalYear: number) {
+  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
+  return getCalendarYearMonths(fiscalYear).filter((month) => {
+    const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
+    return age >= 40 && age <= 64 && !isLateElderlyMedicalMemberForMonth(member, month);
+  }).length;
 }
 
 function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear: number) {
@@ -416,9 +433,13 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
     };
   }
 
-  const insuredMembers = scenario.householdMembers.filter(
-    (member) => member.isNationalHealthInsuranceMember && !isLateElderlyMedicalMemberForFiscalYear(member, fiscalYear),
-  );
+  const insuredMembers = scenario.householdMembers
+    .map((member) => ({
+      member,
+      eligibleMonths: countNationalHealthInsuranceMonths(member, fiscalYear),
+      careEligibleMonths: countNursingCareInsuranceMonths(member, fiscalYear),
+    }))
+    .filter((item) => item.eligibleMonths > 0);
   if (insuredMembers.length === 0) {
     return {
       nationalHealthInsuranceAnnual: 0,
@@ -435,36 +456,42 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
     };
   }
 
-  const memberIncomes = insuredMembers.map((member) => {
-    const breakdown = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+  const memberIncomes = insuredMembers.map((item) => {
+    const breakdown = getMemberIncomeBreakdown(scenario, item.member, fiscalYear);
     const baseIncome = Math.max(0, breakdown.totalIncome - OTA_NHI.baseIncomeDeduction);
     const age = breakdown.ageAtYearEnd;
+    const eligibleRatio = item.eligibleMonths / 12;
+    const careEligibleRatio = item.careEligibleMonths / 12;
     return {
-      member,
+      member: item.member,
       age,
-      baseIncome,
+      baseIncome: Math.round(baseIncome * eligibleRatio),
+      careBaseIncome: Math.round(baseIncome * careEligibleRatio),
+      eligibleRatio,
+      careEligibleRatio,
     };
   });
 
   const totalBaseIncome = memberIncomes.reduce((sum, item) => sum + item.baseIncome, 0);
-  const childCount = memberIncomes.filter((item) => item.age <= 18).length;
-  const careMembers = memberIncomes.filter((item) => item.age >= 40 && item.age <= 64);
-  const careBaseIncome = careMembers.reduce((sum, item) => sum + item.baseIncome, 0);
+  const insuredMemberCount = memberIncomes.reduce((sum, item) => sum + item.eligibleRatio, 0);
+  const childCount = memberIncomes.reduce((sum, item) => sum + (item.age <= 18 ? item.eligibleRatio : 0), 0);
+  const careMemberCount = memberIncomes.reduce((sum, item) => sum + item.careEligibleRatio, 0);
+  const careBaseIncome = memberIncomes.reduce((sum, item) => sum + item.careBaseIncome, 0);
 
   const medical = Math.min(
-    Math.round(totalBaseIncome * OTA_NHI.medicalIncomeRate) + insuredMembers.length * OTA_NHI.medicalPerCapita,
+    Math.round(totalBaseIncome * OTA_NHI.medicalIncomeRate) + Math.round(insuredMemberCount * OTA_NHI.medicalPerCapita),
     OTA_NHI.medicalCap,
   );
   const support = Math.min(
-    Math.round(totalBaseIncome * OTA_NHI.supportIncomeRate) + insuredMembers.length * OTA_NHI.supportPerCapita,
+    Math.round(totalBaseIncome * OTA_NHI.supportIncomeRate) + Math.round(insuredMemberCount * OTA_NHI.supportPerCapita),
     OTA_NHI.supportCap,
   );
   const childSupport = Math.min(
-    Math.round(totalBaseIncome * OTA_NHI.childSupportIncomeRate) + childCount * OTA_NHI.childSupportPerCapita,
+    Math.round(totalBaseIncome * OTA_NHI.childSupportIncomeRate) + Math.round(childCount * OTA_NHI.childSupportPerCapita),
     OTA_NHI.childSupportCap,
   );
   const care = Math.min(
-    Math.round(careBaseIncome * OTA_NHI.careIncomeRate) + careMembers.length * OTA_NHI.carePerCapita,
+    Math.round(careBaseIncome * OTA_NHI.careIncomeRate) + Math.round(careMemberCount * OTA_NHI.carePerCapita),
     OTA_NHI.careCap,
   );
 
@@ -472,7 +499,7 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
     nationalHealthInsuranceAnnual: medical + support + childSupport,
     nursingCareAnnual: care,
     nationalHealthInsuranceBreakdown: {
-      insuredMemberCount: insuredMembers.length,
+      insuredMemberCount,
       totalBaseIncome,
       medical,
       support,
@@ -499,9 +526,12 @@ function emptyLateElderlyMedicalBreakdown() {
 }
 
 function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: number) {
-  const insuredMembers = scenario.householdMembers.filter((member) =>
-    isLateElderlyMedicalMemberForFiscalYear(member, fiscalYear),
-  );
+  const insuredMembers = scenario.householdMembers
+    .map((member) => ({
+      member,
+      eligibleMonths: countLateElderlyMedicalMonths(member, fiscalYear),
+    }))
+    .filter((item) => item.eligibleMonths > 0);
   if (insuredMembers.length === 0) {
     return {
       lateElderlyMedicalAnnual: 0,
@@ -509,32 +539,35 @@ function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: nu
     };
   }
 
-  const memberIncomes = insuredMembers.map((member) => {
-    const breakdown = getMemberIncomeBreakdown(scenario, member, fiscalYear);
+  const memberIncomes = insuredMembers.map((item) => {
+    const breakdown = getMemberIncomeBreakdown(scenario, item.member, fiscalYear);
     const baseIncome = Math.max(0, breakdown.totalIncome - TOKYO_LATE_ELDERLY_MEDICAL.baseIncomeDeduction);
+    const eligibleRatio = item.eligibleMonths / 12;
     return {
-      member,
+      member: item.member,
       age: breakdown.ageAtYearEnd,
-      baseIncome,
+      baseIncome: Math.round(baseIncome * eligibleRatio),
+      eligibleRatio,
     };
   });
 
   const totalBaseIncome = memberIncomes.reduce((sum, item) => sum + item.baseIncome, 0);
+  const insuredMemberCount = memberIncomes.reduce((sum, item) => sum + item.eligibleRatio, 0);
   const medical = Math.min(
     Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.medicalIncomeRate) +
-      insuredMembers.length * TOKYO_LATE_ELDERLY_MEDICAL.medicalPerCapita,
+      Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.medicalPerCapita),
     TOKYO_LATE_ELDERLY_MEDICAL.medicalCap,
   );
   const childSupport = Math.min(
     Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.childSupportIncomeRate) +
-      insuredMembers.length * TOKYO_LATE_ELDERLY_MEDICAL.childSupportPerCapita,
+      Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.childSupportPerCapita),
     TOKYO_LATE_ELDERLY_MEDICAL.childSupportCap,
   );
 
   return {
     lateElderlyMedicalAnnual: medical + childSupport,
     lateElderlyMedicalBreakdown: {
-      insuredMemberCount: insuredMembers.length,
+      insuredMemberCount,
       totalBaseIncome,
       medical,
       childSupport,
