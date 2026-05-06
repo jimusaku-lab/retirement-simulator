@@ -4054,6 +4054,81 @@ describe("simulation", () => {
     );
   });
 
+  it("75歳切替をまたいだ公的保険料も翌年の社会保険料控除に反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1956-10-22",
+        simulationStartYearMonth: "2030-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2032-12",
+        targetBalanceAge: 77,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1956-10-22",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2030-01",
+          endYearMonth: "2032-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+        {
+          id: "salary",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2031-01",
+          endYearMonth: "2032-12",
+          monthlyAmount: 800_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const details = calculateAutoTaxDetails(scenario);
+    const detail2030 = details.find((row) => row.fiscalYear === 2030);
+    const detail2031 = details.find((row) => row.fiscalYear === 2031);
+    const detail2032 = details.find((row) => row.fiscalYear === 2032);
+    const insurance2030 =
+      (detail2030?.nationalHealthInsuranceAnnual ?? 0) +
+      (detail2030?.lateElderlyMedicalAnnual ?? 0) +
+      (detail2030?.nursingCareAnnual ?? 0);
+    const insurance2031 =
+      (detail2031?.nationalHealthInsuranceAnnual ?? 0) +
+      (detail2031?.lateElderlyMedicalAnnual ?? 0) +
+      (detail2031?.nursingCareAnnual ?? 0);
+
+    expect(detail2030?.nationalHealthInsuranceAnnual).toBeGreaterThan(0);
+    expect(detail2030?.lateElderlyMedicalAnnual).toBe(0);
+    expect(detail2031?.nationalHealthInsuranceAnnual).toBeGreaterThan(0);
+    expect(detail2031?.lateElderlyMedicalAnnual).toBeGreaterThan(0);
+    expect(detail2032?.nationalHealthInsuranceAnnual).toBe(0);
+    expect(detail2032?.lateElderlyMedicalAnnual).toBeGreaterThan(0);
+    expect(detail2031?.memberDetails[0].autoSocialInsuranceDeductionAnnual).toBe(insurance2030);
+    expect(detail2032?.memberDetails[0].autoSocialInsuranceDeductionAnnual).toBe(insurance2031);
+  });
+
   it("代表的サンプルシナリオで比較に必要な結果が出る", () => {
     const results = sampleState.scenarios.map(simulateScenario);
 
