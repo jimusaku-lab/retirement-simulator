@@ -2488,6 +2488,107 @@ describe("simulation", () => {
     expect(result.monthly[0].incomeTotal).toBe(7_219_677);
   });
 
+  it("iDeCo一時金の申告なしは受取月に20.42%源泉し、翌年に最終税額との差額を精算する", () => {
+    const base = simpleScenario({
+      userProfile: {
+        birthDate: "1961-01-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-12",
+        targetBalanceAge: 66,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      initialAssets: {
+        cash: 0,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 12_000_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 12_000_000,
+      },
+      monthlyExpenses: {
+        food: 0,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 0,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 0,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2026-04",
+          monthlyAmount: 12_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 25,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+    const withoutDeclaration = simpleScenario({
+      ...base,
+      incomeEvents: [
+        {
+          ...base.incomeEvents[0],
+          idecoLumpSumTaxMode: "noDeclaration",
+        },
+      ],
+    });
+
+    const declarationResult = simulateScenario(base);
+    const noDeclarationResult = simulateScenario(withoutDeclaration);
+    const finalTax = calculateAutoTaxRows(base).find((row) => row.fiscalYear === 2026);
+    const expectedFinalTax = (finalTax?.incomeTaxAnnual ?? 0) + (finalTax?.residentTaxAnnual ?? 0);
+    const expectedPriorYearPublicCosts =
+      expectedFinalTax +
+      (finalTax?.nationalHealthInsuranceAnnual ?? 0) +
+      (finalTax?.lateElderlyMedicalAnnual ?? 0) +
+      (finalTax?.nursingCareAnnual ?? 0) +
+      (finalTax?.otherPublicCostAnnual ?? 0);
+    const declarationWithholding = declarationResult.monthly.find((row) => row.yearMonth === "2026-04")?.idecoWithholdingTaxTotal ?? 0;
+    const noDeclarationWithholding = noDeclarationResult.monthly.find((row) => row.yearMonth === "2026-04")?.idecoWithholdingTaxTotal ?? 0;
+    const declarationSettlement = declarationResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+    const noDeclarationSettlement = noDeclarationResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
+    const expectedDeclarationSettlement = Math.round((expectedPriorYearPublicCosts - declarationWithholding) / 12) * 12;
+    const expectedNoDeclarationSettlement = Math.round((expectedPriorYearPublicCosts - noDeclarationWithholding) / 12) * 12;
+
+    expect(expectedFinalTax).toBeGreaterThan(0);
+    expect(Math.abs(declarationWithholding - expectedFinalTax)).toBeLessThanOrEqual(1);
+    expect(declarationSettlement).toBe(expectedDeclarationSettlement);
+    expect(noDeclarationWithholding).toBe(Math.round(12_000_000 * 0.2042));
+    expect(noDeclarationWithholding).toBeGreaterThan(expectedFinalTax);
+    expect(noDeclarationSettlement).toBe(expectedNoDeclarationSettlement);
+  });
+
   it("取り崩し順はiDeCoがNISAより先", () => {
     const result = simulateScenario(
       simpleScenario({
