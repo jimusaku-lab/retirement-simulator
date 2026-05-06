@@ -1300,6 +1300,114 @@ describe("simulation", () => {
     expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(0);
   });
 
+  it("iDeCo一時金とiDeCo年金が同じ年にあっても退職所得と年金所得を分離する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1961-01-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 65,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1961-01-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      initialAssets: {
+        cash: 0,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 9_000_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 9_000_000,
+      },
+      monthlyExpenses: {
+        food: 0,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 0,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 0,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2026-04",
+          monthlyAmount: 8_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 10,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+        {
+          id: "ideco-pension",
+          memberId: "member-self",
+          name: "iDeCo年金",
+          type: "pension",
+          startYearMonth: "2026-05",
+          endYearMonth: "2026-12",
+          monthlyAmount: 100_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+        },
+      ],
+    });
+
+    const detail = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2026);
+    const taxRow = calculateAutoTaxRows(scenario).find((row) => row.fiscalYear === 2026);
+    const result = simulateScenario(scenario);
+    const lumpSumMonth = result.monthly.find((row) => row.yearMonth === "2026-04");
+    const pensionMonth = result.monthly.find((row) => row.yearMonth === "2026-05");
+
+    expect(detail?.memberDetails[0].retirementGrossAnnual).toBe(8_000_000);
+    expect(detail?.memberDetails[0].retirementIncomeDeductionAnnual).toBe(4_000_000);
+    expect(detail?.memberDetails[0].retirementIncomeAnnual).toBe(2_000_000);
+    expect(detail?.memberDetails[0].pensionGrossAnnual).toBe(800_000);
+    expect(detail?.memberDetails[0].taxableIncomeBeforeBasicDeductionAnnual).toBe(0);
+    expect(taxRow?.incomeTaxAnnual).toBe(detail?.memberDetails[0].retirementIncomeTaxAnnual);
+    expect(lumpSumMonth?.sourceAssetIncomeBreakdown.ideco).toBe(8_000_000);
+    expect(pensionMonth?.sourceAssetIncomeBreakdown.ideco).toBe(100_000);
+    expect(lumpSumMonth?.idecoWithholdingTaxTotal).toBeGreaterThan(pensionMonth?.idecoWithholdingTaxTotal ?? 0);
+  });
+
   it("iDeCo一時金は過去退職金との重複調整後の退職所得控除で計算する", () => {
     const scenario = simpleScenario({
       userProfile: {
