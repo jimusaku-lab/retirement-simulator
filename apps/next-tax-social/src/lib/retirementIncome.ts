@@ -257,6 +257,7 @@ export function getRetirementOverlapAdjustments(scenario: ScenarioData): Retirem
       const { requiredGapYears } = getRuleDetails(current.type, prior.type);
       const needsAdjustment = sameYear || gapMonths < requiredGapYears * 12;
       if (!needsAdjustment) continue;
+      if (!current.retirementIncomeDeductionUsed || !prior.retirementIncomeDeductionUsed) continue;
 
       const dateBasedOverlapYears = getDateRangeOverlapYears(current, prior);
       const estimatedOverlapYears = dateBasedOverlapYears ?? Math.min(current.serviceYears, prior.serviceYears);

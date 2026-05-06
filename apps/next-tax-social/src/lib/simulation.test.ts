@@ -1594,6 +1594,65 @@ describe("simulation", () => {
     expect(taxRow?.residentTaxAnnual).toBe(detail?.memberDetails[0].retirementResidentTaxAnnual);
   });
 
+  it("過去退職金が退職所得控除を使っていない記録ならiDeCo一時金の控除を減らさない", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-01-01",
+        simulationStartYearMonth: "2030-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2030-12",
+        targetBalanceAge: 65,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2025-09",
+          grossAmount: 17_246_247,
+          serviceYears: 29,
+          serviceStartDate: "1997-05-26",
+          serviceEndDate: "2025-09-30",
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: false,
+          withholdingTaxPaid: 75_196,
+          residentTaxMunicipalPaid: 88_300,
+          residentTaxPrefecturalPaid: 58_900,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2030-04",
+          endYearMonth: "2030-04",
+          monthlyAmount: 8_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 20,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const detail = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2030);
+    const adjustments = getRetirementOverlapAdjustments(scenario);
+
+    expect(adjustments).toHaveLength(0);
+    expect(detail?.memberDetails[0].retirementGrossAnnual).toBe(8_000_000);
+    expect(detail?.memberDetails[0].retirementIncomeDeductionAnnual).toBe(8_000_000);
+    expect(detail?.memberDetails[0].retirementIncomeAnnual).toBe(0);
+  });
+
   it("過去退職金との重複調整はiDeCo一時金だけに効き、iDeCo年金の雑所得計算には混ざらない", () => {
     const scenario = simpleScenario({
       userProfile: {
