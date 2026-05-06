@@ -1184,6 +1184,65 @@ describe("simulation", () => {
     }
   });
 
+  it("年金受取が65歳未満から65歳以上へまたがる場合は年度ごとに控除表を切り替える", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-10-22",
+        simulationStartYearMonth: "2030-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2032-12",
+        targetBalanceAge: 66,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-10-22",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "public-pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2030-01",
+          endYearMonth: "2032-12",
+          monthlyAmount: 200_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const details = calculateAutoTaxDetails(scenario);
+    const before65 = details.find((row) => row.fiscalYear === 2030)?.memberDetails[0];
+    const yearTurning65 = details.find((row) => row.fiscalYear === 2031)?.memberDetails[0];
+    const after65 = details.find((row) => row.fiscalYear === 2032)?.memberDetails[0];
+
+    expect(before65?.ageAtYearEnd).toBe(64);
+    expect(before65?.pensionGrossAnnual).toBe(2_400_000);
+    expect(before65?.pensionDeductionAnnual).toBe(875_000);
+    expect(before65?.taxableIncomeBeforeBasicDeductionAnnual).toBe(1_525_000);
+    expect(yearTurning65?.ageAtYearEnd).toBe(65);
+    expect(yearTurning65?.pensionGrossAnnual).toBe(2_400_000);
+    expect(yearTurning65?.pensionDeductionAnnual).toBe(1_100_000);
+    expect(yearTurning65?.taxableIncomeBeforeBasicDeductionAnnual).toBe(1_300_000);
+    expect(after65?.ageAtYearEnd).toBe(66);
+    expect(after65?.pensionDeductionAnnual).toBe(1_100_000);
+  });
+
   it("iDeCo年金は公的年金と合算した雑所得として扱う", () => {
     const scenario = simpleScenario({
       userProfile: {
