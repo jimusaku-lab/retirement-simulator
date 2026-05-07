@@ -231,6 +231,10 @@ describe("simulation", () => {
     expect(withDetail?.memberDetails[0].residentTaxBaseAnnual).toBeLessThan(withoutDetail?.memberDetails[0].residentTaxBaseAnnual ?? 0);
     expect(withDetail?.memberDetails[0].incomeTaxAnnual).toBeLessThan(withoutDetail?.memberDetails[0].incomeTaxAnnual ?? 0);
     expect(withDetail?.memberDetails[0].residentTaxAnnual).toBeLessThan(withoutDetail?.memberDetails[0].residentTaxAnnual ?? 0);
+    expect(withDetail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(
+      withoutDetail?.nationalHealthInsuranceBreakdown.totalBaseIncome,
+    );
+    expect(withDetail?.nationalHealthInsuranceAnnual).toBe(withoutDetail?.nationalHealthInsuranceAnnual);
   });
 
   it("税・社会保険は未入力年度で直近の前年度を引き継ぐ", () => {
