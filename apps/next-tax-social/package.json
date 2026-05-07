@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "serve:local": "bash ../../scripts/ensure-local-server.sh next-tax-social",
+    "serve:local": "PORT=5175 bash ../../scripts/ensure-local-server.sh next-tax-social",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest --run",
