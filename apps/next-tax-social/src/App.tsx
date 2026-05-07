@@ -3228,6 +3228,8 @@ function TaxCalculationDetails({
                         <Th>基礎控除</Th>
                         <Th>扶養控除(所得税)</Th>
                         <Th>扶養控除(住民税)</Th>
+                        <Th>うち配偶者特別控除(所得税)</Th>
+                        <Th>うち配偶者特別控除(住民税)</Th>
                         <Th>所得税課税ベース</Th>
                         <Th>住民税課税ベース</Th>
                       </Tr>
@@ -3257,6 +3259,8 @@ function TaxCalculationDetails({
                           <Td>{yen(member.basicDeductionAnnual)}</Td>
                           <Td>{yen(member.dependentDeductionsIncomeTaxAnnual)}</Td>
                           <Td>{yen(member.dependentDeductionsResidentTaxAnnual)}</Td>
+                          <Td>{yen(member.spouseSpecialDeductionIncomeTaxAnnual)}</Td>
+                          <Td>{yen(member.spouseSpecialDeductionResidentTaxAnnual)}</Td>
                           <Td>{yen(member.incomeTaxBaseAnnual)}</Td>
                           <Td>{yen(member.residentTaxBaseAnnual)}</Td>
                         </Tr>

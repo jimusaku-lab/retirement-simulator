@@ -22,6 +22,29 @@ const DEPENDENT_DEDUCTION_RESIDENT_TAX = 330_000;
 const DEPENDENT_TOTAL_INCOME_LIMIT = 580_000;
 const SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT = 10_000_000;
 
+const SPOUSE_SPECIAL_DEDUCTION_INCOME_TAX_TABLE = [
+  { maxSpouseIncome: 950_000, amounts: [380_000, 260_000, 130_000] },
+  { maxSpouseIncome: 1_000_000, amounts: [360_000, 240_000, 120_000] },
+  { maxSpouseIncome: 1_050_000, amounts: [310_000, 210_000, 110_000] },
+  { maxSpouseIncome: 1_100_000, amounts: [260_000, 180_000, 90_000] },
+  { maxSpouseIncome: 1_150_000, amounts: [210_000, 140_000, 70_000] },
+  { maxSpouseIncome: 1_200_000, amounts: [160_000, 110_000, 60_000] },
+  { maxSpouseIncome: 1_250_000, amounts: [110_000, 80_000, 40_000] },
+  { maxSpouseIncome: 1_300_000, amounts: [60_000, 40_000, 20_000] },
+  { maxSpouseIncome: 1_330_000, amounts: [30_000, 20_000, 10_000] },
+];
+
+const SPOUSE_SPECIAL_DEDUCTION_RESIDENT_TAX_TABLE = [
+  { maxSpouseIncome: 1_000_000, amounts: [330_000, 220_000, 110_000] },
+  { maxSpouseIncome: 1_050_000, amounts: [310_000, 210_000, 110_000] },
+  { maxSpouseIncome: 1_100_000, amounts: [260_000, 180_000, 90_000] },
+  { maxSpouseIncome: 1_150_000, amounts: [210_000, 140_000, 70_000] },
+  { maxSpouseIncome: 1_200_000, amounts: [160_000, 110_000, 60_000] },
+  { maxSpouseIncome: 1_250_000, amounts: [110_000, 80_000, 40_000] },
+  { maxSpouseIncome: 1_300_000, amounts: [60_000, 40_000, 20_000] },
+  { maxSpouseIncome: 1_330_000, amounts: [30_000, 20_000, 10_000] },
+];
+
 const NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR: Record<number, number> = {
   2026: 17_920,
 };
@@ -75,6 +98,8 @@ export type AutoTaxMemberDetail = {
   basicDeductionAnnual: number;
   dependentDeductionsIncomeTaxAnnual: number;
   dependentDeductionsResidentTaxAnnual: number;
+  spouseSpecialDeductionIncomeTaxAnnual: number;
+  spouseSpecialDeductionResidentTaxAnnual: number;
   incomeTaxBaseAnnual: number;
   residentTaxBaseAnnual: number;
   incomeTaxAnnual: number;
@@ -310,6 +335,25 @@ function isDeductionEligibleDependent(
   return income.totalIncome <= DEPENDENT_TOTAL_INCOME_LIMIT;
 }
 
+function getTaxpayerIncomeBand(taxpayerTotalIncome: number) {
+  if (taxpayerTotalIncome <= 9_000_000) return 0;
+  if (taxpayerTotalIncome <= 9_500_000) return 1;
+  if (taxpayerTotalIncome <= SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return 2;
+  return -1;
+}
+
+function getSpouseSpecialDeductionFromTable(
+  spouseTotalIncome: number,
+  taxpayerTotalIncome: number,
+  table: Array<{ maxSpouseIncome: number; amounts: number[] }>,
+) {
+  if (spouseTotalIncome <= DEPENDENT_TOTAL_INCOME_LIMIT) return 0;
+  const taxpayerBand = getTaxpayerIncomeBand(taxpayerTotalIncome);
+  if (taxpayerBand < 0) return 0;
+  const row = table.find((item) => spouseTotalIncome <= item.maxSpouseIncome);
+  return row ? row.amounts[taxpayerBand] : 0;
+}
+
 function getDependentDeductions(
   scenario: ScenarioData,
   memberId: string,
@@ -339,10 +383,35 @@ function getDependentDeductions(
     if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
     return sum + DEPENDENT_DEDUCTION_RESIDENT_TAX;
   }, 0);
+  const spouseSpecial = scenario.householdMembers.reduce(
+    (sum, member) => {
+      if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
+      return {
+        incomeTax:
+          sum.incomeTax +
+          getSpouseSpecialDeductionFromTable(
+            income.totalIncome,
+            taxpayerTotalIncome,
+            SPOUSE_SPECIAL_DEDUCTION_INCOME_TAX_TABLE,
+          ),
+        residentTax:
+          sum.residentTax +
+          getSpouseSpecialDeductionFromTable(
+            income.totalIncome,
+            taxpayerTotalIncome,
+            SPOUSE_SPECIAL_DEDUCTION_RESIDENT_TAX_TABLE,
+          ),
+      };
+    },
+    { incomeTax: 0, residentTax: 0 },
+  );
 
   return {
-    incomeTax: spouseIncomeTax + dependentIncomeTax,
-    residentTax: spouseResidentTax + dependentResidentTax,
+    incomeTax: spouseIncomeTax + dependentIncomeTax + spouseSpecial.incomeTax,
+    residentTax: spouseResidentTax + dependentResidentTax + spouseSpecial.residentTax,
+    spouseSpecialIncomeTax: spouseSpecial.incomeTax,
+    spouseSpecialResidentTax: spouseSpecial.residentTax,
   };
 }
 
@@ -700,6 +769,8 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
         basicDeductionAnnual: INCOME_TAX_BASIC_DEDUCTION,
         dependentDeductionsIncomeTaxAnnual: deductions.incomeTax,
         dependentDeductionsResidentTaxAnnual: deductions.residentTax,
+        spouseSpecialDeductionIncomeTaxAnnual: deductions.spouseSpecialIncomeTax,
+        spouseSpecialDeductionResidentTaxAnnual: deductions.spouseSpecialResidentTax,
         incomeTaxBaseAnnual: incomeTaxBase,
         residentTaxBaseAnnual: residentTaxBase,
         incomeTaxAnnual,

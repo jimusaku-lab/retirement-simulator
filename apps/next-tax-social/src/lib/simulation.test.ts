@@ -297,7 +297,7 @@ describe("simulation", () => {
           type: "salary",
           startYearMonth: "2026-01",
           endYearMonth: "2026-12",
-          monthlyAmount: 120_000,
+          monthlyAmount: 200_000,
           taxTreatment: "taxable",
         },
       ],
@@ -370,6 +370,70 @@ describe("simulation", () => {
 
     expect(detail?.dependentDeductionsIncomeTaxAnnual).toBe(0);
     expect(detail?.dependentDeductionsResidentTaxAnnual).toBe(0);
+  });
+
+  it("配偶者控除の所得上限を超えても配偶者特別控除の範囲なら段階控除を反映する", () => {
+    const detail = calculateAutoTaxDetails(
+      simpleScenario({
+        householdProfile: {
+          municipality: "東京都大田区",
+          headMemberId: "member-self",
+          taxCalculationMode: "auto",
+        },
+        householdMembers: [
+          {
+            id: "member-self",
+            name: "本人",
+            relationship: "self",
+            birthDate: "1966-04-01",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: false,
+          },
+          {
+            id: "member-spouse",
+            name: "配偶者",
+            relationship: "spouse",
+            birthDate: "1969-02-22",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: true,
+            dependsOnMemberId: "member-self",
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "salary-self",
+            memberId: "member-self",
+            name: "本人給与",
+            type: "salary",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 250_000,
+            taxTreatment: "taxable",
+          },
+          {
+            id: "salary-spouse",
+            memberId: "member-spouse",
+            name: "配偶者給与",
+            type: "salary",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 110_000,
+            taxTreatment: "taxable",
+          },
+        ],
+      }),
+    )[0].memberDetails.find((member) => member.memberId === "member-self");
+
+    expect(detail?.spouseSpecialDeductionIncomeTaxAnnual).toBe(380_000);
+    expect(detail?.spouseSpecialDeductionResidentTaxAnnual).toBe(330_000);
+    expect(detail?.dependentDeductionsIncomeTaxAnnual).toBe(380_000);
+    expect(detail?.dependentDeductionsResidentTaxAnnual).toBe(330_000);
   });
 
   it("税・社会保険は未入力年度で直近の前年度を引き継ぐ", () => {
