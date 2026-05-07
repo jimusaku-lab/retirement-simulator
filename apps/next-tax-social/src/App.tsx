@@ -1810,11 +1810,27 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
           </div>
           <div className="space-y-4 p-4">
             {warnings.length > 0 && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                <p className="font-medium">年齢範囲が重複しています</p>
-                {warnings.map((warning) => (
-                  <p key={warning}>{warning}</p>
-                ))}
+              <div className="space-y-2">
+                {warnings.some((warning) => warning.severity === "warning") && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    <p className="font-medium">同じ費目の年齢範囲が重複しています</p>
+                    {warnings
+                      .filter((warning) => warning.severity === "warning")
+                      .map((warning) => (
+                        <p key={warning.message}>{warning.message}</p>
+                      ))}
+                  </div>
+                )}
+                {warnings.some((warning) => warning.severity === "info") && (
+                  <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                    <p className="font-medium">生活費全体と個別費目の重ね合わせがあります</p>
+                    {warnings
+                      .filter((warning) => warning.severity === "info")
+                      .map((warning) => (
+                        <p key={warning.message}>{warning.message}</p>
+                      ))}
+                  </div>
+                )}
               </div>
             )}
             {scenario.ageExpenseAdjustments.length === 0 ? (
@@ -4614,7 +4630,7 @@ function RateField({ label, value, onChange }: { label: string; value: number; o
 }
 
 function getExpenseAdjustmentWarnings(adjustments: AgeExpenseAdjustment[]) {
-  const warnings: string[] = [];
+  const warnings: { severity: "warning" | "info"; message: string }[] = [];
   for (let i = 0; i < adjustments.length; i += 1) {
     for (let j = i + 1; j < adjustments.length; j += 1) {
       const first = adjustments[i];
@@ -4627,7 +4643,15 @@ function getExpenseAdjustmentWarnings(adjustments: AgeExpenseAdjustment[]) {
 
       const from = Math.max(first.startAge, second.startAge);
       const to = Math.min(firstEnd, secondEnd);
-      warnings.push(`${first.name || `${first.startAge}歳`} と ${second.name || `${second.startAge}歳`} が ${from}〜${to}歳で重複しています。`);
+      const message = `${first.name || `${first.startAge}歳`} と ${second.name || `${second.startAge}歳`} が ${from}〜${to}歳で重複しています。`;
+      const sameTarget = first.target === second.target;
+      warnings.push({
+        severity: sameTarget ? "warning" : "info",
+        message:
+          sameTarget || (first.target === "all" && second.target === "all")
+            ? message
+            : `${message} 上から順に適用されるため、生活費全体の変更後に個別費目を上書き・調整する用途なら問題ありません。`,
+      });
     }
   }
   return warnings;
