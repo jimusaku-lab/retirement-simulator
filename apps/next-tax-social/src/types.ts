@@ -334,6 +334,7 @@ export type MonthlyResult = {
   taxInsuranceTotal: number;
   capitalGainsTaxTotal: number;
   deferredCapitalGainsTaxTotal: number;
+  declaredCapitalGainsIncomeTotal: number;
   idecoWithholdingTaxTotal: number;
   growthAmount: number;
   withdrawalAmount: number;
@@ -374,6 +375,7 @@ export type AnnualResult = {
   taxInsuranceTotal: number;
   capitalGainsTaxTotal: number;
   deferredCapitalGainsTaxTotal: number;
+  declaredCapitalGainsIncomeTotal: number;
   idecoWithholdingTaxTotal: number;
   growthAmount: number;
   withdrawalAmount: number;

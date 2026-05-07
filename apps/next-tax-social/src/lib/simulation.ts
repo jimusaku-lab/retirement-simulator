@@ -11,7 +11,7 @@ import {
   isIdecoMonexPensionEvent,
 } from "@/lib/incomeEvents";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
-import { getEffectiveTaxRows } from "@/lib/taxEngine";
+import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
 import type {
   AnnualResult,
   AssetContributionEvent,
@@ -553,27 +553,27 @@ function withdrawFromAsset(
 ) {
   const withdrawableBalance = Math.max(0, balances[key] - protectedMinimum);
   if (netCashNeeded <= 0 || withdrawableBalance <= 0) {
-    return { grossWithdrawal: 0, netCashAdded: 0, capitalGainsTax: 0, deferredCapitalGainsTax: 0 };
+    return { grossWithdrawal: 0, netCashAdded: 0, capitalGainsTax: 0, deferredCapitalGainsTax: 0, declaredCapitalGainsIncome: 0 };
   }
 
   if (!isGainTrackedAsset(key)) {
     const grossWithdrawal = Math.min(withdrawableBalance, netCashNeeded);
     balances[key] -= grossWithdrawal;
-    return { grossWithdrawal, netCashAdded: grossWithdrawal, capitalGainsTax: 0, deferredCapitalGainsTax: 0 };
+    return { grossWithdrawal, netCashAdded: grossWithdrawal, capitalGainsTax: 0, deferredCapitalGainsTax: 0, declaredCapitalGainsIncome: 0 };
   }
 
   const currentBalance = balances[key];
   const currentBasis = taxableBasis[key];
   const gainRatio = getUnrealizedGainRatio(currentBalance, currentBasis);
   const isSpecificNoWithholding = key === "specificAccount" && specificAccountWithholding === "noWithholding";
-  const effectiveTaxRate = isTaxableWithdrawalAccount(key) && !isSpecificNoWithholding ? LISTED_CAPITAL_GAINS_TAX_RATE : 0;
+  const isDeclaredAccountGain = key === "ordinaryAccountForOptions" || isSpecificNoWithholding;
+  const effectiveTaxRate = isTaxableWithdrawalAccount(key) && !isDeclaredAccountGain ? LISTED_CAPITAL_GAINS_TAX_RATE : 0;
   const netRatio = 1 - gainRatio * effectiveTaxRate;
   const requiredGross = netRatio > 0 ? netCashNeeded / netRatio : netCashNeeded;
   const grossWithdrawal = Math.min(withdrawableBalance, requiredGross);
   const realizedGain = grossWithdrawal * gainRatio;
   const capitalGainsTax = realizedGain * effectiveTaxRate;
-  const deferredCapitalGainsTax =
-    key === "specificAccount" && isSpecificNoWithholding ? realizedGain * LISTED_CAPITAL_GAINS_TAX_RATE : 0;
+  const deferredCapitalGainsTax = isSpecificNoWithholding ? realizedGain * LISTED_CAPITAL_GAINS_TAX_RATE : 0;
   const costPortion = grossWithdrawal - realizedGain;
 
   balances[key] -= grossWithdrawal;
@@ -584,6 +584,7 @@ function withdrawFromAsset(
     netCashAdded: grossWithdrawal - capitalGainsTax,
     capitalGainsTax,
     deferredCapitalGainsTax,
+    declaredCapitalGainsIncome: key === "ordinaryAccountForOptions" ? realizedGain : 0,
   };
 }
 
@@ -626,6 +627,7 @@ function withdrawFromOptionSubAccounts(
   let remaining = netCashNeeded;
   let grossWithdrawal = 0;
   let netCashAdded = 0;
+  let declaredCapitalGainsIncome = 0;
   const targets = accountId
     ? optionSubAccounts.filter((account) => account.id === accountId)
     : [...optionSubAccounts].sort((a, b) => a.withdrawalPriority - b.withdrawalPriority);
@@ -643,6 +645,7 @@ function withdrawFromOptionSubAccounts(
     account.costBasis = Math.max(0, account.costBasis - costPortion);
     grossWithdrawal += amount;
     netCashAdded += amount;
+    declaredCapitalGainsIncome += realizedGain;
     remaining -= amount;
   }
 
@@ -651,6 +654,7 @@ function withdrawFromOptionSubAccounts(
     netCashAdded,
     capitalGainsTax: 0,
     deferredCapitalGainsTax: 0,
+    declaredCapitalGainsIncome,
   };
 }
 
@@ -669,6 +673,7 @@ function applyWithdrawalDeficit(
   let netCashAdded = 0;
   let capitalGainsTax = 0;
   let deferredCapitalGainsTax = 0;
+  let declaredCapitalGainsIncome = 0;
   const breakdown = createWithdrawalBreakdown();
   for (const key of withdrawOrder) {
     if (remaining <= 0) break;
@@ -690,6 +695,7 @@ function applyWithdrawalDeficit(
     netCashAdded += result.netCashAdded;
     capitalGainsTax += result.capitalGainsTax;
     deferredCapitalGainsTax += result.deferredCapitalGainsTax;
+    declaredCapitalGainsIncome += result.declaredCapitalGainsIncome;
     breakdown[key] += result.grossWithdrawal;
     remaining -= result.netCashAdded;
   }
@@ -698,6 +704,7 @@ function applyWithdrawalDeficit(
     netCashAdded,
     capitalGainsTax,
     deferredCapitalGainsTax,
+    declaredCapitalGainsIncome,
     breakdown,
   };
 }
@@ -863,7 +870,10 @@ function isAssetTransferActive(event: Pick<ScenarioData["assetTransferEvents"][n
   return event.yearMonth === yearMonth;
 }
 
-export function simulateScenario(scenario: ScenarioData): SimulationResult {
+function simulateScenarioCore(
+  scenario: ScenarioData,
+  effectiveTaxRows: TaxInsuranceByFiscalYear[],
+): SimulationResult {
   const start = ym(scenario.userProfile.simulationStartYearMonth);
   const end = ym(getEndYearMonth(scenario));
   const monthly: MonthlyResult[] = [];
@@ -872,7 +882,6 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
   const optionSubAccounts = createOptionSubAccountStates(scenario);
   syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
   const cashReserve = Math.max(0, scenario.userProfile.cashReserve ?? 0);
-  const effectiveTaxRows = getEffectiveTaxRows(scenario);
   const excludeTaxExpense = effectiveTaxRows.length > 0;
   const reservedWithdrawalAssets = getReservedWithdrawalAssets(scenario);
   const reserveReplenishmentExcludedAssets = new Set<GrowthAssetKey>([...reservedWithdrawalAssets, "bankDeposit"]);
@@ -901,6 +910,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
     let optionIncomeSuspendedTotal = 0;
     let capitalGainsTaxTotal = 0;
     let deferredCapitalGainsTaxTotal = 0;
+    let declaredCapitalGainsIncomeTotal = 0;
     let idecoFeeTotal = 0;
     let idecoWithholdingTaxTotal = 0;
     const totalWithdrawalBreakdown = createWithdrawalBreakdown();
@@ -1022,6 +1032,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
         transferredIncomeTotal += netCashAdded;
         capitalGainsTaxTotal += withdrawal.capitalGainsTax;
         deferredCapitalGainsTaxTotal += withdrawal.deferredCapitalGainsTax;
+        declaredCapitalGainsIncomeTotal += withdrawal.declaredCapitalGainsIncome;
         if (withdrawal.deferredCapitalGainsTax > 0) {
           deferredCapitalGainsTaxByIncomeYear.set(
             cursor.year(),
@@ -1241,10 +1252,18 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
     }
     const withdrawal = deficit
       ? applyWithdrawalDeficit(scenario, balances, taxableBasis, optionSubAccounts, withdrawOrder, deficit, yearMonth, monthlyReservedAssets)
-      : { grossWithdrawal: 0, netCashAdded: 0, capitalGainsTax: 0, deferredCapitalGainsTax: 0, breakdown: createWithdrawalBreakdown() };
+      : {
+          grossWithdrawal: 0,
+          netCashAdded: 0,
+          capitalGainsTax: 0,
+          deferredCapitalGainsTax: 0,
+          declaredCapitalGainsIncome: 0,
+          breakdown: createWithdrawalBreakdown(),
+        };
     balances.cash += withdrawal.netCashAdded;
     capitalGainsTaxTotal += withdrawal.capitalGainsTax;
     deferredCapitalGainsTaxTotal += withdrawal.deferredCapitalGainsTax;
+    declaredCapitalGainsIncomeTotal += withdrawal.declaredCapitalGainsIncome;
     if (withdrawal.deferredCapitalGainsTax > 0) {
       deferredCapitalGainsTaxByIncomeYear.set(
         cursor.year(),
@@ -1300,6 +1319,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
         balances.cash += plannedWithdrawal.netCashAdded;
         capitalGainsTaxTotal += plannedWithdrawal.capitalGainsTax;
         deferredCapitalGainsTaxTotal += plannedWithdrawal.deferredCapitalGainsTax;
+        declaredCapitalGainsIncomeTotal += plannedWithdrawal.declaredCapitalGainsIncome;
         if (plannedWithdrawal.deferredCapitalGainsTax > 0) {
           deferredCapitalGainsTaxByIncomeYear.set(
             cursor.year(),
@@ -1343,6 +1363,7 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
       taxInsuranceTotal: Math.round(taxInsuranceTotal),
       capitalGainsTaxTotal: Math.round(capitalGainsTaxTotal),
       deferredCapitalGainsTaxTotal: Math.round(deferredCapitalGainsTaxTotal),
+      declaredCapitalGainsIncomeTotal: Math.round(declaredCapitalGainsIncomeTotal),
       idecoWithholdingTaxTotal: Math.round(idecoWithholdingTaxTotal),
       growthAmount: Math.round(growthAmount),
       withdrawalAmount: Math.round(baseWithdrawalAmount),
@@ -1400,6 +1421,62 @@ export function simulateScenario(scenario: ScenarioData): SimulationResult {
   };
 }
 
+function addDeclaredIncome(
+  map: DeclaredInvestmentIncomeByYear,
+  fiscalYear: number,
+  memberId: string,
+  amount: number,
+) {
+  if (amount <= 0) return;
+  const yearMap = map.get(fiscalYear) ?? new Map<string, number>();
+  yearMap.set(memberId, (yearMap.get(memberId) ?? 0) + amount);
+  map.set(fiscalYear, yearMap);
+}
+
+function getDeclaredInvestmentIncomeFromResult(
+  scenario: ScenarioData,
+  result: SimulationResult,
+): DeclaredInvestmentIncomeByYear {
+  const map: DeclaredInvestmentIncomeByYear = new Map();
+  const headMemberId = scenario.householdProfile.headMemberId || scenario.householdMembers[0]?.id;
+  if (!headMemberId) return map;
+  for (const row of result.annual) {
+    addDeclaredIncome(map, row.year, headMemberId, row.declaredCapitalGainsIncomeTotal);
+  }
+  return map;
+}
+
+function areDeclaredInvestmentIncomeMapsEqual(
+  a: DeclaredInvestmentIncomeByYear,
+  b: DeclaredInvestmentIncomeByYear,
+) {
+  if (a.size !== b.size) return false;
+  for (const [year, memberMap] of a) {
+    const otherMemberMap = b.get(year);
+    if (!otherMemberMap || otherMemberMap.size !== memberMap.size) return false;
+    for (const [memberId, amount] of memberMap) {
+      if (otherMemberMap.get(memberId) !== amount) return false;
+    }
+  }
+  return true;
+}
+
+export function simulateScenario(scenario: ScenarioData): SimulationResult {
+  let declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map();
+  let result = simulateScenarioCore(scenario, getEffectiveTaxRows(scenario, declaredInvestmentIncomeByYear));
+
+  for (let index = 0; index < 3; index += 1) {
+    const nextDeclaredIncome = getDeclaredInvestmentIncomeFromResult(scenario, result);
+    if (areDeclaredInvestmentIncomeMapsEqual(declaredInvestmentIncomeByYear, nextDeclaredIncome)) {
+      return result;
+    }
+    declaredInvestmentIncomeByYear = nextDeclaredIncome;
+    result = simulateScenarioCore(scenario, getEffectiveTaxRows(scenario, declaredInvestmentIncomeByYear));
+  }
+
+  return result;
+}
+
 export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[] {
   const map = new Map<number, AnnualResult>();
   for (const row of monthly) {
@@ -1427,6 +1504,7 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         taxInsuranceTotal: 0,
         capitalGainsTaxTotal: 0,
         deferredCapitalGainsTaxTotal: 0,
+        declaredCapitalGainsIncomeTotal: 0,
         idecoWithholdingTaxTotal: 0,
         growthAmount: 0,
         withdrawalAmount: 0,
@@ -1462,6 +1540,7 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.taxInsuranceTotal += row.taxInsuranceTotal;
     current.capitalGainsTaxTotal += row.capitalGainsTaxTotal;
     current.deferredCapitalGainsTaxTotal += row.deferredCapitalGainsTaxTotal;
+    current.declaredCapitalGainsIncomeTotal += row.declaredCapitalGainsIncomeTotal;
     current.idecoWithholdingTaxTotal += row.idecoWithholdingTaxTotal;
     current.growthAmount += row.growthAmount;
     current.withdrawalAmount += row.withdrawalAmount;

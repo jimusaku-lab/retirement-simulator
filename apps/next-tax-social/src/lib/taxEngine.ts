@@ -143,6 +143,8 @@ export type AutoTaxYearDetail = {
   };
 };
 
+export type DeclaredInvestmentIncomeByYear = Map<number, Map<string, number>>;
+
 function ym(value: YearMonth) {
   return dayjs(`${value}-01`);
 }
@@ -268,6 +270,7 @@ function getMemberIncomeBreakdown(
   member: HouseholdMember,
   fiscalYear: number,
   retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario),
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
 ) {
   const months = getCalendarYearMonths(fiscalYear);
   const events = scenario.incomeEvents.filter((event) => event.memberId === member.id);
@@ -301,6 +304,8 @@ function getMemberIncomeBreakdown(
     }
   }
 
+  miscellaneous += declaredInvestmentIncomeByYear.get(fiscalYear)?.get(member.id) ?? 0;
+
   const ageAtYearEnd = getAgeAtDate(member.birthDate, dayjs(`${fiscalYear}-12-31`));
   const salaryIncome = Math.max(0, salary - getSalaryIncomeDeduction(salary));
   const pensionIncome = Math.max(0, getPublicPensionIncome(pension, ageAtYearEnd, salaryIncome + miscellaneous));
@@ -330,8 +335,9 @@ function isDeductionEligibleDependent(
   member: HouseholdMember,
   fiscalYear: number,
   retirementAdjustmentByIncomeEventId: Map<string, RetirementOverlapAdjustment>,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear,
 ) {
-  const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
+  const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear);
   return income.totalIncome <= DEPENDENT_TOTAL_INCOME_LIMIT;
 }
 
@@ -360,33 +366,40 @@ function getDependentDeductions(
   fiscalYear: number,
   taxpayerTotalIncome: number,
   retirementAdjustmentByIncomeEventId: Map<string, RetirementOverlapAdjustment>,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear,
 ) {
   const spouseIncomeTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
     if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
-    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + SPOUSE_DEDUCTION_INCOME_TAX;
   }, 0);
   const spouseResidentTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
     if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
-    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + SPOUSE_DEDUCTION_RESIDENT_TAX;
   }, 0);
   const dependentIncomeTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
-    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + DEPENDENT_DEDUCTION_INCOME_TAX;
   }, 0);
   const dependentResidentTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
-    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + DEPENDENT_DEDUCTION_RESIDENT_TAX;
   }, 0);
   const spouseSpecial = scenario.householdMembers.reduce(
     (sum, member) => {
       if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
-      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
+      const income = getMemberIncomeBreakdown(
+        scenario,
+        member,
+        fiscalYear,
+        retirementAdjustmentByIncomeEventId,
+        declaredInvestmentIncomeByYear,
+      );
       return {
         incomeTax:
           sum.incomeTax +
@@ -509,7 +522,11 @@ function countNursingCareInsuranceMonths(member: HouseholdMember, fiscalYear: nu
   }).length;
 }
 
-function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear: number) {
+function calculateOtaNationalHealthInsurance(
+  scenario: ScenarioData,
+  fiscalYear: number,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
+) {
   if (!scenario.householdProfile.municipality.includes("大田区")) {
     return {
       nationalHealthInsuranceAnnual: 0,
@@ -550,7 +567,13 @@ function calculateOtaNationalHealthInsurance(scenario: ScenarioData, fiscalYear:
   }
 
   const memberIncomes = insuredMembers.map((item) => {
-    const breakdown = getMemberIncomeBreakdown(scenario, item.member, fiscalYear);
+    const breakdown = getMemberIncomeBreakdown(
+      scenario,
+      item.member,
+      fiscalYear,
+      getRetirementAdjustmentByIncomeEventId(scenario),
+      declaredInvestmentIncomeByYear,
+    );
     const baseIncome = Math.max(0, breakdown.totalIncome - OTA_NHI.baseIncomeDeduction);
     const age = breakdown.ageAtYearEnd;
     const eligibleRatio = item.eligibleMonths / 12;
@@ -618,7 +641,11 @@ function emptyLateElderlyMedicalBreakdown() {
   };
 }
 
-function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: number) {
+function calculateTokyoLateElderlyMedical(
+  scenario: ScenarioData,
+  fiscalYear: number,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
+) {
   const insuredMembers = scenario.householdMembers
     .map((member) => ({
       member,
@@ -633,7 +660,13 @@ function calculateTokyoLateElderlyMedical(scenario: ScenarioData, fiscalYear: nu
   }
 
   const memberIncomes = insuredMembers.map((item) => {
-    const breakdown = getMemberIncomeBreakdown(scenario, item.member, fiscalYear);
+    const breakdown = getMemberIncomeBreakdown(
+      scenario,
+      item.member,
+      fiscalYear,
+      getRetirementAdjustmentByIncomeEventId(scenario),
+      declaredInvestmentIncomeByYear,
+    );
     const baseIncome = Math.max(0, breakdown.totalIncome - TOKYO_LATE_ELDERLY_MEDICAL.baseIncomeDeduction);
     const eligibleRatio = item.eligibleMonths / 12;
     return {
@@ -695,7 +728,10 @@ function getAutoSocialInsuranceDeductionAnnual(
   return Math.max(0, Math.round(nationalPensionAnnual + householdPublicInsurancePaidThisYear));
 }
 
-export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDetail[] {
+export function calculateAutoTaxDetails(
+  scenario: ScenarioData,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
+): AutoTaxYearDetail[] {
   const fiscalYears = listFiscalYearsForScenario(scenario);
   const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
   const insuranceByIncomeYear = new Map<
@@ -704,8 +740,8 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
   >();
 
   for (const fiscalYear of fiscalYears) {
-    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear);
-    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear);
+    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear, declaredInvestmentIncomeByYear);
+    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear, declaredInvestmentIncomeByYear);
     insuranceByIncomeYear.set(fiscalYear, {
       nationalHealthInsuranceAnnual: otaNhi.nationalHealthInsuranceAnnual,
       lateElderlyMedicalAnnual: lateElderlyMedical.lateElderlyMedicalAnnual,
@@ -715,13 +751,20 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
 
   return fiscalYears.map((fiscalYear) => {
     const perMember = scenario.householdMembers.map((member) => {
-      const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
+      const income = getMemberIncomeBreakdown(
+        scenario,
+        member,
+        fiscalYear,
+        retirementAdjustmentByIncomeEventId,
+        declaredInvestmentIncomeByYear,
+      );
       const deductions = getDependentDeductions(
         scenario,
         member.id,
         fiscalYear,
         income.totalIncome,
         retirementAdjustmentByIncomeEventId,
+        declaredInvestmentIncomeByYear,
       );
       const itemizedDeductions = getItemizedDeductions(scenario, member.id, fiscalYear);
       const manualSocialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
@@ -780,8 +823,8 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
       };
     });
 
-    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear);
-    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear);
+    const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear, declaredInvestmentIncomeByYear);
+    const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear, declaredInvestmentIncomeByYear);
 
     return {
       fiscalYear,
@@ -796,8 +839,11 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
   });
 }
 
-export function calculateAutoTaxRows(scenario: ScenarioData): TaxInsuranceByFiscalYear[] {
-  return calculateAutoTaxDetails(scenario).map((detail) => ({
+export function calculateAutoTaxRows(
+  scenario: ScenarioData,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
+): TaxInsuranceByFiscalYear[] {
+  return calculateAutoTaxDetails(scenario, declaredInvestmentIncomeByYear).map((detail) => ({
     id: `auto-tax-${detail.fiscalYear}`,
     fiscalYear: detail.fiscalYear,
     residentTaxAnnual: detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual + member.retirementResidentTaxAnnual, 0),
@@ -830,10 +876,13 @@ function mergeTaxRows(autoRows: TaxInsuranceByFiscalYear[], manualRows: TaxInsur
   });
 }
 
-export function getEffectiveTaxRows(scenario: ScenarioData) {
+export function getEffectiveTaxRows(
+  scenario: ScenarioData,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear = new Map(),
+) {
   const mode: TaxCalculationMode = scenario.householdProfile.taxCalculationMode;
   if (mode === "manual") return scenario.taxInsurance;
-  const autoRows = calculateAutoTaxRows(scenario);
+  const autoRows = calculateAutoTaxRows(scenario, declaredInvestmentIncomeByYear);
   if (mode === "auto") return autoRows;
   return mergeTaxRows(autoRows, scenario.taxInsurance);
 }

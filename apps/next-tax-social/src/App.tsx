@@ -4402,6 +4402,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>生活費</Th>
           <Th>税社保支払</Th>
           <Th>譲渡益税</Th>
+          <Th>申告対象譲渡益</Th>
           <Th>特別支出</Th>
           <Th>純収支</Th>
           <Th>計画取り崩し</Th>
@@ -4438,6 +4439,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.livingExpenseTotal)}</Td>
               <Td>{compactYen(row.taxInsuranceTotal)}</Td>
               <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
+              <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
               <Td>{compactYen(row.plannedDrawdownTotal)}</Td>
@@ -4476,6 +4478,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.livingExpenseTotal)}</Td>
               <Td>{compactYen(row.taxInsuranceTotal)}</Td>
               <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
+              <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
               <Td>{compactYen(row.plannedDrawdownTotal)}</Td>

@@ -4767,4 +4767,90 @@ describe("simulation", () => {
     expect(result.monthly[0].deferredCapitalGainsTaxTotal).toBeGreaterThan(0);
     expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal).toBeGreaterThan(0);
   });
+
+  it("特定口座の源泉徴収ありは売却益を申告所得として翌年の自動税社保に入れない", () => {
+    const base = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationEndYearMonth: "2027-12",
+      },
+      householdProfile: {
+        ...simpleScenario().householdProfile,
+        taxCalculationMode: "auto",
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      initialAssetCostBasis: {
+        ...simpleScenario().initialAssetCostBasis,
+        specificAccount: 500_000,
+      },
+      withdrawalOrder: ["specificAccount", "bankDeposit", "timeDeposit", "ordinaryAccountForOptions", "ideco", "nisa"],
+      taxableAccountSettings: {
+        specificAccountWithholding: "withholding",
+      },
+    });
+    const withoutSale = simpleScenario({
+      ...base,
+      initialAssets: {
+        ...base.initialAssets,
+        cash: 0,
+        specificAccount: 0,
+      },
+      initialAssetCostBasis: {
+        ...base.initialAssetCostBasis,
+        specificAccount: 0,
+      },
+    });
+
+    const result = simulateScenario(base);
+    const noSaleResult = simulateScenario(withoutSale);
+
+    expect(result.monthly[0].capitalGainsTaxTotal).toBeGreaterThan(0);
+    expect(result.annual.find((row) => row.year === 2026)?.declaredCapitalGainsIncomeTotal).toBe(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal).toBe(
+      noSaleResult.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal,
+    );
+  });
+
+  it("普通口座オプションの実現益は申告所得として翌年の税社保に反映する", () => {
+    const base = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationEndYearMonth: "2027-12",
+      },
+      householdProfile: {
+        ...simpleScenario().householdProfile,
+        taxCalculationMode: "auto",
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        ordinaryAccountForOptions: 1_000_000,
+      },
+      initialAssetCostBasis: {
+        ...simpleScenario().initialAssetCostBasis,
+        ordinaryAccountForOptions: 500_000,
+      },
+      withdrawalOrder: ["ordinaryAccountForOptions", "bankDeposit", "timeDeposit", "specificAccount", "ideco", "nisa"],
+    });
+    const withoutGain = simpleScenario({
+      ...base,
+      initialAssetCostBasis: {
+        ...base.initialAssetCostBasis,
+        ordinaryAccountForOptions: 1_000_000,
+      },
+    });
+
+    const result = simulateScenario(base);
+    const noGainResult = simulateScenario(withoutGain);
+
+    expect(result.monthly[0].capitalGainsTaxTotal).toBe(0);
+    expect(result.annual.find((row) => row.year === 2026)?.declaredCapitalGainsIncomeTotal).toBeGreaterThan(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal ?? 0).toBeGreaterThan(
+      noGainResult.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal ?? 0,
+    );
+  });
 });
