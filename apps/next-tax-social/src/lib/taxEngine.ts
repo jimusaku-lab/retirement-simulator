@@ -522,10 +522,11 @@ function calculateNationalPensionMonthly(fiscalYear: number) {
 }
 
 function countEligibleNationalPensionMonths(member: HouseholdMember, fiscalYear: number) {
+  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
   let count = 0;
   for (const month of getCalendarYearMonths(fiscalYear)) {
     const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
-    if (age >= 20 && age < 60 && member.isResident && !isLateElderlyMedicalMemberForMonth(member, month)) {
+    if (age >= 20 && age < 60 && !isLateElderlyMedicalMemberForMonth(member, month)) {
       count += 1;
     }
   }

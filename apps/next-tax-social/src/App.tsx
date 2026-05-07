@@ -1939,6 +1939,10 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
 function ExpensesSection({ scenario, updateScenario }: SectionProps) {
   const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
   const warnings = getExpenseAdjustmentWarnings(scenario.ageExpenseAdjustments);
+  const expenseKeys = Object.keys(expenseLabels) as ExpenseKey[];
+  const livingInflationTargets =
+    scenario.inflationSettings.livingCostInflationTargets ?? expenseKeys.filter((key) => key !== "healthMedical");
+  const medicalInflationTargets = scenario.inflationSettings.medicalInflationTargets ?? ["healthMedical"];
   const addAdjustment = () =>
     updateScenario((s) =>
       s.ageExpenseAdjustments.push({
@@ -1946,10 +1950,39 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
         name: "60歳から",
         startAge: 60,
         target: "all",
+        targets: ["all"],
         mode: "multiplier",
         value: 1,
       }),
     );
+  const toggleAgeExpenseTarget = (index: number, target: ExpenseAdjustmentTarget) =>
+    updateScenario((s) => {
+      const adjustment = s.ageExpenseAdjustments[index];
+      const current = getAgeExpenseAdjustmentTargets(adjustment);
+      const next: ExpenseAdjustmentTarget[] =
+        target === "all"
+          ? ["all"]
+          : current.includes(target)
+            ? current.filter((item) => item !== target && item !== "all")
+            : [...current.filter((item) => item !== "all"), target];
+      adjustment.targets = next.length ? next : ["all"];
+      adjustment.target = adjustment.targets[0] ?? "all";
+    });
+  const toggleInflationTarget = (kind: "living" | "medical", key: ExpenseKey) =>
+    updateScenario((s) => {
+      const living = new Set(s.inflationSettings.livingCostInflationTargets ?? expenseKeys.filter((item) => item !== "healthMedical"));
+      const medical = new Set(s.inflationSettings.medicalInflationTargets ?? ["healthMedical"]);
+      const targetSet = kind === "living" ? living : medical;
+      const oppositeSet = kind === "living" ? medical : living;
+      if (targetSet.has(key)) {
+        targetSet.delete(key);
+      } else {
+        targetSet.add(key);
+        oppositeSet.delete(key);
+      }
+      s.inflationSettings.livingCostInflationTargets = [...living];
+      s.inflationSettings.medicalInflationTargets = [...medical];
+    });
 
   return (
     <Card>
@@ -1984,6 +2017,46 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
           </Field>
           <RateField label="生活費インフレ率" value={scenario.inflationSettings.livingCostAnnualInflationRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.livingCostAnnualInflationRate = value))} />
           <RateField label="医療費上昇率" value={scenario.inflationSettings.medicalAnnualInflationRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.medicalAnnualInflationRate = value))} />
+        </div>
+        <div className="rounded-lg border bg-white p-4">
+          <div className="mb-3">
+            <h3 className="font-medium">インフレ対象費目</h3>
+            <p className="text-sm text-muted-foreground">
+              健康・医療は医療費上昇率、その他は生活費インフレ率を使う想定です。保険など上昇させない費目はチェックを外してください。
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <p className="mb-2 text-sm font-medium">生活費インフレ率をかける費目</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {expenseKeys.map((key) => (
+                  <label key={key} className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={livingInflationTargets.includes(key)}
+                      onChange={() => toggleInflationTarget("living", key)}
+                    />
+                    {expenseLabels[key]}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium">医療費上昇率をかける費目</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {expenseKeys.map((key) => (
+                  <label key={key} className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={medicalInflationTargets.includes(key)}
+                      onChange={() => toggleInflationTarget("medical", key)}
+                    />
+                    {expenseLabels[key]}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
         <div className="rounded-lg border bg-white">
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
@@ -2057,19 +2130,6 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
                         }
                       />
                     </Field>
-                    <Field label="対象">
-                      <Select
-                        value={adjustment.target}
-                        onChange={(event) => updateScenario((s) => void (s.ageExpenseAdjustments[index].target = event.target.value as ExpenseAdjustmentTarget))}
-                      >
-                        <option value="all">生活費全体</option>
-                        {(Object.keys(expenseLabels) as ExpenseKey[]).map((key) => (
-                          <option key={key} value={key}>
-                            {expenseLabels[key]}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
                     <Field label="変更方法">
                       <Select
                         value={adjustment.mode}
@@ -2095,6 +2155,29 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
                       </Field>
                     )}
                   </FormGrid>
+                  <div className="mt-4">
+                    <p className="mb-2 text-sm font-medium">対象費目</p>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <label className="flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={getAgeExpenseAdjustmentTargets(adjustment).includes("all")}
+                          onChange={() => toggleAgeExpenseTarget(index, "all")}
+                        />
+                        生活費全体
+                      </label>
+                      {expenseKeys.map((key) => (
+                        <label key={key} className="flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={getAgeExpenseAdjustmentTargets(adjustment).includes(key)}
+                            onChange={() => toggleAgeExpenseTarget(index, key)}
+                          />
+                          {expenseLabels[key]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </EventEditor>
               ))
             )}
@@ -3429,7 +3512,7 @@ function TaxCalculationDetails({
         <p>所得税と住民税は、課税対象収入から給与所得控除・公的年金等控除・基礎控除・扶養控除などを差し引いて概算します。</p>
         <p>iDeCoの年金受取は、収入イベントの「種別」を「年金」、「課税区分」を「課税」にすると、公的年金等控除を使う年金収入として扱います。</p>
         <p>社会保険料控除と医療費控除は、`所得控除入力` で入れた年度・メンバーごとの金額を所得税と住民税の課税ベースから差し引きます。</p>
-        <p>国民年金は、20歳から59歳までの対象月数に年度額を掛けて月額換算します。</p>
+        <p>国民年金は、国保加入が「加入」で20歳から59歳までの対象月数に年度額を掛けて月額換算します。</p>
         <p>国保は大田区の概算ルールで、世帯の国保加入者ごとの所得を集計して見ます。</p>
         <p>譲渡益課税は、特定口座と普通口座（オプション用）の売却時に、売却額のうち含み益部分へ 20.315% を掛けて概算します。取得原価は初期資産タブの入力値を使い、積立分はそのまま取得原価へ加算します。</p>
       </div>
@@ -4897,23 +4980,39 @@ function getExpenseAdjustmentWarnings(adjustments: AgeExpenseAdjustment[]) {
       const firstEnd = first.endAge ?? 130;
       const secondEnd = second.endAge ?? 130;
       const ageOverlaps = first.startAge <= secondEnd && second.startAge <= firstEnd;
-      const targetOverlaps = first.target === second.target || first.target === "all" || second.target === "all";
+      const firstTargets = getAgeExpenseAdjustmentTargets(first);
+      const secondTargets = getAgeExpenseAdjustmentTargets(second);
+      const targetOverlaps =
+        firstTargets.includes("all") ||
+        secondTargets.includes("all") ||
+        firstTargets.some((target) => target !== "all" && secondTargets.includes(target));
       if (!ageOverlaps || !targetOverlaps) continue;
 
       const from = Math.max(first.startAge, second.startAge);
       const to = Math.min(firstEnd, secondEnd);
       const message = `${first.name || `${first.startAge}歳`} と ${second.name || `${second.startAge}歳`} が ${from}〜${to}歳で重複しています。`;
-      const sameTarget = first.target === second.target;
+      const sameTarget =
+        firstTargets.includes("all") && secondTargets.includes("all")
+          ? true
+          : firstTargets.some((target) => target !== "all" && secondTargets.includes(target));
       warnings.push({
         severity: sameTarget ? "warning" : "info",
         message:
-          sameTarget || (first.target === "all" && second.target === "all")
+          sameTarget
             ? message
             : `${message} 上から順に適用されるため、生活費全体の変更後に個別費目を上書き・調整する用途なら問題ありません。`,
       });
     }
   }
   return warnings;
+}
+
+function getAgeExpenseAdjustmentTargets(adjustment: AgeExpenseAdjustment) {
+  const expenseKeys = Object.keys(expenseLabels) as ExpenseKey[];
+  const targets = adjustment.targets?.length ? adjustment.targets : [adjustment.target ?? "all"];
+  const validTargets = targets.filter((target) => target === "all" || expenseKeys.includes(target));
+  if (validTargets.includes("all")) return ["all"] as ExpenseAdjustmentTarget[];
+  return validTargets.length ? validTargets : (["all"] as ExpenseAdjustmentTarget[]);
 }
 
 function seniorAgeOrDefault(value: string | number, fallback = 60) {

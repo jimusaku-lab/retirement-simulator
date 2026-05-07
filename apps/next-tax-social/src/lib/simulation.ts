@@ -87,6 +87,26 @@ const gainTrackedAssetKeys: GainTrackedAssetKey[] = [
   "ideco",
 ];
 
+const monthlyExpenseKeys: (keyof MonthlyExpenseProfile)[] = [
+  "food",
+  "dailyGoods",
+  "hobbyEntertainment",
+  "social",
+  "transportation",
+  "clothingBeauty",
+  "healthMedical",
+  "car",
+  "educationCulture",
+  "specialExpense",
+  "cashCard",
+  "utilities",
+  "communication",
+  "housing",
+  "taxSocialInsurance",
+  "insurance",
+  "other",
+];
+
 function getRetirementIncomeDeduction(years: number) {
   const roundedYears = Math.max(1, Math.ceil(years));
   if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
@@ -161,12 +181,19 @@ function getAdjustedMonthlyExpense(
   const medicalInflationFactor = scenario.inflationSettings.enabled
     ? Math.pow(1 + scenario.inflationSettings.medicalAnnualInflationRate, monthsFromStart / 12)
     : 1;
+  const livingCostInflationTargets =
+    scenario.inflationSettings.livingCostInflationTargets ?? monthlyExpenseKeys.filter((key) => key !== "healthMedical");
+  const medicalInflationTargets = scenario.inflationSettings.medicalInflationTargets ?? ["healthMedical"];
   const expenses = Object.fromEntries(
-    (Object.entries(scenario.monthlyExpenses) as [keyof MonthlyExpenseProfile, number][]).map(([key, value]) => [
-      key,
-      (excludeTaxExpense && key === "taxSocialInsurance" ? 0 : value) *
-        (key === "healthMedical" ? medicalInflationFactor : inflationFactor),
-    ]),
+    (Object.entries(scenario.monthlyExpenses) as [keyof MonthlyExpenseProfile, number][]).map(([key, value]) => {
+      const base = excludeTaxExpense && key === "taxSocialInsurance" ? 0 : value;
+      const factor = medicalInflationTargets.includes(key)
+        ? medicalInflationFactor
+        : livingCostInflationTargets.includes(key)
+          ? inflationFactor
+          : 1;
+      return [key, base * factor];
+    }),
   ) as MonthlyExpenseProfile;
 
   for (const event of scenario.householdLivingArrangementEvents ?? []) {
@@ -178,10 +205,17 @@ function getAdjustedMonthlyExpense(
   for (const adjustment of scenario.ageExpenseAdjustments ?? []) {
     const active = ageYears >= adjustment.startAge && (!adjustment.endAge || ageYears <= adjustment.endAge);
     if (!active) continue;
-    applyAgeExpenseAdjustment(expenses, adjustment.target, adjustment.mode, adjustment.value);
+    applyAgeExpenseAdjustment(expenses, getAgeExpenseAdjustmentTargets(adjustment), adjustment.mode, adjustment.value);
   }
 
   return Object.values(expenses).reduce((sum, value) => sum + value, 0);
+}
+
+function getAgeExpenseAdjustmentTargets(adjustment: { target?: ExpenseAdjustmentTarget; targets?: ExpenseAdjustmentTarget[] }) {
+  const targets = adjustment.targets?.length ? adjustment.targets : [adjustment.target ?? "all"];
+  const validTargets = targets.filter((target) => target === "all" || monthlyExpenseKeys.includes(target));
+  if (validTargets.includes("all")) return ["all"] as ExpenseAdjustmentTarget[];
+  return validTargets.length ? validTargets : (["all"] as ExpenseAdjustmentTarget[]);
 }
 
 function yearMonthFromStart(startYearMonth: YearMonth, monthsFromStart: number) {
@@ -214,11 +248,11 @@ function applyHouseholdLivingArrangementEvent(
 
 function applyAgeExpenseAdjustment(
   expenses: MonthlyExpenseProfile,
-  target: ExpenseAdjustmentTarget,
+  targets: ExpenseAdjustmentTarget[],
   mode: "setAmount" | "multiplier",
   value: number,
 ) {
-  if (target === "all") {
+  if (targets.includes("all")) {
     if (mode === "multiplier") {
       for (const key of Object.keys(expenses) as (keyof MonthlyExpenseProfile)[]) {
         expenses[key] *= value;
@@ -235,7 +269,9 @@ function applyAgeExpenseAdjustment(
     return;
   }
 
-  expenses[target] = mode === "multiplier" ? expenses[target] * value : value;
+  for (const target of targets.filter((item): item is keyof MonthlyExpenseProfile => item !== "all")) {
+    expenses[target] = mode === "multiplier" ? expenses[target] * value : value;
+  }
 }
 
 export function getEndYearMonth(scenario: ScenarioData) {

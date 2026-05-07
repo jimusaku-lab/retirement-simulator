@@ -108,6 +108,25 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
       livingCostAnnualInflationRate: 0,
       medicalAnnualInflationRate: 0,
       pensionAnnualAdjustmentRate: 0,
+      livingCostInflationTargets: [
+        "food",
+        "dailyGoods",
+        "hobbyEntertainment",
+        "social",
+        "transportation",
+        "clothingBeauty",
+        "car",
+        "educationCulture",
+        "specialExpense",
+        "cashCard",
+        "utilities",
+        "communication",
+        "housing",
+        "taxSocialInsurance",
+        "insurance",
+        "other",
+      ],
+      medicalInflationTargets: ["healthMedical"],
     },
     optionAccountRules: {
       enabled: true,
@@ -1064,6 +1083,75 @@ describe("simulation", () => {
     expect(result.monthly[1].livingExpenseTotal).toBe(80_000);
   });
 
+  it("年齢別の生活費変更は複数費目に反映できる", () => {
+    const monthlyExpenses = simpleScenario().monthlyExpenses;
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-04",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-04",
+          targetBalanceAge: 60,
+          cashReserve: 0,
+        },
+        monthlyExpenses: {
+          ...monthlyExpenses,
+          food: 100_000,
+          utilities: 50_000,
+          insurance: 30_000,
+          housing: 0,
+        },
+        ageExpenseAdjustments: [
+          {
+            id: "expense-age-multi",
+            name: "食費と光熱費を半分",
+            startAge: 60,
+            target: "food",
+            targets: ["food", "utilities"],
+            mode: "multiplier",
+            value: 0.5,
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].livingExpenseTotal).toBe(105_000);
+  });
+
+  it("医療費上昇率は生活費インフレ率とは独立し、対象外費目にはかけない", () => {
+    const monthlyExpenses = simpleScenario().monthlyExpenses;
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-01",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2027-01",
+          targetBalanceAge: 60,
+          cashReserve: 0,
+        },
+        monthlyExpenses: {
+          ...monthlyExpenses,
+          food: 100_000,
+          healthMedical: 100_000,
+          insurance: 100_000,
+          housing: 0,
+        },
+        inflationSettings: {
+          enabled: true,
+          livingCostAnnualInflationRate: 0.12,
+          medicalAnnualInflationRate: 0.24,
+          pensionAnnualAdjustmentRate: 0,
+          livingCostInflationTargets: ["food"],
+          medicalInflationTargets: ["healthMedical"],
+        },
+      }),
+    );
+
+    expect(Math.round(result.monthly[12].livingExpenseTotal)).toBe(336_000);
+  });
+
   it("資産枯渇月と枯渇年齢を判定する", () => {
     const result = simulateScenario(
       simpleScenario({
@@ -1123,6 +1211,45 @@ describe("simulation", () => {
     expect(rows[0].residentTaxAnnual).toBeGreaterThan(0);
     expect(rows[0].nationalHealthInsuranceAnnual).toBeGreaterThan(0);
     expect(rows[0].nationalPensionMonthly).toBeGreaterThan(0);
+  });
+
+  it("国民年金は国保加入対象外の20歳以上60歳未満メンバーには発生しない", () => {
+    const scenario = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+        {
+          id: "child",
+          name: "子",
+          relationship: "child",
+          birthDate: "2000-12-18",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+    });
+
+    const rows = calculateAutoTaxRows(scenario);
+
+    expect(rows[0].nationalPensionMonthly).toBe(0);
+    expect(rows[0].nationalPensionAnnual).toBe(0);
   });
 
   it("国保介護分は40歳から64歳の国保加入者だけに発生する", () => {

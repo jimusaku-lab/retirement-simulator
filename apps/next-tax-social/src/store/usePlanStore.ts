@@ -5,9 +5,11 @@ import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { cloneScenario } from "@/lib/simulation";
 import type {
   AgeExpenseAdjustment,
+  ExpenseAdjustmentTarget,
   HouseholdLivingArrangementEvent,
   HouseholdMember,
   HouseholdProfile,
+  MonthlyExpenseProfile,
   PlanBackup,
   RetirementPlanSnapshot,
   RetirementPlanState,
@@ -57,6 +59,22 @@ type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpe
 
 const baseScenario = sampleState.scenarios[0];
 const maxBackups = 5;
+const monthlyExpenseKeys = Object.keys(baseScenario.monthlyExpenses) as (keyof MonthlyExpenseProfile)[];
+
+function normalizeExpenseKeys(source: unknown, fallback: (keyof MonthlyExpenseProfile)[]) {
+  if (!Array.isArray(source)) return fallback;
+  const keys = source.filter((key): key is keyof MonthlyExpenseProfile => monthlyExpenseKeys.includes(key as keyof MonthlyExpenseProfile));
+  return keys.length ? [...new Set(keys)] : fallback;
+}
+
+function normalizeExpenseAdjustmentTargets(source: unknown, fallback: ExpenseAdjustmentTarget[]): ExpenseAdjustmentTarget[] {
+  if (!Array.isArray(source)) return fallback;
+  const targets = source.filter(
+    (target): target is ExpenseAdjustmentTarget => target === "all" || monthlyExpenseKeys.includes(target as keyof MonthlyExpenseProfile),
+  );
+  if (targets.includes("all")) return ["all"];
+  return targets.length ? [...new Set(targets)] : fallback;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -114,18 +132,35 @@ function normalizeAgeExpenseAdjustments(source: LegacyScenario): AgeExpenseAdjus
     const fallbackStartAge = inferSeniorAgeFromName(adjustment.name) ?? 60;
     const startAge = seniorAgeOrDefault(adjustment.startAge, fallbackStartAge);
     const endAge = adjustment.endAge === undefined ? undefined : seniorAgeOrDefault(adjustment.endAge, startAge);
+    const target = adjustment.target ?? "all";
 
     return {
       id: adjustment.id ?? `age-expense-${index}`,
       name: adjustment.name ?? `${startAge}歳から`,
       startAge,
       endAge: endAge !== undefined && endAge >= startAge ? endAge : undefined,
-      target: adjustment.target ?? "all",
+      target,
+      targets: normalizeExpenseAdjustmentTargets(adjustment.targets, [target]),
       mode: adjustment.mode ?? "multiplier",
       value: Number.isFinite(adjustment.value) ? adjustment.value : 1,
       note: adjustment.note,
     };
   });
+}
+
+function normalizeInflationSettings(source: LegacyScenario) {
+  const existing = {
+    ...baseScenario.inflationSettings,
+    ...source.inflationSettings,
+  };
+  const defaultLivingTargets =
+    baseScenario.inflationSettings.livingCostInflationTargets ?? monthlyExpenseKeys.filter((key) => key !== "healthMedical");
+  const defaultMedicalTargets = baseScenario.inflationSettings.medicalInflationTargets ?? ["healthMedical"];
+  return {
+    ...existing,
+    livingCostInflationTargets: normalizeExpenseKeys(existing.livingCostInflationTargets, defaultLivingTargets),
+    medicalInflationTargets: normalizeExpenseKeys(existing.medicalInflationTargets, defaultMedicalTargets),
+  };
 }
 
 function normalizeHouseholdLivingArrangementEvents(source: LegacyScenario): HouseholdLivingArrangementEvent[] {
@@ -423,10 +458,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
         ordinaryAccountForOptions: source.assetGrowthSettings?.rates?.ordinaryAccountForOptions ?? legacyGrowthRate,
       },
     },
-    inflationSettings: {
-      ...baseScenario.inflationSettings,
-      ...source.inflationSettings,
-    },
+    inflationSettings: normalizeInflationSettings(source),
     optionAccountRules: {
       ...baseScenario.optionAccountRules,
       ...(source.optionAccountRules ?? {}),

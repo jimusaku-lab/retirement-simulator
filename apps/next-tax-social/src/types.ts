@@ -105,6 +105,7 @@ export type AgeExpenseAdjustment = {
   startAge: number;
   endAge?: number;
   target: ExpenseAdjustmentTarget;
+  targets?: ExpenseAdjustmentTarget[];
   mode: "setAmount" | "multiplier";
   value: number;
   note?: string;
@@ -247,6 +248,8 @@ export type InflationSettings = {
   livingCostAnnualInflationRate: number;
   medicalAnnualInflationRate: number;
   pensionAnnualAdjustmentRate: number;
+  livingCostInflationTargets: (keyof MonthlyExpenseProfile)[];
+  medicalInflationTargets: (keyof MonthlyExpenseProfile)[];
 };
 
 export type OptionAccountRules = {
