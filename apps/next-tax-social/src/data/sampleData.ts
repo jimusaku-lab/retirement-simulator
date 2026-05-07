@@ -37,6 +37,7 @@ const baseScenario: ScenarioData = {
       isDependent: false,
     },
   ],
+  householdLivingArrangementEvents: [],
   initialAssets: {
     cash: 600_000,
     bankDeposit: 12_000_000,

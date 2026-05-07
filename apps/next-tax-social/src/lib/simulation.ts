@@ -17,6 +17,7 @@ import type {
   AssetContributionEvent,
   GainTrackedAssetKey,
   GainTrackedAssetMap,
+  HouseholdLivingArrangementEvent,
   IncomeEvent,
   GrowthAssetKey,
   WithdrawalAssetKey,
@@ -168,6 +169,12 @@ function getAdjustedMonthlyExpense(
     ]),
   ) as MonthlyExpenseProfile;
 
+  for (const event of scenario.householdLivingArrangementEvents ?? []) {
+    const active = yearMonthFromStart(scenario.userProfile.simulationStartYearMonth, monthsFromStart) >= event.changeYearMonth;
+    if (!active) continue;
+    applyHouseholdLivingArrangementEvent(expenses, event);
+  }
+
   for (const adjustment of scenario.ageExpenseAdjustments ?? []) {
     const active = ageYears >= adjustment.startAge && (!adjustment.endAge || ageYears <= adjustment.endAge);
     if (!active) continue;
@@ -175,6 +182,34 @@ function getAdjustedMonthlyExpense(
   }
 
   return Object.values(expenses).reduce((sum, value) => sum + value, 0);
+}
+
+function yearMonthFromStart(startYearMonth: YearMonth, monthsFromStart: number) {
+  return formatYm(ym(startYearMonth).add(monthsFromStart, "month"));
+}
+
+function applyHouseholdLivingArrangementEvent(
+  expenses: MonthlyExpenseProfile,
+  event: HouseholdLivingArrangementEvent,
+) {
+  if (!event.appliesToLivingExpenses || event.changeType !== "moveOut" || event.expenseKeys.length === 0) return;
+  const targetKeys = event.expenseKeys.filter((key) => expenses[key] > 0);
+  if (targetKeys.length === 0) return;
+
+  if (event.reductionMode === "percentage") {
+    const rate = Math.min(Math.max(event.reductionRate, 0), 1);
+    for (const key of targetKeys) {
+      expenses[key] = Math.max(0, expenses[key] * (1 - rate));
+    }
+    return;
+  }
+
+  const total = targetKeys.reduce((sum, key) => sum + expenses[key], 0);
+  if (total <= 0) return;
+  const reduction = Math.min(Math.max(event.reductionAmount, 0), total);
+  for (const key of targetKeys) {
+    expenses[key] = Math.max(0, expenses[key] - reduction * (expenses[key] / total));
+  }
 }
 
 function applyAgeExpenseAdjustment(

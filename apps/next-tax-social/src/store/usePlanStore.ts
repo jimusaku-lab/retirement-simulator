@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { sampleState } from "@/data/sampleData";
+import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { cloneScenario } from "@/lib/simulation";
 import type {
   AgeExpenseAdjustment,
+  HouseholdLivingArrangementEvent,
   HouseholdMember,
   HouseholdProfile,
   PlanBackup,
@@ -124,6 +126,22 @@ function normalizeAgeExpenseAdjustments(source: LegacyScenario): AgeExpenseAdjus
       note: adjustment.note,
     };
   });
+}
+
+function normalizeHouseholdLivingArrangementEvents(source: LegacyScenario): HouseholdLivingArrangementEvent[] {
+  return (source.householdLivingArrangementEvents ?? []).map((event, index) => ({
+    id: event.id ?? `household-living-${index}`,
+    memberId: event.memberId ?? source.householdMembers?.[0]?.id ?? "member-self",
+    name: event.name ?? "別居予定",
+    changeType: event.changeType ?? "moveOut",
+    changeYearMonth: event.changeYearMonth ?? source.userProfile?.simulationStartYearMonth ?? baseScenario.userProfile.simulationStartYearMonth,
+    appliesToLivingExpenses: event.appliesToLivingExpenses ?? true,
+    expenseKeys: Array.isArray(event.expenseKeys) ? event.expenseKeys : ["food", "dailyGoods", "utilities"],
+    reductionMode: event.reductionMode ?? "fixedAmount",
+    reductionAmount: Number.isFinite(event.reductionAmount) ? Number(event.reductionAmount) : 0,
+    reductionRate: Number.isFinite(event.reductionRate) ? Number(event.reductionRate) : 0,
+    note: event.note,
+  }));
 }
 
 function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] | undefined): RetirementIncomeEvent[] {
@@ -334,6 +352,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
     },
     householdProfile,
     householdMembers,
+    householdLivingArrangementEvents: normalizeHouseholdLivingArrangementEvents(source),
     initialAssets: {
       ...baseScenario.initialAssets,
       ...legacyAssets,
@@ -427,6 +446,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
   };
 
   delete (scenario.initialAssets as ScenarioData["initialAssets"] & { securities?: number }).securities;
+  syncLinkedIncomeEndYearMonths(scenario);
   return scenario;
 }
 
@@ -455,7 +475,13 @@ export const usePlanStore = create<PlanStore>()(
       updateActiveScenario: (updater) =>
         set((state) => ({
           scenarios: state.scenarios.map((scenario) =>
-            scenario.id === state.activeScenarioId ? updater(structuredClone(scenario)) : scenario,
+            scenario.id === state.activeScenarioId
+              ? (() => {
+                  const nextScenario = updater(structuredClone(scenario));
+                  syncLinkedIncomeEndYearMonths(nextScenario);
+                  return nextScenario;
+                })()
+              : scenario,
           ),
           lastSavedAt: nowIso(),
         })),

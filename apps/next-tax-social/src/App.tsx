@@ -46,6 +46,7 @@ import {
   getIdecoMonexEstimatedPerPayment,
   getIdecoMonexFirstPayoutYearMonth,
 } from "@/lib/incomeEvents";
+import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { compactYen, downloadText, numberOrZero, yen } from "@/lib/utils";
 import {
   getBaseMonthlyExpense,
@@ -62,6 +63,7 @@ import type {
   MonthlyExpenseProfile,
   HouseholdMember,
   HouseholdProfile,
+  HouseholdLivingArrangementEvent,
   RetirementPlanState,
   ScenarioData,
   SpecialExpenseEvent,
@@ -136,6 +138,8 @@ const expenseLabels: Record<ExpenseKey, string> = {
   insurance: "保険",
   other: "その他",
 };
+
+const defaultHouseholdLivingExpenseKeys: ExpenseKey[] = ["food", "dailyGoods", "utilities", "communication", "transportation"];
 
 const assetLabels: Record<AssetKey, string> = {
   cash: "現金",
@@ -291,6 +295,7 @@ function App() {
   const updateScenario = (updater: (scenario: ScenarioData) => void) => {
     updateActiveScenario((scenario) => {
       updater(scenario);
+      syncLinkedIncomeEndYearMonths(scenario);
       return scenario;
     });
   };
@@ -738,6 +743,43 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         isDependent: false,
       }),
     );
+  const addLivingArrangementEvent = () =>
+    updateScenario((s) => {
+      const targetMember =
+        s.householdMembers.find((member) => member.relationship === "child" && member.isResident) ??
+        s.householdMembers.find((member) => member.relationship !== "self") ??
+        s.householdMembers[0];
+      s.householdLivingArrangementEvents.push({
+        id: crypto.randomUUID(),
+        memberId: targetMember?.id ?? s.householdMembers[0]?.id ?? "",
+        name: `${targetMember?.name ?? "家族"}の別居`,
+        changeType: "moveOut",
+        changeYearMonth: s.userProfile.simulationStartYearMonth,
+        appliesToLivingExpenses: true,
+        expenseKeys: [...defaultHouseholdLivingExpenseKeys],
+        reductionMode: "fixedAmount",
+        reductionAmount: 0,
+        reductionRate: 0,
+      });
+    });
+  const duplicateLivingArrangementEvent = (index: number) =>
+    updateScenario((s) => {
+      const source = s.householdLivingArrangementEvents[index];
+      if (!source) return;
+      s.householdLivingArrangementEvents.splice(index + 1, 0, {
+        ...structuredClone(source),
+        id: crypto.randomUUID(),
+        name: source.name ? `${source.name} コピー` : "別居予定 コピー",
+      });
+    });
+  const toggleLivingExpenseKey = (index: number, key: ExpenseKey) =>
+    updateScenario((s) => {
+      const event = s.householdLivingArrangementEvents[index];
+      if (!event) return;
+      event.expenseKeys = event.expenseKeys.includes(key)
+        ? event.expenseKeys.filter((item) => item !== key)
+        : [...event.expenseKeys, key];
+    });
   const headMember = scenario.householdMembers.find((member) => member.id === scenario.householdProfile.headMemberId) ?? scenario.householdMembers[0];
 
   return (
@@ -821,8 +863,20 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                     if (s.householdProfile.headMemberId === member.id) {
                       s.householdProfile.headMemberId = s.householdMembers[0]?.id ?? "";
                     }
+                    const removedLivingEventIds = new Set(
+                      s.householdLivingArrangementEvents.filter((event) => event.memberId === member.id).map((event) => event.id),
+                    );
+                    s.householdLivingArrangementEvents = s.householdLivingArrangementEvents.filter((event) => event.memberId !== member.id);
                     s.incomeEvents = s.incomeEvents.map((event) =>
-                      event.memberId === member.id ? { ...event, memberId: s.householdMembers[0]?.id ?? event.memberId } : event,
+                      event.memberId === member.id || removedLivingEventIds.has(event.linkedHouseholdLivingArrangementEventId ?? "")
+                        ? {
+                            ...event,
+                            memberId: event.memberId === member.id ? s.householdMembers[0]?.id ?? event.memberId : event.memberId,
+                            linkedHouseholdLivingArrangementEventId: removedLivingEventIds.has(event.linkedHouseholdLivingArrangementEventId ?? "")
+                              ? undefined
+                              : event.linkedHouseholdLivingArrangementEventId,
+                          }
+                        : event,
                     );
                   })
                 }
@@ -928,6 +982,140 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                 </div>
               </EventEditor>
             ))}
+          </div>
+        </div>
+        <div className="rounded-lg border bg-slate-50">
+          <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+            <div>
+              <h3 className="font-medium">同居状態変更</h3>
+              <p className="text-sm text-muted-foreground">
+                子どもの別居など、世帯人数が変わる予定を年月で登録します。対象費目だけを減額し、収入イベントの終了月にもリンクできます。
+              </p>
+            </div>
+            <Button onClick={addLivingArrangementEvent}>
+              <Plus className="h-4 w-4" />
+              追加
+            </Button>
+          </div>
+          <div className="space-y-4 p-4">
+            {scenario.householdLivingArrangementEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">同居状態変更はまだありません。</p>
+            ) : (
+              scenario.householdLivingArrangementEvents.map((event, index) => (
+                <EventEditor
+                  key={event.id}
+                  title={event.name || "同居状態変更"}
+                  onDelete={() =>
+                    updateScenario((s) => {
+                      const removedId = s.householdLivingArrangementEvents[index]?.id;
+                      s.householdLivingArrangementEvents.splice(index, 1);
+                      if (removedId) {
+                        for (const incomeEvent of s.incomeEvents) {
+                          if (incomeEvent.linkedHouseholdLivingArrangementEventId === removedId) {
+                            incomeEvent.linkedHouseholdLivingArrangementEventId = undefined;
+                          }
+                        }
+                      }
+                    })
+                  }
+                  actions={
+                    <Button variant="ghost" size="sm" onClick={() => duplicateLivingArrangementEvent(index)}>
+                      <Copy className="h-4 w-4" />
+                      複製
+                    </Button>
+                  }
+                >
+                  <FormGrid>
+                    <Field label="名称">
+                      <Input
+                        value={event.name}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].name = e.target.value))}
+                      />
+                    </Field>
+                    <Field label="対象メンバー">
+                      <Select
+                        value={event.memberId}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].memberId = e.target.value))}
+                      >
+                        {scenario.householdMembers.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="変更内容">
+                      <Select value={event.changeType} onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].changeType = e.target.value as "moveOut"))}>
+                        <option value="moveOut">別居開始</option>
+                      </Select>
+                    </Field>
+                    <Field label="変更年月">
+                      <Input
+                        type="month"
+                        value={event.changeYearMonth}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].changeYearMonth = e.target.value))}
+                      />
+                    </Field>
+                    <Field label="生活費に反映">
+                      <Select
+                        value={event.appliesToLivingExpenses ? "yes" : "no"}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].appliesToLivingExpenses = e.target.value === "yes"))}
+                      >
+                        <option value="yes">反映する</option>
+                        <option value="no">反映しない</option>
+                      </Select>
+                    </Field>
+                    <Field label="変更方法">
+                      <Select
+                        value={event.reductionMode}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].reductionMode = e.target.value as HouseholdLivingArrangementEvent["reductionMode"]))}
+                      >
+                        <option value="fixedAmount">月額を減らす</option>
+                        <option value="percentage">割合で減らす</option>
+                      </Select>
+                    </Field>
+                    {event.reductionMode === "fixedAmount" ? (
+                      <Field label="月額減少額">
+                        <Input
+                          type="number"
+                          value={event.reductionAmount}
+                          onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].reductionAmount = numberOrZero(e.target.value)))}
+                        />
+                      </Field>
+                    ) : (
+                      <RateField
+                        label="減少率"
+                        value={event.reductionRate}
+                        onChange={(value) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].reductionRate = value))}
+                      />
+                    )}
+                  </FormGrid>
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <p className="mb-2 text-sm font-medium">対象費目</p>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {(Object.keys(expenseLabels) as ExpenseKey[]).map((key) => (
+                          <label key={key} className="flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={event.expenseKeys.includes(key)}
+                              onChange={() => toggleLivingExpenseKey(index, key)}
+                            />
+                            {expenseLabels[key]}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <Field label="備考">
+                      <Textarea
+                        value={event.note ?? ""}
+                        onChange={(e) => updateScenario((s) => void (s.householdLivingArrangementEvents[index].note = e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                </EventEditor>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -1912,12 +2100,46 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
             )}
           </div>
         </div>
+        {scenario.householdLivingArrangementEvents.length > 0 && (
+          <div className="rounded-lg border bg-white">
+            <div className="border-b px-4 py-3">
+              <h3 className="font-medium">世帯構成変更による生活費調整</h3>
+              <p className="text-sm text-muted-foreground">基本情報で登録した別居などのイベントが、どの費目に効くかを確認できます。</p>
+            </div>
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>変更年月</Th>
+                  <Th>メンバー</Th>
+                  <Th>内容</Th>
+                  <Th>対象費目</Th>
+                  <Th>減額</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {scenario.householdLivingArrangementEvents.map((event) => {
+                  const member = scenario.householdMembers.find((item) => item.id === event.memberId);
+                  return (
+                    <Tr key={event.id}>
+                      <Td>{event.changeYearMonth}</Td>
+                      <Td>{member?.name ?? "未設定"}</Td>
+                      <Td>{event.changeType === "moveOut" ? "別居開始" : event.changeType}</Td>
+                      <Td>{event.expenseKeys.map((key) => expenseLabels[key]).join("、") || "-"}</Td>
+                      <Td>{event.reductionMode === "fixedAmount" ? compactYen(event.reductionAmount) : `${Math.round(event.reductionRate * 100)}%`}</Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 function IncomeSection({ scenario, updateScenario }: SectionProps) {
+  const livingArrangementEvents = scenario.householdLivingArrangementEvents ?? [];
   const add = () =>
       updateScenario((s) =>
         s.incomeEvents.push({
@@ -1992,6 +2214,9 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                     updateScenario((s) => {
                       const nextType = e.target.value as IncomeEvent["type"];
                       s.incomeEvents[index].type = nextType;
+                      if (nextType === "oneTime") {
+                        s.incomeEvents[index].linkedHouseholdLivingArrangementEventId = undefined;
+                      }
                       if (nextType === "oneTime" && s.incomeEvents[index].sourceAssetKey === "ideco") {
                         s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
                         s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
@@ -2099,6 +2324,25 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                   <option value="nonTaxable">非課税</option>
                 </Select>
               </Field>
+              {event.type !== "oneTime" && (
+                <Field label="終了リンク">
+                  <Select
+                    value={event.linkedHouseholdLivingArrangementEventId ?? ""}
+                    onChange={(e) =>
+                      updateScenario((s) => {
+                        s.incomeEvents[index].linkedHouseholdLivingArrangementEventId = e.target.value || undefined;
+                      })
+                    }
+                  >
+                    <option value="">手入力の終了年月を使う</option>
+                    {livingArrangementEvents.map((livingEvent) => (
+                      <option key={livingEvent.id} value={livingEvent.id}>
+                        {livingEvent.name} の前月まで
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
               {event.type === "pension" && event.sourceAssetKey === "ideco" ? (
                 <>
                   <Field label="受取設定">
@@ -2160,7 +2404,12 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                   ) : (
                     <>
                       <Field label="終了年月">
-                        <Input type="month" value={event.endYearMonth ?? ""} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].endYearMonth = e.target.value || undefined))} />
+                        <Input
+                          type="month"
+                          value={event.endYearMonth ?? ""}
+                          readOnly={Boolean(event.linkedHouseholdLivingArrangementEventId)}
+                          onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].endYearMonth = e.target.value || undefined))}
+                        />
                       </Field>
                       <Field label="月額">
                         <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
@@ -2210,7 +2459,12 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
               ) : (
                 <>
                   <Field label="終了年月">
-                    <Input type="month" value={event.endYearMonth ?? ""} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].endYearMonth = e.target.value || undefined))} />
+                    <Input
+                      type="month"
+                      value={event.endYearMonth ?? ""}
+                      readOnly={Boolean(event.linkedHouseholdLivingArrangementEventId)}
+                      onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].endYearMonth = e.target.value || undefined))}
+                    />
                   </Field>
                   <Field label="月額">
                     <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
@@ -2218,6 +2472,11 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                 </>
               )}
             </FormGrid>
+            {event.linkedHouseholdLivingArrangementEventId && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                終了年月は同居状態変更イベントから自動設定しています。別居開始月の前月までを収入期間として扱います。
+              </p>
+            )}
             {event.type === "pension" && event.sourceAssetKey === "ideco" && (event.idecoPensionPayoutMode ?? "monexSchedule") === "monexSchedule" && (
               <p className="mt-3 text-sm text-muted-foreground">
                 開始年月が偶数月でない場合、初回支給月は翌偶数月に自動補正します。受取期間と年間支給回数から、初回支給月と終了年月を自動生成します。

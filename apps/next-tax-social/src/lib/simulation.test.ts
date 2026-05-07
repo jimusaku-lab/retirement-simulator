@@ -3,6 +3,7 @@ import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
 import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
+import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import {
   aggregateAnnualResults,
   getBalanceAtAge,
@@ -45,6 +46,7 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
         isDependent: false,
       },
     ],
+    householdLivingArrangementEvents: [],
     initialAssets: {
       cash: 1_000_000,
       bankDeposit: 0,
@@ -177,6 +179,124 @@ describe("simulation", () => {
     );
 
     expect(amount).toBe(53_000);
+  });
+
+  it("同居状態変更は指定月から選択費目だけ固定額を減らす", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-03",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      monthlyExpenses: {
+        food: 100_000,
+        dailyGoods: 0,
+        hobbyEntertainment: 0,
+        social: 0,
+        transportation: 0,
+        clothingBeauty: 0,
+        healthMedical: 0,
+        car: 30_000,
+        educationCulture: 0,
+        specialExpense: 0,
+        cashCard: 0,
+        utilities: 50_000,
+        communication: 0,
+        housing: 0,
+        taxSocialInsurance: 0,
+        insurance: 0,
+        other: 0,
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+        {
+          id: "child",
+          name: "子",
+          relationship: "child",
+          birthDate: "2000-01-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      householdLivingArrangementEvents: [
+        {
+          id: "child-move-out",
+          memberId: "child",
+          name: "子の別居",
+          changeType: "moveOut",
+          changeYearMonth: "2026-03",
+          appliesToLivingExpenses: true,
+          expenseKeys: ["food", "utilities"],
+          reductionMode: "fixedAmount",
+          reductionAmount: 30_000,
+          reductionRate: 0,
+        },
+      ],
+    });
+
+    const result = simulateScenario(scenario);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-02")?.livingExpenseTotal).toBe(180_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-03")?.livingExpenseTotal).toBe(150_000);
+  });
+
+  it("同居状態変更リンクは収入終了月を別居開始の前月へ同期する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-01",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-06",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdLivingArrangementEvents: [
+        {
+          id: "child-move-out",
+          memberId: "member-self",
+          name: "子の別居",
+          changeType: "moveOut",
+          changeYearMonth: "2026-05",
+          appliesToLivingExpenses: false,
+          expenseKeys: [],
+          reductionMode: "fixedAmount",
+          reductionAmount: 0,
+          reductionRate: 0,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "support",
+          memberId: "member-self",
+          name: "子どもからの生活費",
+          type: "other",
+          startYearMonth: "2026-01",
+          monthlyAmount: 40_000,
+          taxTreatment: "nonTaxable",
+          linkedHouseholdLivingArrangementEventId: "child-move-out",
+        },
+      ],
+    });
+
+    syncLinkedIncomeEndYearMonths(scenario);
+    expect(scenario.incomeEvents[0].endYearMonth).toBe("2026-04");
+    expect(getIncomeForMonth(scenario.incomeEvents, "2026-04", 3)).toBe(40_000);
+    expect(getIncomeForMonth(scenario.incomeEvents, "2026-05", 4)).toBe(0);
   });
 
   it("所得控除入力は所得税と住民税の課税ベースを下げる", () => {

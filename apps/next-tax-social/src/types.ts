@@ -110,6 +110,20 @@ export type AgeExpenseAdjustment = {
   note?: string;
 };
 
+export type HouseholdLivingArrangementEvent = {
+  id: string;
+  memberId: string;
+  name: string;
+  changeType: "moveOut";
+  changeYearMonth: YearMonth;
+  appliesToLivingExpenses: boolean;
+  expenseKeys: (keyof MonthlyExpenseProfile)[];
+  reductionMode: "fixedAmount" | "percentage";
+  reductionAmount: number;
+  reductionRate: number;
+  note?: string;
+};
+
 export type IncomeEventType =
   | "unemployment"
   | "pension"
@@ -162,6 +176,7 @@ export type IncomeEvent = {
   idecoPensionPaymentsPerYear?: 1 | 2 | 4 | 6;
   idecoLumpSumContributionYears?: number;
   idecoLumpSumTaxMode?: "retirementIncomeDeclaration" | "noDeclaration";
+  linkedHouseholdLivingArrangementEventId?: string;
   note?: string;
 };
 
@@ -293,6 +308,7 @@ export type ScenarioData = {
   userProfile: UserProfile;
   householdProfile: HouseholdProfile;
   householdMembers: HouseholdMember[];
+  householdLivingArrangementEvents: HouseholdLivingArrangementEvent[];
   initialAssets: InitialAssets;
   initialAssetCostBasis: InitialAssetCostBasis;
   monthlyExpenses: MonthlyExpenseProfile;
