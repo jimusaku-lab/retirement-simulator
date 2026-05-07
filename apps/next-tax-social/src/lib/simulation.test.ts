@@ -1095,6 +1095,99 @@ describe("simulation", () => {
     expect(rows[0].lateElderlyMedicalAnnual).toBeGreaterThan(0);
   });
 
+  it("低所得の後期高齢者医療は均等割軽減を反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-01",
+        simulationEndYearMonth: "2026-12",
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: true,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 60_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const detail = calculateAutoTaxDetails(scenario)[0];
+
+    expect(detail.lateElderlyMedicalBreakdown.equalReductionLabel).toBe("7割軽減");
+    expect(detail.lateElderlyMedicalBreakdown.medicalEqualReductionAmount).toBeGreaterThan(0);
+    expect(detail.lateElderlyMedicalAnnual).toBeLessThan(54_600);
+  });
+
+  it("後期高齢者医療の窓口負担割合は所得増加を翌年8月からの期間に反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-01",
+        simulationEndYearMonth: "2027-12",
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1950-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: false,
+          isLateElderlyMedicalMember: true,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "pension",
+          memberId: "member-self",
+          name: "公的年金",
+          type: "pension",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 200_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+
+    const detail2026 = calculateAutoTaxDetails(scenario).find((detail) => detail.fiscalYear === 2026);
+    const ratio = detail2026?.lateElderlyBurdenRatios[0];
+
+    expect(ratio?.periodStartYearMonth).toBe("2027-08");
+    expect(ratio?.periodEndYearMonth).toBe("2028-07");
+    expect(ratio?.burdenRatio).toBe(0.2);
+  });
+
   it("75歳到達後は国保から後期高齢者医療へ自動で切り替える", () => {
     const scenario = simpleScenario({
       userProfile: {

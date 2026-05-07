@@ -75,6 +75,17 @@ const TOKYO_LATE_ELDERLY_MEDICAL = {
   childSupportCap: 21_000,
 };
 
+const TOKYO_LATE_ELDERLY_EQUAL_REDUCTION = [
+  { label: "7割軽減", medicalRate: 0.7, childSupportRate: 0.7 },
+  { label: "5割軽減", medicalRate: 0.5, childSupportRate: 0.5 },
+  { label: "2割軽減", medicalRate: 0.2, childSupportRate: 0.2 },
+] as const;
+
+const TOKYO_LATE_ELDERLY_INCOME_REDUCTION = [
+  { maxBaseIncome: 150_000, rate: 0.5, label: "所得割50%軽減" },
+  { maxBaseIncome: 200_000, rate: 0.25, label: "所得割25%軽減" },
+] as const;
+
 export type AutoTaxMemberDetail = {
   memberId: string;
   memberName: string;
@@ -134,13 +145,35 @@ export type AutoTaxYearDetail = {
     totalBaseIncome: number;
     medical: number;
     childSupport: number;
+    equalReductionLabel: string;
+    equalReductionJudgmentIncome: number;
+    equalReductionThreshold: number;
+    medicalEqualReductionAmount: number;
+    childSupportEqualReductionAmount: number;
+    incomeReductionAmount: number;
     insuredMemberDetails: Array<{
       memberId: string;
       memberName: string;
       ageAtYearEnd: number;
       baseIncome: number;
+      incomeReductionLabel: string;
+      incomeReductionAmount: number;
     }>;
   };
+  lateElderlyBurdenRatios: Array<{
+    memberId: string;
+    memberName: string;
+    incomeYear: number;
+    periodStartYearMonth: YearMonth;
+    periodEndYearMonth: YearMonth;
+    residentTaxBaseAnnual: number;
+    pensionAndOtherIncomeAnnual: number;
+    insuredMemberCount: number;
+    householdPensionAndOtherIncomeAnnual: number;
+    burdenRatio: 0.1 | 0.2 | 0.3;
+    category: "一般所得者等" | "一定以上所得者" | "現役並み所得者";
+    reason: string;
+  }>;
 };
 
 export type DeclaredInvestmentIncomeByYear = Map<number, Map<string, number>>;
@@ -637,8 +670,156 @@ function emptyLateElderlyMedicalBreakdown() {
     totalBaseIncome: 0,
     medical: 0,
     childSupport: 0,
+    equalReductionLabel: "該当なし",
+    equalReductionJudgmentIncome: 0,
+    equalReductionThreshold: 0,
+    medicalEqualReductionAmount: 0,
+    childSupportEqualReductionAmount: 0,
+    incomeReductionAmount: 0,
     insuredMemberDetails: [],
   };
+}
+
+function roundDownToHundred(amount: number) {
+  return Math.floor(Math.max(0, amount) / 100) * 100;
+}
+
+function getLateElderlyEqualReduction(
+  scenario: ScenarioData,
+  fiscalYear: number,
+  insuredMemberCount: number,
+  declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear,
+) {
+  const headMemberId = scenario.householdProfile.headMemberId;
+  const insuredIds = new Set(
+    scenario.householdMembers
+      .filter((member) => countLateElderlyMedicalMonths(member, fiscalYear) > 0)
+      .map((member) => member.id),
+  );
+  if (headMemberId) insuredIds.add(headMemberId);
+
+  let judgmentIncome = 0;
+  let salaryOrPensionEarnerCount = 0;
+  for (const member of scenario.householdMembers) {
+    if (!insuredIds.has(member.id)) continue;
+    const income = getMemberIncomeBreakdown(
+      scenario,
+      member,
+      fiscalYear,
+      getRetirementAdjustmentByIncomeEventId(scenario),
+      declaredInvestmentIncomeByYear,
+    );
+    judgmentIncome += income.totalIncome;
+    if (income.salaryGrossAnnual > 0 || income.pensionGrossAnnual > 0) {
+      salaryOrPensionEarnerCount += 1;
+    }
+  }
+
+  const earnerAdjustment = Math.max(0, salaryOrPensionEarnerCount - 1) * 100_000;
+  const thresholds = [
+    { ...TOKYO_LATE_ELDERLY_EQUAL_REDUCTION[0], threshold: 430_000 + earnerAdjustment },
+    { ...TOKYO_LATE_ELDERLY_EQUAL_REDUCTION[1], threshold: 430_000 + 305_000 * insuredMemberCount + earnerAdjustment },
+    { ...TOKYO_LATE_ELDERLY_EQUAL_REDUCTION[2], threshold: 430_000 + 560_000 * insuredMemberCount + earnerAdjustment },
+  ];
+  const reduction =
+    thresholds.find((item) => judgmentIncome <= item.threshold) ?? {
+      label: "該当なし",
+      medicalRate: 0,
+      childSupportRate: 0,
+      threshold: thresholds.at(-1)?.threshold ?? 0,
+    };
+  return { ...reduction, judgmentIncome };
+}
+
+function getLateElderlyIncomeReduction(baseIncome: number) {
+  return (
+    TOKYO_LATE_ELDERLY_INCOME_REDUCTION.find((item) => baseIncome <= item.maxBaseIncome) ?? {
+      rate: 0,
+      label: "該当なし",
+    }
+  );
+}
+
+function getPensionAndOtherIncomeForBurden(member: AutoTaxMemberDetail) {
+  const pensionIncome = Math.max(0, member.pensionGrossAnnual - member.pensionDeductionAnnual);
+  const otherIncome = Math.max(
+    0,
+    member.taxableIncomeBeforeBasicDeductionAnnual - pensionIncome - member.retirementIncomeAnnual,
+  );
+  return member.pensionGrossAnnual + otherIncome;
+}
+
+function calculateLateElderlyBurdenRatios(
+  scenario: ScenarioData,
+  incomeYearDetail: AutoTaxYearDetail,
+): AutoTaxYearDetail["lateElderlyBurdenRatios"] {
+  const incomeYear = incomeYearDetail.fiscalYear;
+  const periodStartYearMonth = `${incomeYear + 1}-08` as YearMonth;
+  const periodEndYearMonth = `${incomeYear + 2}-07` as YearMonth;
+  const insuredMembers = scenario.householdMembers.filter((member) => countLateElderlyMedicalMonths(member, incomeYear + 1) > 0);
+  if (insuredMembers.length === 0) return [];
+
+  const detailByMemberId = new Map(incomeYearDetail.memberDetails.map((detail) => [detail.memberId, detail]));
+  const insuredDetails = insuredMembers
+    .map((member) => detailByMemberId.get(member.id))
+    .filter((detail): detail is AutoTaxMemberDetail => Boolean(detail));
+  const householdPensionAndOtherIncomeAnnual = insuredDetails.reduce((sum, detail) => sum + getPensionAndOtherIncomeForBurden(detail), 0);
+  const hasActiveIncomeMember = insuredDetails.some((detail) => detail.residentTaxBaseAnnual >= 1_450_000);
+  const hasTwoPercentIncomeMember = insuredDetails.some(
+    (detail) => detail.residentTaxBaseAnnual >= 280_000 && detail.residentTaxBaseAnnual < 1_450_000,
+  );
+  const isNonTaxableHousehold = insuredDetails.every((detail) => detail.residentTaxBaseAnnual <= 0);
+  const twoPercentIncomeThreshold = insuredDetails.length >= 2 ? 3_200_000 : 2_000_000;
+
+  return insuredDetails.map((detail) => {
+    const pensionAndOtherIncomeAnnual = getPensionAndOtherIncomeForBurden(detail);
+    if (hasActiveIncomeMember) {
+      return {
+        memberId: detail.memberId,
+        memberName: detail.memberName,
+        incomeYear,
+        periodStartYearMonth,
+        periodEndYearMonth,
+        residentTaxBaseAnnual: detail.residentTaxBaseAnnual,
+        pensionAndOtherIncomeAnnual,
+        insuredMemberCount: insuredDetails.length,
+        householdPensionAndOtherIncomeAnnual,
+        burdenRatio: 0.3,
+        category: "現役並み所得者",
+        reason: "世帯内の後期高齢者に住民税課税所得145万円以上の人がいるため",
+      };
+    }
+    if (!isNonTaxableHousehold && hasTwoPercentIncomeMember && householdPensionAndOtherIncomeAnnual >= twoPercentIncomeThreshold) {
+      return {
+        memberId: detail.memberId,
+        memberName: detail.memberName,
+        incomeYear,
+        periodStartYearMonth,
+        periodEndYearMonth,
+        residentTaxBaseAnnual: detail.residentTaxBaseAnnual,
+        pensionAndOtherIncomeAnnual,
+        insuredMemberCount: insuredDetails.length,
+        householdPensionAndOtherIncomeAnnual,
+        burdenRatio: 0.2,
+        category: "一定以上所得者",
+        reason: `課税所得28万円以上145万円未満の人がいて、年金収入+その他所得が基準額${twoPercentIncomeThreshold.toLocaleString()}円以上のため`,
+      };
+    }
+    return {
+      memberId: detail.memberId,
+      memberName: detail.memberName,
+      incomeYear,
+      periodStartYearMonth,
+      periodEndYearMonth,
+      residentTaxBaseAnnual: detail.residentTaxBaseAnnual,
+      pensionAndOtherIncomeAnnual,
+      insuredMemberCount: insuredDetails.length,
+      householdPensionAndOtherIncomeAnnual,
+      burdenRatio: 0.1,
+      category: "一般所得者等",
+      reason: isNonTaxableHousehold ? "住民税非課税世帯として1割判定" : "2割・3割判定に該当しないため",
+    };
+  });
 }
 
 function calculateTokyoLateElderlyMedical(
@@ -669,24 +850,51 @@ function calculateTokyoLateElderlyMedical(
     );
     const baseIncome = Math.max(0, breakdown.totalIncome - TOKYO_LATE_ELDERLY_MEDICAL.baseIncomeDeduction);
     const eligibleRatio = item.eligibleMonths / 12;
+    const incomeReduction = getLateElderlyIncomeReduction(baseIncome);
+    const medicalIncomeCharge = Math.round(baseIncome * TOKYO_LATE_ELDERLY_MEDICAL.medicalIncomeRate * eligibleRatio);
+    const childSupportIncomeCharge = Math.round(baseIncome * TOKYO_LATE_ELDERLY_MEDICAL.childSupportIncomeRate * eligibleRatio);
+    const medicalIncomeReductionAmount = roundDownToHundred(medicalIncomeCharge * incomeReduction.rate);
+    const childSupportIncomeReductionAmount = roundDownToHundred(childSupportIncomeCharge * incomeReduction.rate);
     return {
       member: item.member,
       age: breakdown.ageAtYearEnd,
       baseIncome: Math.round(baseIncome * eligibleRatio),
+      medicalIncomeCharge,
+      childSupportIncomeCharge,
+      incomeReductionLabel: incomeReduction.label,
+      medicalIncomeReductionAmount,
+      childSupportIncomeReductionAmount,
+      incomeReductionAmount: medicalIncomeReductionAmount + childSupportIncomeReductionAmount,
       eligibleRatio,
     };
   });
 
   const totalBaseIncome = memberIncomes.reduce((sum, item) => sum + item.baseIncome, 0);
   const insuredMemberCount = memberIncomes.reduce((sum, item) => sum + item.eligibleRatio, 0);
+  const equalReduction = getLateElderlyEqualReduction(scenario, fiscalYear, insuredMemberCount, declaredInvestmentIncomeByYear);
+  const medicalPerCapitaCharge = Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.medicalPerCapita);
+  const childSupportPerCapitaCharge = Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.childSupportPerCapita);
+  const medicalEqualReductionAmount = roundDownToHundred(medicalPerCapitaCharge * equalReduction.medicalRate);
+  const childSupportEqualReductionAmount = roundDownToHundred(childSupportPerCapitaCharge * equalReduction.childSupportRate);
+  const incomeReductionAmount = memberIncomes.reduce((sum, item) => sum + item.incomeReductionAmount, 0);
+  const medicalIncomeCharge = memberIncomes.reduce((sum, item) => sum + item.medicalIncomeCharge, 0);
+  const childSupportIncomeCharge = memberIncomes.reduce((sum, item) => sum + item.childSupportIncomeCharge, 0);
   const medical = Math.min(
-    Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.medicalIncomeRate) +
-      Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.medicalPerCapita),
+    roundDownToHundred(
+      medicalIncomeCharge +
+        medicalPerCapitaCharge -
+        medicalEqualReductionAmount -
+        memberIncomes.reduce((sum, item) => sum + item.medicalIncomeReductionAmount, 0),
+    ),
     TOKYO_LATE_ELDERLY_MEDICAL.medicalCap,
   );
   const childSupport = Math.min(
-    Math.round(totalBaseIncome * TOKYO_LATE_ELDERLY_MEDICAL.childSupportIncomeRate) +
-      Math.round(insuredMemberCount * TOKYO_LATE_ELDERLY_MEDICAL.childSupportPerCapita),
+    roundDownToHundred(
+      childSupportIncomeCharge +
+        childSupportPerCapitaCharge -
+        childSupportEqualReductionAmount -
+        memberIncomes.reduce((sum, item) => sum + item.childSupportIncomeReductionAmount, 0),
+    ),
     TOKYO_LATE_ELDERLY_MEDICAL.childSupportCap,
   );
 
@@ -697,11 +905,19 @@ function calculateTokyoLateElderlyMedical(
       totalBaseIncome,
       medical,
       childSupport,
+      equalReductionLabel: equalReduction.label,
+      equalReductionJudgmentIncome: equalReduction.judgmentIncome,
+      equalReductionThreshold: equalReduction.threshold,
+      medicalEqualReductionAmount,
+      childSupportEqualReductionAmount,
+      incomeReductionAmount,
       insuredMemberDetails: memberIncomes.map((item) => ({
         memberId: item.member.id,
         memberName: item.member.name,
         ageAtYearEnd: item.age,
         baseIncome: item.baseIncome,
+        incomeReductionLabel: item.incomeReductionLabel,
+        incomeReductionAmount: item.incomeReductionAmount,
       })),
     },
   };
@@ -825,8 +1041,7 @@ export function calculateAutoTaxDetails(
 
     const otaNhi = calculateOtaNationalHealthInsurance(scenario, fiscalYear, declaredInvestmentIncomeByYear);
     const lateElderlyMedical = calculateTokyoLateElderlyMedical(scenario, fiscalYear, declaredInvestmentIncomeByYear);
-
-    return {
+    const detailForBurdenRatio: AutoTaxYearDetail = {
       fiscalYear,
       memberDetails: perMember,
       nationalHealthInsuranceAnnual: otaNhi.nationalHealthInsuranceAnnual,
@@ -835,6 +1050,12 @@ export function calculateAutoTaxDetails(
       otherPublicCostAnnual: 0,
       nationalHealthInsuranceBreakdown: otaNhi.nationalHealthInsuranceBreakdown,
       lateElderlyMedicalBreakdown: lateElderlyMedical.lateElderlyMedicalBreakdown,
+      lateElderlyBurdenRatios: [],
+    };
+
+    return {
+      ...detailForBurdenRatio,
+      lateElderlyBurdenRatios: calculateLateElderlyBurdenRatios(scenario, detailForBurdenRatio),
     };
   });
 }

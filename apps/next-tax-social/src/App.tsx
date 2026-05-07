@@ -2723,6 +2723,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
             <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
+            <LateElderlyBurdenRatioTable details={autoDetails} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
@@ -2758,6 +2759,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxRowsSummary rows={effectiveRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="反映後の年度データはまだありません。" />
             <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
+            <LateElderlyBurdenRatioTable details={autoDetails} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
           </div>
         )}
@@ -3072,6 +3074,58 @@ function TaxCashTimingSummary({
                 <Td className="min-w-[28rem] text-sm text-muted-foreground">
                   {row.incomeYear}年の所得に基づく税・社会保険は、主に{row.paymentYear}年の現金支出として反映します。
                   iDeCo源泉徴収と譲渡益税は、結果タブでは別列で確認します。
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function LateElderlyBurdenRatioTable({ details }: { details: AutoTaxYearDetail[] }) {
+  const rows = details.flatMap((detail) => detail.lateElderlyBurdenRatios);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-white px-4 py-3">
+      <div>
+        <h3 className="font-medium">後期高齢者医療の窓口負担割合</h3>
+        <p className="text-sm text-muted-foreground">
+          判定所得年の収入・住民税課税所得をもとに、翌年8月から翌々年7月までの1割・2割・3割を表示します。
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <thead>
+            <Tr>
+              <Th>適用期間</Th>
+              <Th>メンバー</Th>
+              <Th>判定所得年</Th>
+              <Th>住民税課税所得</Th>
+              <Th>本人 年金収入+その他所得</Th>
+              <Th>世帯合計</Th>
+              <Th>被保険者数</Th>
+              <Th>窓口負担</Th>
+              <Th>判定理由</Th>
+            </Tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <Tr key={`${row.memberId}-${row.incomeYear}`}>
+                <Td className="whitespace-nowrap">
+                  {row.periodStartYearMonth} - {row.periodEndYearMonth}
+                </Td>
+                <Td>{row.memberName}</Td>
+                <Td>{row.incomeYear}</Td>
+                <Td>{yen(row.residentTaxBaseAnnual)}</Td>
+                <Td>{yen(row.pensionAndOtherIncomeAnnual)}</Td>
+                <Td>{yen(row.householdPensionAndOtherIncomeAnnual)}</Td>
+                <Td>{row.insuredMemberCount}人</Td>
+                <Td className="font-medium">{Math.round(row.burdenRatio * 10)}割</Td>
+                <Td className="min-w-[26rem] text-sm text-muted-foreground">
+                  {row.category}: {row.reason}
                 </Td>
               </Tr>
             ))}
@@ -3485,6 +3539,9 @@ function TaxCalculationDetails({
                         <Td>
                           医療 {yen(detail.lateElderlyMedicalBreakdown.medical)} / 子ども
                           {yen(detail.lateElderlyMedicalBreakdown.childSupport)}
+                          <br />
+                          軽減 {detail.lateElderlyMedicalBreakdown.equalReductionLabel} / 所得割軽減
+                          {yen(detail.lateElderlyMedicalBreakdown.incomeReductionAmount)}
                         </Td>
                       </Tr>
                     </tbody>
@@ -3505,10 +3562,16 @@ function TaxCalculationDetails({
                 {detail.lateElderlyMedicalBreakdown.insuredMemberDetails.length > 0 && (
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <p>後期高齢者医療は東京都広域連合の料率で、被保険者ごとの baseIncome を集計しています。</p>
+                    <p>
+                      均等割軽減判定所得 {yen(detail.lateElderlyMedicalBreakdown.equalReductionJudgmentIncome)} / 閾値
+                      {yen(detail.lateElderlyMedicalBreakdown.equalReductionThreshold)} / 均等割軽減
+                      {yen(detail.lateElderlyMedicalBreakdown.medicalEqualReductionAmount + detail.lateElderlyMedicalBreakdown.childSupportEqualReductionAmount)}
+                    </p>
                     <ul className="list-disc space-y-1 pl-5">
                       {detail.lateElderlyMedicalBreakdown.insuredMemberDetails.map((member) => (
                         <li key={member.memberId}>
-                          {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)}
+                          {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)} / 所得割軽減 {member.incomeReductionLabel}
+                          {member.incomeReductionAmount > 0 ? ` ${yen(member.incomeReductionAmount)}` : ""}
                         </li>
                       ))}
                     </ul>
