@@ -19,6 +19,8 @@ const SPOUSE_DEDUCTION_INCOME_TAX = 380_000;
 const SPOUSE_DEDUCTION_RESIDENT_TAX = 330_000;
 const DEPENDENT_DEDUCTION_INCOME_TAX = 380_000;
 const DEPENDENT_DEDUCTION_RESIDENT_TAX = 330_000;
+const DEPENDENT_TOTAL_INCOME_LIMIT = 580_000;
+const SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT = 10_000_000;
 
 const NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR: Record<number, number> = {
   2026: 17_920,
@@ -298,21 +300,43 @@ function getMemberIncomeBreakdown(
   };
 }
 
-function getDependentDeductions(scenario: ScenarioData, memberId: string) {
+function isDeductionEligibleDependent(
+  scenario: ScenarioData,
+  member: HouseholdMember,
+  fiscalYear: number,
+  retirementAdjustmentByIncomeEventId: Map<string, RetirementOverlapAdjustment>,
+) {
+  const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
+  return income.totalIncome <= DEPENDENT_TOTAL_INCOME_LIMIT;
+}
+
+function getDependentDeductions(
+  scenario: ScenarioData,
+  memberId: string,
+  fiscalYear: number,
+  taxpayerTotalIncome: number,
+  retirementAdjustmentByIncomeEventId: Map<string, RetirementOverlapAdjustment>,
+) {
   const spouseIncomeTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
     return sum + SPOUSE_DEDUCTION_INCOME_TAX;
   }, 0);
   const spouseResidentTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
     return sum + SPOUSE_DEDUCTION_RESIDENT_TAX;
   }, 0);
   const dependentIncomeTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
     return sum + DEPENDENT_DEDUCTION_INCOME_TAX;
   }, 0);
   const dependentResidentTax = scenario.householdMembers.reduce((sum, member) => {
     if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId)) return sum;
     return sum + DEPENDENT_DEDUCTION_RESIDENT_TAX;
   }, 0);
 
@@ -623,7 +647,13 @@ export function calculateAutoTaxDetails(scenario: ScenarioData): AutoTaxYearDeta
   return fiscalYears.map((fiscalYear) => {
     const perMember = scenario.householdMembers.map((member) => {
       const income = getMemberIncomeBreakdown(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId);
-      const deductions = getDependentDeductions(scenario, member.id);
+      const deductions = getDependentDeductions(
+        scenario,
+        member.id,
+        fiscalYear,
+        income.totalIncome,
+        retirementAdjustmentByIncomeEventId,
+      );
       const itemizedDeductions = getItemizedDeductions(scenario, member.id, fiscalYear);
       const manualSocialInsuranceDeductionAnnual = itemizedDeductions.socialInsurance;
       const autoSocialInsuranceDeductionAnnual = getAutoSocialInsuranceDeductionAnnual(

@@ -237,6 +237,141 @@ describe("simulation", () => {
     expect(withDetail?.nationalHealthInsuranceAnnual).toBe(withoutDetail?.nationalHealthInsuranceAnnual);
   });
 
+  it("配偶者控除は配偶者の所得条件を満たす場合だけ反映する", () => {
+    const dependentSpouseScenario = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+        {
+          id: "member-spouse",
+          name: "配偶者",
+          relationship: "spouse",
+          birthDate: "1969-02-22",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: true,
+          dependsOnMemberId: "member-self",
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "salary-self",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 250_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+    const dependentDetail = calculateAutoTaxDetails(dependentSpouseScenario)[0].memberDetails.find(
+      (member) => member.memberId === "member-self",
+    );
+
+    const highIncomeSpouseDetail = calculateAutoTaxDetails({
+      ...dependentSpouseScenario,
+      incomeEvents: [
+        ...dependentSpouseScenario.incomeEvents,
+        {
+          id: "salary-spouse",
+          memberId: "member-spouse",
+          name: "配偶者給与",
+          type: "salary",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 120_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    })[0].memberDetails.find((member) => member.memberId === "member-self");
+
+    expect(dependentDetail?.dependentDeductionsIncomeTaxAnnual).toBe(380_000);
+    expect(dependentDetail?.dependentDeductionsResidentTaxAnnual).toBe(330_000);
+    expect(highIncomeSpouseDetail?.dependentDeductionsIncomeTaxAnnual).toBe(0);
+    expect(highIncomeSpouseDetail?.dependentDeductionsResidentTaxAnnual).toBe(0);
+    expect(highIncomeSpouseDetail?.incomeTaxBaseAnnual).toBeGreaterThan(dependentDetail?.incomeTaxBaseAnnual ?? 0);
+  });
+
+  it("扶養控除は扶養対象者の所得が上限を超える場合は反映しない", () => {
+    const detail = calculateAutoTaxDetails(
+      simpleScenario({
+        householdProfile: {
+          municipality: "東京都大田区",
+          headMemberId: "member-self",
+          taxCalculationMode: "auto",
+        },
+        householdMembers: [
+          {
+            id: "member-self",
+            name: "本人",
+            relationship: "self",
+            birthDate: "1966-04-01",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: false,
+          },
+          {
+            id: "member-child",
+            name: "子",
+            relationship: "child",
+            birthDate: "2003-04-01",
+            isResident: true,
+            isNationalHealthInsuranceMember: true,
+            isLateElderlyMedicalMember: false,
+            isLongTermCareInsured: false,
+            isDependent: true,
+            dependsOnMemberId: "member-self",
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "salary-self",
+            memberId: "member-self",
+            name: "給与",
+            type: "salary",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 250_000,
+            taxTreatment: "taxable",
+          },
+          {
+            id: "salary-child",
+            memberId: "member-child",
+            name: "子の給与",
+            type: "salary",
+            startYearMonth: "2026-01",
+            endYearMonth: "2026-12",
+            monthlyAmount: 120_000,
+            taxTreatment: "taxable",
+          },
+        ],
+      }),
+    )[0].memberDetails.find((member) => member.memberId === "member-self");
+
+    expect(detail?.dependentDeductionsIncomeTaxAnnual).toBe(0);
+    expect(detail?.dependentDeductionsResidentTaxAnnual).toBe(0);
+  });
+
   it("税・社会保険は未入力年度で直近の前年度を引き継ぐ", () => {
     const amount = getTaxInsuranceForMonth(
       [
