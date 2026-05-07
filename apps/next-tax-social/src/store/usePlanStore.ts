@@ -141,7 +141,12 @@ function normalizeAgeExpenseAdjustments(source: LegacyScenario): AgeExpenseAdjus
       endAge: endAge !== undefined && endAge >= startAge ? endAge : undefined,
       target,
       targets: normalizeExpenseAdjustmentTargets(adjustment.targets, [target]),
-      mode: adjustment.mode ?? "multiplier",
+      mode:
+        adjustment.mode === "setAmount" ||
+        adjustment.mode === "multiplier" ||
+        adjustment.mode === "yearOverYearMultiplier"
+          ? adjustment.mode
+          : "multiplier",
       value: Number.isFinite(adjustment.value) ? adjustment.value : 1,
       note: adjustment.note,
     };

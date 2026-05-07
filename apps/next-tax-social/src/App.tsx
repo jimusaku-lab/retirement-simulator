@@ -2062,7 +2062,9 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
             <div>
               <h3 className="font-medium">年齢別の生活費変更</h3>
-              <p className="text-sm text-muted-foreground">現在の生活費を起点に、満年齢で変更します。範囲が重なると上から順に重複適用されます。</p>
+              <p className="text-sm text-muted-foreground">
+                現在生活費基準、前年同月比、月額指定を選べます。前年比は世帯人数変更後の水準から高齢期の減少を重ねる用途に使います。
+              </p>
             </div>
             <Button onClick={addAdjustment}>
               <Plus className="h-4 w-4" />
@@ -2133,15 +2135,16 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
                     <Field label="変更方法">
                       <Select
                         value={adjustment.mode}
-                        onChange={(event) => updateScenario((s) => void (s.ageExpenseAdjustments[index].mode = event.target.value as "setAmount" | "multiplier"))}
+                        onChange={(event) => updateScenario((s) => void (s.ageExpenseAdjustments[index].mode = event.target.value as AgeExpenseAdjustment["mode"]))}
                       >
                         <option value="multiplier">現在生活費基準の倍率</option>
+                        <option value="yearOverYearMultiplier">前年比の倍率</option>
                         <option value="setAmount">月額に変更</option>
                       </Select>
                     </Field>
-                    {adjustment.mode === "multiplier" ? (
+                    {adjustment.mode === "multiplier" || adjustment.mode === "yearOverYearMultiplier" ? (
                       <RateField
-                        label="現在生活費基準の倍率"
+                        label={adjustment.mode === "yearOverYearMultiplier" ? "前年同月比" : "現在生活費基準の倍率"}
                         value={adjustment.value}
                         onChange={(value) => updateScenario((s) => void (s.ageExpenseAdjustments[index].value = value))}
                       />
