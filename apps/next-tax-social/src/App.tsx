@@ -789,9 +789,10 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         reductionRate: 0,
       });
     });
-  const addMemberStatusEvent = () =>
+  const addMemberStatusEventForMember = (memberId?: string) =>
     updateScenario((s) => {
       const targetMember =
+        (memberId ? s.householdMembers.find((member) => member.id === memberId) : undefined) ??
         s.householdMembers.find((member) => member.relationship === "child") ??
         s.householdMembers.find((member) => member.relationship !== "self") ??
         s.householdMembers[0];
@@ -808,6 +809,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         isLongTermCareInsured: undefined,
       });
     });
+  const addMemberStatusEvent = () => addMemberStatusEventForMember();
   const duplicateMemberStatusEvent = (index: number) =>
     updateScenario((s) => {
       const source = s.householdMemberStatusEvents[index];
@@ -1029,6 +1031,19 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                     </Field>
                   )}
                 </FormGrid>
+                {member.relationship !== "self" && (
+                  <div className="mt-4 rounded-md border bg-white px-3 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        将来このメンバーが扶養外・国保外になる場合は、年月付きの変更予定を追加します。
+                      </p>
+                      <Button variant="outline" size="sm" onClick={() => addMemberStatusEventForMember(member.id)}>
+                        <Plus className="h-4 w-4" />
+                        扶養・国保変更を追加
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4">
                   <Field label="備考">
                     <Textarea
