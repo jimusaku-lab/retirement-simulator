@@ -538,32 +538,6 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
 
       <Card>
         <CardHeader>
-          <CardTitle>年別の流動資金フロー</CardTitle>
-          <CardDescription>外部から入る現金収入と、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を確認します。</CardDescription>
-        </CardHeader>
-        <CardContent className="h-[28rem]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowChartData} margin={{ top: 8, right: 28, bottom: 56, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
-              <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
-              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
-              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 16 }} />
-              <Bar dataKey="income" name="現金収入" fill="#0f766e" />
-              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
-              <Bar dataKey="living" name="生活費" fill="#334155" />
-              <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
-              <Bar dataKey="special" name="特別支出" fill="#ea580c" />
-              <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
-              <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
-              <Bar dataKey="net" name="純現金収支" fill="#2563eb" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>資産残高と取り崩しの推移</CardTitle>
           <CardDescription>年末資産残高と、生活費や投資不足を埋めるために必要だった年間不足分を確認します。普通預金は流動資金として扱います。</CardDescription>
         </CardHeader>
@@ -577,6 +551,32 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
               <Area dataKey="assets" name="年末資産" stroke="#0f766e" fill="#99f6e4" />
               <Line dataKey="withdrawal" name="年間取り崩し" stroke="#e11d48" strokeWidth={2} dot={false} />
             </AreaChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>年別の流動資金フロー</CardTitle>
+          <CardDescription>外部から入る現金収入と、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を確認します。</CardDescription>
+        </CardHeader>
+        <CardContent className="h-[30rem]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={cashflowChartData} barCategoryGap="18%" barGap={2} maxBarSize={14} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+              <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+              <Bar dataKey="income" name="現金収入" fill="#0f766e" />
+              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="living" name="生活費" fill="#334155" />
+              <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
+              <Bar dataKey="special" name="特別支出" fill="#ea580c" />
+              <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
+              <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
+              <Bar dataKey="net" name="純現金収支" fill="#2563eb" />
+            </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
@@ -4377,7 +4377,6 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     special: -row.specialExpenseTotal,
     assetTransfer: -row.assetTransferTotal,
     contribution: -row.assetContributionTotal,
-    contributionGap: row.assetContributionFundingGap,
     net: row.netCashFlow,
   }));
   const unrealizedGainChartData = result.annual.map((row) => ({
@@ -4550,14 +4549,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             外部から入る現金収入、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を年ごとに確認します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="h-[28rem]">
+        <CardContent className="h-[30rem]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowChartData} margin={{ top: 8, right: 28, bottom: 56, left: 0 }}>
+            <BarChart data={cashflowChartData} barCategoryGap="18%" barGap={2} maxBarSize={14} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
-              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 16 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
               <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
@@ -4565,7 +4564,6 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
               <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
               <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
-              <Bar dataKey="contributionGap" name="追加投資原資不足" fill="#b91c1c" />
               <Bar dataKey="net" name="純収支" fill="#2563eb" />
             </BarChart>
           </ResponsiveContainer>
