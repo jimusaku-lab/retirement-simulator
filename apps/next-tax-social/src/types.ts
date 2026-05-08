@@ -125,6 +125,20 @@ export type HouseholdLivingArrangementEvent = {
   note?: string;
 };
 
+export type HouseholdMemberStatusEvent = {
+  id: string;
+  memberId: string;
+  name: string;
+  changeYearMonth: YearMonth;
+  isResident?: boolean;
+  isNationalHealthInsuranceMember?: boolean;
+  isDependent?: boolean;
+  dependsOnMemberId?: string;
+  isLateElderlyMedicalMember?: boolean;
+  isLongTermCareInsured?: boolean;
+  note?: string;
+};
+
 export type IncomeEventType =
   | "unemployment"
   | "pension"
@@ -312,6 +326,7 @@ export type ScenarioData = {
   householdProfile: HouseholdProfile;
   householdMembers: HouseholdMember[];
   householdLivingArrangementEvents: HouseholdLivingArrangementEvent[];
+  householdMemberStatusEvents: HouseholdMemberStatusEvent[];
   initialAssets: InitialAssets;
   initialAssetCostBasis: InitialAssetCostBasis;
   monthlyExpenses: MonthlyExpenseProfile;

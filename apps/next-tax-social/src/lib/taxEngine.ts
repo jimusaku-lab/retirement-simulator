@@ -203,6 +203,44 @@ function getCalendarYearMonths(year: number) {
   return months;
 }
 
+export function getEffectiveHouseholdMemberForMonth(
+  scenario: ScenarioData,
+  member: HouseholdMember,
+  yearMonth: YearMonth,
+): HouseholdMember {
+  const effective = { ...member };
+  const changes = (scenario.householdMemberStatusEvents ?? [])
+    .filter((event) => event.memberId === member.id && event.changeYearMonth <= yearMonth)
+    .sort((a, b) => a.changeYearMonth.localeCompare(b.changeYearMonth));
+
+  for (const event of changes) {
+    if (typeof event.isResident === "boolean") effective.isResident = event.isResident;
+    if (typeof event.isNationalHealthInsuranceMember === "boolean") {
+      effective.isNationalHealthInsuranceMember = event.isNationalHealthInsuranceMember;
+    }
+    if (typeof event.isDependent === "boolean") {
+      effective.isDependent = member.relationship === "self" ? false : event.isDependent;
+      effective.dependsOnMemberId = effective.isDependent ? event.dependsOnMemberId ?? scenario.householdProfile.headMemberId : undefined;
+    }
+    if (typeof event.isLateElderlyMedicalMember === "boolean") {
+      effective.isLateElderlyMedicalMember = event.isLateElderlyMedicalMember;
+    }
+    if (typeof event.isLongTermCareInsured === "boolean") {
+      effective.isLongTermCareInsured = event.isLongTermCareInsured;
+    }
+  }
+
+  return effective;
+}
+
+function getEffectiveHouseholdMemberForYearEnd(
+  scenario: ScenarioData,
+  member: HouseholdMember,
+  fiscalYear: number,
+) {
+  return getEffectiveHouseholdMemberForMonth(scenario, member, `${fiscalYear}-12`);
+}
+
 function listFiscalYearsForScenario(scenario: ScenarioData) {
   const start = ym(scenario.userProfile.simulationStartYearMonth);
   const endYearMonth =
@@ -402,30 +440,35 @@ function getDependentDeductions(
   declaredInvestmentIncomeByYear: DeclaredInvestmentIncomeByYear,
 ) {
   const spouseIncomeTax = scenario.householdMembers.reduce((sum, member) => {
-    if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    const effectiveMember = getEffectiveHouseholdMemberForYearEnd(scenario, member, fiscalYear);
+    if (effectiveMember.relationship !== "spouse" || !effectiveMember.isDependent || effectiveMember.dependsOnMemberId !== memberId) return sum;
     if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
     if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + SPOUSE_DEDUCTION_INCOME_TAX;
   }, 0);
   const spouseResidentTax = scenario.householdMembers.reduce((sum, member) => {
-    if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    const effectiveMember = getEffectiveHouseholdMemberForYearEnd(scenario, member, fiscalYear);
+    if (effectiveMember.relationship !== "spouse" || !effectiveMember.isDependent || effectiveMember.dependsOnMemberId !== memberId) return sum;
     if (taxpayerTotalIncome > SPOUSE_DEDUCTION_TAXPAYER_INCOME_LIMIT) return sum;
     if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + SPOUSE_DEDUCTION_RESIDENT_TAX;
   }, 0);
   const dependentIncomeTax = scenario.householdMembers.reduce((sum, member) => {
-    if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    const effectiveMember = getEffectiveHouseholdMemberForYearEnd(scenario, member, fiscalYear);
+    if (effectiveMember.relationship === "spouse" || !effectiveMember.isDependent || effectiveMember.dependsOnMemberId !== memberId) return sum;
     if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + DEPENDENT_DEDUCTION_INCOME_TAX;
   }, 0);
   const dependentResidentTax = scenario.householdMembers.reduce((sum, member) => {
-    if (member.relationship === "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+    const effectiveMember = getEffectiveHouseholdMemberForYearEnd(scenario, member, fiscalYear);
+    if (effectiveMember.relationship === "spouse" || !effectiveMember.isDependent || effectiveMember.dependsOnMemberId !== memberId) return sum;
     if (!isDeductionEligibleDependent(scenario, member, fiscalYear, retirementAdjustmentByIncomeEventId, declaredInvestmentIncomeByYear)) return sum;
     return sum + DEPENDENT_DEDUCTION_RESIDENT_TAX;
   }, 0);
   const spouseSpecial = scenario.householdMembers.reduce(
     (sum, member) => {
-      if (member.relationship !== "spouse" || !member.isDependent || member.dependsOnMemberId !== memberId) return sum;
+      const effectiveMember = getEffectiveHouseholdMemberForYearEnd(scenario, member, fiscalYear);
+      if (effectiveMember.relationship !== "spouse" || !effectiveMember.isDependent || effectiveMember.dependsOnMemberId !== memberId) return sum;
       const income = getMemberIncomeBreakdown(
         scenario,
         member,
@@ -521,12 +564,13 @@ function calculateNationalPensionMonthly(fiscalYear: number) {
   return NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR[fiscalYear] ?? NATIONAL_PENSION_MONTHLY_BY_FISCAL_YEAR[latestYear];
 }
 
-function countEligibleNationalPensionMonths(member: HouseholdMember, fiscalYear: number) {
-  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
+function countEligibleNationalPensionMonths(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
   let count = 0;
   for (const month of getCalendarYearMonths(fiscalYear)) {
-    const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
-    if (age >= 20 && age < 60 && !isLateElderlyMedicalMemberForMonth(member, month)) {
+    const effectiveMember = getEffectiveHouseholdMemberForMonth(scenario, member, month);
+    if (!effectiveMember.isResident || !effectiveMember.isNationalHealthInsuranceMember) continue;
+    const age = getAgeAtDate(effectiveMember.birthDate, ym(month).endOf("month"));
+    if (age >= 20 && age < 60 && !isLateElderlyMedicalMemberForMonth(effectiveMember, month)) {
       count += 1;
     }
   }
@@ -539,20 +583,30 @@ function isLateElderlyMedicalMemberForMonth(member: HouseholdMember, yearMonth: 
   return getAgeAtDate(member.birthDate, ym(yearMonth).endOf("month")) >= 75;
 }
 
-function countLateElderlyMedicalMonths(member: HouseholdMember, fiscalYear: number) {
-  return getCalendarYearMonths(fiscalYear).filter((month) => isLateElderlyMedicalMemberForMonth(member, month)).length;
-}
-
-function countNationalHealthInsuranceMonths(member: HouseholdMember, fiscalYear: number) {
-  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
-  return getCalendarYearMonths(fiscalYear).filter((month) => !isLateElderlyMedicalMemberForMonth(member, month)).length;
-}
-
-function countNursingCareInsuranceMonths(member: HouseholdMember, fiscalYear: number) {
-  if (!member.isResident || !member.isNationalHealthInsuranceMember) return 0;
+function countLateElderlyMedicalMonths(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
   return getCalendarYearMonths(fiscalYear).filter((month) => {
-    const age = getAgeAtDate(member.birthDate, ym(month).endOf("month"));
-    return age >= 40 && age <= 64 && !isLateElderlyMedicalMemberForMonth(member, month);
+    const effectiveMember = getEffectiveHouseholdMemberForMonth(scenario, member, month);
+    return isLateElderlyMedicalMemberForMonth(effectiveMember, month);
+  }).length;
+}
+
+function countNationalHealthInsuranceMonths(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
+  return getCalendarYearMonths(fiscalYear).filter((month) => {
+    const effectiveMember = getEffectiveHouseholdMemberForMonth(scenario, member, month);
+    return (
+      effectiveMember.isResident &&
+      effectiveMember.isNationalHealthInsuranceMember &&
+      !isLateElderlyMedicalMemberForMonth(effectiveMember, month)
+    );
+  }).length;
+}
+
+function countNursingCareInsuranceMonths(scenario: ScenarioData, member: HouseholdMember, fiscalYear: number) {
+  return getCalendarYearMonths(fiscalYear).filter((month) => {
+    const effectiveMember = getEffectiveHouseholdMemberForMonth(scenario, member, month);
+    if (!effectiveMember.isResident || !effectiveMember.isNationalHealthInsuranceMember) return false;
+    const age = getAgeAtDate(effectiveMember.birthDate, ym(month).endOf("month"));
+    return age >= 40 && age <= 64 && !isLateElderlyMedicalMemberForMonth(effectiveMember, month);
   }).length;
 }
 
@@ -580,8 +634,8 @@ function calculateOtaNationalHealthInsurance(
   const insuredMembers = scenario.householdMembers
     .map((member) => ({
       member,
-      eligibleMonths: countNationalHealthInsuranceMonths(member, fiscalYear),
-      careEligibleMonths: countNursingCareInsuranceMonths(member, fiscalYear),
+      eligibleMonths: countNationalHealthInsuranceMonths(scenario, member, fiscalYear),
+      careEligibleMonths: countNursingCareInsuranceMonths(scenario, member, fiscalYear),
     }))
     .filter((item) => item.eligibleMonths > 0);
   if (insuredMembers.length === 0) {
@@ -694,7 +748,7 @@ function getLateElderlyEqualReduction(
   const headMemberId = scenario.householdProfile.headMemberId;
   const insuredIds = new Set(
     scenario.householdMembers
-      .filter((member) => countLateElderlyMedicalMonths(member, fiscalYear) > 0)
+      .filter((member) => countLateElderlyMedicalMonths(scenario, member, fiscalYear) > 0)
       .map((member) => member.id),
   );
   if (headMemberId) insuredIds.add(headMemberId);
@@ -757,7 +811,7 @@ function calculateLateElderlyBurdenRatios(
   const incomeYear = incomeYearDetail.fiscalYear;
   const periodStartYearMonth = `${incomeYear + 1}-08` as YearMonth;
   const periodEndYearMonth = `${incomeYear + 2}-07` as YearMonth;
-  const insuredMembers = scenario.householdMembers.filter((member) => countLateElderlyMedicalMonths(member, incomeYear + 1) > 0);
+  const insuredMembers = scenario.householdMembers.filter((member) => countLateElderlyMedicalMonths(scenario, member, incomeYear + 1) > 0);
   if (insuredMembers.length === 0) return [];
 
   const detailByMemberId = new Map(incomeYearDetail.memberDetails.map((detail) => [detail.memberId, detail]));
@@ -831,7 +885,7 @@ function calculateTokyoLateElderlyMedical(
   const insuredMembers = scenario.householdMembers
     .map((member) => ({
       member,
-      eligibleMonths: countLateElderlyMedicalMonths(member, fiscalYear),
+      eligibleMonths: countLateElderlyMedicalMonths(scenario, member, fiscalYear),
     }))
     .filter((item) => item.eligibleMonths > 0);
   if (insuredMembers.length === 0) {
@@ -933,7 +987,7 @@ function getAutoSocialInsuranceDeductionAnnual(
     Pick<AutoTaxYearDetail, "nationalHealthInsuranceAnnual" | "lateElderlyMedicalAnnual" | "nursingCareAnnual">
   >,
 ) {
-  const nationalPensionAnnual = countEligibleNationalPensionMonths(member, fiscalYear) * calculateNationalPensionMonthly(fiscalYear);
+  const nationalPensionAnnual = countEligibleNationalPensionMonths(scenario, member, fiscalYear) * calculateNationalPensionMonthly(fiscalYear);
   const priorYearInsurance = insuranceByIncomeYear.get(fiscalYear - 1);
   const householdPublicInsurancePaidThisYear =
     member.id === scenario.householdProfile.headMemberId && priorYearInsurance
@@ -993,7 +1047,7 @@ export function calculateAutoTaxDetails(
       );
       const socialInsuranceDeductionAnnual = manualSocialInsuranceDeductionAnnual + autoSocialInsuranceDeductionAnnual;
       const medicalExpenseDeductionAnnual = itemizedDeductions.medical;
-      const nationalPensionEligibleMonths = countEligibleNationalPensionMonths(member, fiscalYear);
+      const nationalPensionEligibleMonths = countEligibleNationalPensionMonths(scenario, member, fiscalYear);
       const incomeTaxBase = Math.max(
         0,
         income.totalIncome - INCOME_TAX_BASIC_DEDUCTION - deductions.incomeTax - socialInsuranceDeductionAnnual - medicalExpenseDeductionAnnual,

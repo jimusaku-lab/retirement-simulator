@@ -47,6 +47,7 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
       },
     ],
     householdLivingArrangementEvents: [],
+    householdMemberStatusEvents: [],
     initialAssets: {
       cash: 1_000_000,
       bankDeposit: 0,
@@ -509,6 +510,70 @@ describe("simulation", () => {
 
     expect(detail?.dependentDeductionsIncomeTaxAnnual).toBe(0);
     expect(detail?.dependentDeductionsResidentTaxAnnual).toBe(0);
+  });
+
+  it("扶養状態変更は変更年の年末判定で扶養控除から外す", () => {
+    const base = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+        {
+          id: "member-child",
+          name: "子",
+          relationship: "child",
+          birthDate: "2003-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: true,
+          dependsOnMemberId: "member-self",
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "salary-self",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 250_000,
+          taxTreatment: "taxable",
+        },
+      ],
+    });
+    const withDependent = calculateAutoTaxDetails(base)[0].memberDetails.find((member) => member.memberId === "member-self");
+    const withoutDependent = calculateAutoTaxDetails({
+      ...base,
+      householdMemberStatusEvents: [
+        {
+          id: "child-dependent-out",
+          memberId: "member-child",
+          name: "子が扶養外",
+          changeYearMonth: "2026-04",
+          isDependent: false,
+        },
+      ],
+    })[0].memberDetails.find((member) => member.memberId === "member-self");
+
+    expect(withDependent?.dependentDeductionsIncomeTaxAnnual).toBe(380_000);
+    expect(withoutDependent?.dependentDeductionsIncomeTaxAnnual).toBe(0);
+    expect(withoutDependent?.incomeTaxBaseAnnual).toBeGreaterThan(withDependent?.incomeTaxBaseAnnual ?? 0);
   });
 
   it("配偶者控除の所得上限を超えても配偶者特別控除の範囲なら段階控除を反映する", () => {
@@ -1299,6 +1364,58 @@ describe("simulation", () => {
 
     expect(rows[0].nationalPensionMonthly).toBe(0);
     expect(rows[0].nationalPensionAnnual).toBe(0);
+  });
+
+  it("国保加入変更は変更月以降の国保料と国民年金対象月から外す", () => {
+    const base = simpleScenario({
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-04-01",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+        {
+          id: "child",
+          name: "子",
+          relationship: "child",
+          birthDate: "2003-06-22",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+    });
+    const before = calculateAutoTaxDetails(base)[0];
+    const after = calculateAutoTaxDetails({
+      ...base,
+      householdMemberStatusEvents: [
+        {
+          id: "child-nhi-out",
+          memberId: "child",
+          name: "子が勤務先健保へ移行",
+          changeYearMonth: "2026-07",
+          isNationalHealthInsuranceMember: false,
+        },
+      ],
+    })[0];
+
+    expect(after.memberDetails.find((member) => member.memberId === "child")?.nationalPensionAnnual).toBeLessThan(
+      before.memberDetails.find((member) => member.memberId === "child")?.nationalPensionAnnual ?? 0,
+    );
+    expect(after.nationalHealthInsuranceAnnual).toBeLessThan(before.nationalHealthInsuranceAnnual);
   });
 
   it("国保介護分は40歳から64歳の国保加入者だけに発生する", () => {

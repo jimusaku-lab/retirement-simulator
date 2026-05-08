@@ -727,6 +727,33 @@ function syncOptionInitialAssets(scenario: ScenarioData) {
   );
 }
 
+function StatusSelect({
+  label,
+  value,
+  yesLabel,
+  noLabel,
+  onChange,
+}: {
+  label: string;
+  value: boolean | undefined;
+  yesLabel: string;
+  noLabel: string;
+  onChange: (value: boolean | undefined) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Select
+        value={value === undefined ? "unchanged" : value ? "yes" : "no"}
+        onChange={(event) => onChange(event.target.value === "unchanged" ? undefined : event.target.value === "yes")}
+      >
+        <option value="unchanged">変更しない</option>
+        <option value="yes">{yesLabel}</option>
+        <option value="no">{noLabel}</option>
+      </Select>
+    </Field>
+  );
+}
+
 function HouseholdSection({ scenario, updateScenario }: SectionProps) {
   const selectedTaxMode = taxModeHelp[scenario.householdProfile.taxCalculationMode];
   const addMember = () =>
@@ -760,6 +787,35 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         reductionMode: "fixedAmount",
         reductionAmount: 0,
         reductionRate: 0,
+      });
+    });
+  const addMemberStatusEvent = () =>
+    updateScenario((s) => {
+      const targetMember =
+        s.householdMembers.find((member) => member.relationship === "child") ??
+        s.householdMembers.find((member) => member.relationship !== "self") ??
+        s.householdMembers[0];
+      s.householdMemberStatusEvents.push({
+        id: crypto.randomUUID(),
+        memberId: targetMember?.id ?? s.householdMembers[0]?.id ?? "",
+        name: `${targetMember?.name ?? "家族"}の扶養・国保変更`,
+        changeYearMonth: s.userProfile.simulationStartYearMonth,
+        isResident: undefined,
+        isNationalHealthInsuranceMember: undefined,
+        isDependent: false,
+        dependsOnMemberId: undefined,
+        isLateElderlyMedicalMember: undefined,
+        isLongTermCareInsured: undefined,
+      });
+    });
+  const duplicateMemberStatusEvent = (index: number) =>
+    updateScenario((s) => {
+      const source = s.householdMemberStatusEvents[index];
+      if (!source) return;
+      s.householdMemberStatusEvents.splice(index + 1, 0, {
+        ...structuredClone(source),
+        id: crypto.randomUUID(),
+        name: source.name ? `${source.name} コピー` : "扶養・国保変更 コピー",
       });
     });
   const duplicateLivingArrangementEvent = (index: number) =>
@@ -844,7 +900,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
             <div>
               <h3 className="font-medium">世帯メンバー</h3>
-              <p className="text-sm text-muted-foreground">本人は扶養外で固定です。配偶者や家族は「世帯主の扶養に入るか」だけ選んでください。</p>
+              <p className="text-sm text-muted-foreground">ここは現在時点の状態です。将来の扶養外・国保外は下の「扶養・国保などの状態変更」で年月を登録します。</p>
             </div>
             <Button onClick={addMember}>
               <Plus className="h-4 w-4" />
@@ -867,6 +923,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                       s.householdLivingArrangementEvents.filter((event) => event.memberId === member.id).map((event) => event.id),
                     );
                     s.householdLivingArrangementEvents = s.householdLivingArrangementEvents.filter((event) => event.memberId !== member.id);
+                    s.householdMemberStatusEvents = s.householdMemberStatusEvents.filter((event) => event.memberId !== member.id);
                     s.incomeEvents = s.incomeEvents.map((event) =>
                       event.memberId === member.id || removedLivingEventIds.has(event.linkedHouseholdLivingArrangementEventId ?? "")
                         ? {
@@ -982,6 +1039,121 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                 </div>
               </EventEditor>
             ))}
+          </div>
+        </div>
+        <div className="rounded-lg border bg-slate-50">
+          <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+            <div>
+              <h3 className="font-medium">扶養・国保などの状態変更</h3>
+              <p className="text-sm text-muted-foreground">
+                就職・独立などで扶養や国保加入が変わる年月を登録します。扶養はその年の年末判定、国保・国民年金は月単位で反映します。
+              </p>
+            </div>
+            <Button onClick={addMemberStatusEvent}>
+              <Plus className="h-4 w-4" />
+              追加
+            </Button>
+          </div>
+          <div className="space-y-4 p-4">
+            {scenario.householdMemberStatusEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">扶養・国保などの状態変更はまだありません。</p>
+            ) : (
+              scenario.householdMemberStatusEvents.map((event, index) => (
+                <EventEditor
+                  key={event.id}
+                  title={event.name || "扶養・国保変更"}
+                  onDelete={() => updateScenario((s) => void s.householdMemberStatusEvents.splice(index, 1))}
+                  actions={
+                    <Button variant="ghost" size="sm" onClick={() => duplicateMemberStatusEvent(index)}>
+                      <Copy className="h-4 w-4" />
+                      複製
+                    </Button>
+                  }
+                >
+                  <FormGrid>
+                    <Field label="名称">
+                      <Input
+                        value={event.name}
+                        onChange={(e) => updateScenario((s) => void (s.householdMemberStatusEvents[index].name = e.target.value))}
+                      />
+                    </Field>
+                    <Field label="対象メンバー">
+                      <Select
+                        value={event.memberId}
+                        onChange={(e) => updateScenario((s) => void (s.householdMemberStatusEvents[index].memberId = e.target.value))}
+                      >
+                        {scenario.householdMembers.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="変更年月">
+                      <Input
+                        type="month"
+                        value={event.changeYearMonth}
+                        onChange={(e) => updateScenario((s) => void (s.householdMemberStatusEvents[index].changeYearMonth = e.target.value))}
+                      />
+                    </Field>
+                    <StatusSelect
+                      label="居住"
+                      value={event.isResident}
+                      yesLabel="同居"
+                      noLabel="別居"
+                      onChange={(value) => updateScenario((s) => void (s.householdMemberStatusEvents[index].isResident = value))}
+                    />
+                    <StatusSelect
+                      label="国保加入"
+                      value={event.isNationalHealthInsuranceMember}
+                      yesLabel="加入"
+                      noLabel="対象外"
+                      onChange={(value) =>
+                        updateScenario((s) => void (s.householdMemberStatusEvents[index].isNationalHealthInsuranceMember = value))
+                      }
+                    />
+                    <StatusSelect
+                      label="世帯主の扶養"
+                      value={event.isDependent}
+                      yesLabel="入る"
+                      noLabel="入らない"
+                      onChange={(value) =>
+                        updateScenario((s) => {
+                          s.householdMemberStatusEvents[index].isDependent = value;
+                          s.householdMemberStatusEvents[index].dependsOnMemberId = value ? s.householdProfile.headMemberId : undefined;
+                        })
+                      }
+                    />
+                    <StatusSelect
+                      label="後期高齢者医療"
+                      value={event.isLateElderlyMedicalMember}
+                      yesLabel="対象"
+                      noLabel="対象外"
+                      onChange={(value) =>
+                        updateScenario((s) => void (s.householdMemberStatusEvents[index].isLateElderlyMedicalMember = value))
+                      }
+                    />
+                    <StatusSelect
+                      label="介護保険"
+                      value={event.isLongTermCareInsured}
+                      yesLabel="対象"
+                      noLabel="対象外"
+                      onChange={(value) =>
+                        updateScenario((s) => void (s.householdMemberStatusEvents[index].isLongTermCareInsured = value))
+                      }
+                    />
+                  </FormGrid>
+                  <div className="mt-4">
+                    <Field label="備考">
+                      <Textarea
+                        value={event.note ?? ""}
+                        onChange={(e) => updateScenario((s) => void (s.householdMemberStatusEvents[index].note = e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                </EventEditor>
+              ))
+            )}
           </div>
         </div>
         <div className="rounded-lg border bg-slate-50">

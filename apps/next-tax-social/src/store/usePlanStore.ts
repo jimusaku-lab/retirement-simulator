@@ -7,6 +7,7 @@ import type {
   AgeExpenseAdjustment,
   ExpenseAdjustmentTarget,
   HouseholdLivingArrangementEvent,
+  HouseholdMemberStatusEvent,
   HouseholdMember,
   HouseholdProfile,
   MonthlyExpenseProfile,
@@ -182,6 +183,27 @@ function normalizeHouseholdLivingArrangementEvents(source: LegacyScenario): Hous
     reductionRate: Number.isFinite(event.reductionRate) ? Number(event.reductionRate) : 0,
     note: event.note,
   }));
+}
+
+function normalizeHouseholdMemberStatusEvents(source: LegacyScenario, members: HouseholdMember[], headMemberId: string): HouseholdMemberStatusEvent[] {
+  const memberIds = new Set(members.map((member) => member.id));
+  return (source.householdMemberStatusEvents ?? [])
+    .filter((event) => memberIds.has(event.memberId ?? ""))
+    .map((event, index) => ({
+      id: event.id ?? `household-status-${index}`,
+      memberId: event.memberId,
+      name: event.name ?? "扶養・国保の変更",
+      changeYearMonth: event.changeYearMonth ?? source.userProfile?.simulationStartYearMonth ?? baseScenario.userProfile.simulationStartYearMonth,
+      isResident: typeof event.isResident === "boolean" ? event.isResident : undefined,
+      isNationalHealthInsuranceMember:
+        typeof event.isNationalHealthInsuranceMember === "boolean" ? event.isNationalHealthInsuranceMember : undefined,
+      isDependent: typeof event.isDependent === "boolean" ? event.isDependent : undefined,
+      dependsOnMemberId: event.isDependent ? event.dependsOnMemberId ?? headMemberId : undefined,
+      isLateElderlyMedicalMember:
+        typeof event.isLateElderlyMedicalMember === "boolean" ? event.isLateElderlyMedicalMember : undefined,
+      isLongTermCareInsured: typeof event.isLongTermCareInsured === "boolean" ? event.isLongTermCareInsured : undefined,
+      note: event.note,
+    }));
 }
 
 function normalizeRetirementIncomeEvents(events: LegacyRetirementIncomeEvent[] | undefined): RetirementIncomeEvent[] {
@@ -393,6 +415,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
     householdProfile,
     householdMembers,
     householdLivingArrangementEvents: normalizeHouseholdLivingArrangementEvents(source),
+    householdMemberStatusEvents: normalizeHouseholdMemberStatusEvents(source, householdMembers, householdProfile.headMemberId),
     initialAssets: {
       ...baseScenario.initialAssets,
       ...legacyAssets,
