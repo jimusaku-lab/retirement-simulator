@@ -2248,7 +2248,7 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
             <div>
               <h3 className="font-medium">年齢別の生活費変更</h3>
               <p className="text-sm text-muted-foreground">
-                現在生活費基準、前年同月比、月額指定を選べます。前年比は世帯人数変更後の水準から高齢期の減少を重ねる用途に使います。
+                現在生活費基準、開始前年基準、前年同月比、月額指定を選べます。期間固定は開始前年基準、毎年変化は前年同月比を使います。
               </p>
             </div>
             <Button onClick={addAdjustment}>
@@ -2323,13 +2323,20 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
                         onChange={(event) => updateScenario((s) => void (s.ageExpenseAdjustments[index].mode = event.target.value as AgeExpenseAdjustment["mode"]))}
                       >
                         <option value="multiplier">現在生活費基準の倍率</option>
-                        <option value="yearOverYearMultiplier">前年比の倍率</option>
+                        <option value="startPreviousYearMultiplier">開始前年基準の倍率</option>
+                        <option value="yearOverYearMultiplier">毎年、前年同月比の倍率</option>
                         <option value="setAmount">月額に変更</option>
                       </Select>
                     </Field>
-                    {adjustment.mode === "multiplier" || adjustment.mode === "yearOverYearMultiplier" ? (
+                    {adjustment.mode === "multiplier" || adjustment.mode === "yearOverYearMultiplier" || adjustment.mode === "startPreviousYearMultiplier" ? (
                       <RateField
-                        label={adjustment.mode === "yearOverYearMultiplier" ? "前年同月比" : "現在生活費基準の倍率"}
+                        label={
+                          adjustment.mode === "yearOverYearMultiplier"
+                            ? "前年同月比"
+                            : adjustment.mode === "startPreviousYearMultiplier"
+                              ? "開始前年基準の倍率"
+                              : "現在生活費基準の倍率"
+                        }
                         value={adjustment.value}
                         onChange={(value) => updateScenario((s) => void (s.ageExpenseAdjustments[index].value = value))}
                       />

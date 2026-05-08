@@ -106,7 +106,7 @@ export type AgeExpenseAdjustment = {
   endAge?: number;
   target: ExpenseAdjustmentTarget;
   targets?: ExpenseAdjustmentTarget[];
-  mode: "setAmount" | "multiplier" | "yearOverYearMultiplier";
+  mode: "setAmount" | "multiplier" | "yearOverYearMultiplier" | "startPreviousYearMultiplier";
   value: number;
   note?: string;
 };

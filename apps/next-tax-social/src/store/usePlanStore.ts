@@ -145,7 +145,8 @@ function normalizeAgeExpenseAdjustments(source: LegacyScenario): AgeExpenseAdjus
       mode:
         adjustment.mode === "setAmount" ||
         adjustment.mode === "multiplier" ||
-        adjustment.mode === "yearOverYearMultiplier"
+        adjustment.mode === "yearOverYearMultiplier" ||
+        adjustment.mode === "startPreviousYearMultiplier"
           ? adjustment.mode
           : "multiplier",
       value: Number.isFinite(adjustment.value) ? adjustment.value : 1,

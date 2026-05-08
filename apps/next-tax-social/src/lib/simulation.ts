@@ -175,6 +175,7 @@ function getAdjustedMonthlyExpense(
   ageYears: number,
   excludeTaxExpense = false,
   previousYearExpenseProfile?: MonthlyExpenseProfile,
+  expenseProfilesByYearMonth?: Map<YearMonth, MonthlyExpenseProfile>,
 ) {
   const inflationFactor = scenario.inflationSettings.enabled
     ? Math.pow(1 + scenario.inflationSettings.livingCostAnnualInflationRate, monthsFromStart / 12)
@@ -206,12 +207,24 @@ function getAdjustedMonthlyExpense(
   for (const adjustment of scenario.ageExpenseAdjustments ?? []) {
     const active = ageYears >= adjustment.startAge && (!adjustment.endAge || ageYears <= adjustment.endAge);
     if (!active) continue;
+    const startPreviousYearExpenseProfile =
+      adjustment.mode === "startPreviousYearMultiplier"
+        ? expenseProfilesByYearMonth?.get(
+            formatYm(
+              ym(yearMonthFromStart(scenario.userProfile.simulationStartYearMonth, monthsFromStart)).subtract(
+                Math.max(1, ageYears - adjustment.startAge + 1),
+                "year",
+              ),
+            ),
+          )
+        : undefined;
     applyAgeExpenseAdjustment(
       expenses,
       getAgeExpenseAdjustmentTargets(adjustment),
       adjustment.mode,
       adjustment.value,
       previousYearExpenseProfile,
+      startPreviousYearExpenseProfile,
     );
   }
 
@@ -260,9 +273,10 @@ function applyHouseholdLivingArrangementEvent(
 function applyAgeExpenseAdjustment(
   expenses: MonthlyExpenseProfile,
   targets: ExpenseAdjustmentTarget[],
-  mode: "setAmount" | "multiplier" | "yearOverYearMultiplier",
+  mode: "setAmount" | "multiplier" | "yearOverYearMultiplier" | "startPreviousYearMultiplier",
   value: number,
   previousYearExpenseProfile?: MonthlyExpenseProfile,
+  startPreviousYearExpenseProfile?: MonthlyExpenseProfile,
 ) {
   if (targets.includes("all")) {
     if (mode === "multiplier") {
@@ -273,6 +287,13 @@ function applyAgeExpenseAdjustment(
     }
     if (mode === "yearOverYearMultiplier") {
       const basis = previousYearExpenseProfile ?? expenses;
+      for (const key of Object.keys(expenses) as (keyof MonthlyExpenseProfile)[]) {
+        expenses[key] = basis[key] * value;
+      }
+      return;
+    }
+    if (mode === "startPreviousYearMultiplier") {
+      const basis = startPreviousYearExpenseProfile ?? previousYearExpenseProfile ?? expenses;
       for (const key of Object.keys(expenses) as (keyof MonthlyExpenseProfile)[]) {
         expenses[key] = basis[key] * value;
       }
@@ -293,6 +314,8 @@ function applyAgeExpenseAdjustment(
       expenses[target] *= value;
     } else if (mode === "yearOverYearMultiplier") {
       expenses[target] = (previousYearExpenseProfile?.[target] ?? expenses[target]) * value;
+    } else if (mode === "startPreviousYearMultiplier") {
+      expenses[target] = (startPreviousYearExpenseProfile?.[target] ?? previousYearExpenseProfile?.[target] ?? expenses[target]) * value;
     } else {
       expenses[target] = value;
     }
@@ -1006,6 +1029,7 @@ function simulateScenarioCore(
       age.years,
       excludeTaxExpense,
       monthlyExpenseProfiles.get(previousYearMonth),
+      monthlyExpenseProfiles,
     );
     monthlyExpenseProfiles.set(yearMonth, structuredClone(livingExpenseProfile));
     const livingExpenseTotal = sumMonthlyExpenseProfile(livingExpenseProfile);

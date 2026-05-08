@@ -1233,6 +1233,57 @@ describe("simulation", () => {
     expect(result.monthly[12].livingExpenseTotal).toBe(40_000);
   });
 
+  it("年齢別の開始前年基準変更は期間中に累積させず開始前年同月を基準にする", () => {
+    const monthlyExpenses = simpleScenario().monthlyExpenses;
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-07-01",
+          simulationStartYearMonth: "2026-07",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2028-07",
+          targetBalanceAge: 60,
+          cashReserve: 0,
+        },
+        monthlyExpenses: {
+          ...monthlyExpenses,
+          food: 100_000,
+          housing: 0,
+        },
+        householdLivingArrangementEvents: [
+          {
+            id: "move-out",
+            memberId: "child",
+            name: "子の別居",
+            changeType: "moveOut",
+            changeYearMonth: "2026-07",
+            appliesToLivingExpenses: true,
+            expenseKeys: ["food"],
+            reductionMode: "fixedAmount",
+            reductionAmount: 50_000,
+            reductionRate: 0,
+          },
+        ],
+        ageExpenseAdjustments: [
+          {
+            id: "expense-age-start-prev",
+            name: "61歳から食費を開始前年基準80%",
+            startAge: 61,
+            endAge: 62,
+            target: "food",
+            targets: ["food"],
+            mode: "startPreviousYearMultiplier",
+            value: 0.8,
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].livingExpenseTotal).toBe(50_000);
+    expect(result.monthly[12].livingExpenseTotal).toBe(40_000);
+    expect(result.monthly[24].livingExpenseTotal).toBe(40_000);
+  });
+
   it("医療費上昇率は生活費インフレ率とは独立し、対象外費目にはかけない", () => {
     const monthlyExpenses = simpleScenario().monthlyExpenses;
     const result = simulateScenario(
