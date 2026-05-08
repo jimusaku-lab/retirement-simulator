@@ -499,10 +499,11 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
   const cashflowChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     income: row.incomeTotal,
+    optionSweep: row.optionProfitSweepTotal,
     living: -row.livingExpenseTotal,
     tax: -(row.taxInsuranceTotal + row.capitalGainsTaxTotal),
-    withholding: -row.idecoWithholdingTaxTotal,
     special: -row.specialExpenseTotal,
+    assetTransfer: -row.assetTransferTotal,
     contribution: -row.assetContributionTotal,
     net: row.netCashFlow,
   }));
@@ -537,22 +538,23 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
 
       <Card>
         <CardHeader>
-          <CardTitle>年別キャッシュフロー</CardTitle>
-          <CardDescription>現金として入る収入と、生活費・税社保・追加投資で出ていく金額を確認します。</CardDescription>
+          <CardTitle>年別の流動資金フロー</CardTitle>
+          <CardDescription>外部から入る現金収入と、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を確認します。</CardDescription>
         </CardHeader>
-        <CardContent className="h-96">
+        <CardContent className="h-[28rem]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowChartData}>
+            <BarChart data={cashflowChartData} margin={{ top: 8, right: 28, bottom: 56, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
-              <Tooltip formatter={(value) => yen(Number(value))} />
-              <Legend />
+              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 16 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
+              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
-              <Bar dataKey="withholding" name="iDeCo源泉" fill="#f97316" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
+              <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
               <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
               <Bar dataKey="net" name="純現金収支" fill="#2563eb" />
             </BarChart>
@@ -4369,13 +4371,12 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   const cashflowChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     income: row.incomeTotal,
+    optionSweep: row.optionProfitSweepTotal,
     living: -row.livingExpenseTotal,
-    tax: -row.taxInsuranceTotal,
-    capitalGainsTax: -row.capitalGainsTaxTotal,
-    withholding: -row.idecoWithholdingTaxTotal,
+    tax: -(row.taxInsuranceTotal + row.capitalGainsTaxTotal),
     special: -row.specialExpenseTotal,
+    assetTransfer: -row.assetTransferTotal,
     contribution: -row.assetContributionTotal,
-    plannedDrawdown: -row.plannedDrawdownTotal,
     contributionGap: row.assetContributionFundingGap,
     net: row.netCashFlow,
   }));
@@ -4544,25 +4545,26 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>年別キャッシュフローの見える化</CardTitle>
-          <CardDescription>現金入金、生活費、翌年反映の税・社会保険、iDeCo源泉徴収、追加投資を年ごとに確認します。</CardDescription>
+          <CardTitle>年別の流動資金フロー</CardTitle>
+          <CardDescription>
+            外部から入る現金収入、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を年ごとに確認します。
+          </CardDescription>
         </CardHeader>
-        <CardContent className="h-96">
+        <CardContent className="h-[28rem]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowChartData}>
+            <BarChart data={cashflowChartData} margin={{ top: 8, right: 28, bottom: 56, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
-              <Tooltip formatter={(value) => yen(Number(value))} />
-              <Legend />
+              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 16 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
+              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
-              <Bar dataKey="capitalGainsTax" name="譲渡益税" fill="#b91c1c" />
-              <Bar dataKey="withholding" name="iDeCo源泉" fill="#f97316" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
+              <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
               <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
-              <Bar dataKey="plannedDrawdown" name="計画取り崩し" fill="#be123c" />
               <Bar dataKey="contributionGap" name="追加投資原資不足" fill="#b91c1c" />
               <Bar dataKey="net" name="純収支" fill="#2563eb" />
             </BarChart>
