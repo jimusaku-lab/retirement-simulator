@@ -5292,6 +5292,60 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(400_000);
   });
 
+  it("開始年月が将来の普通口座サブ口座は開始月に現金・普通預金から自動で原資移動する", () => {
+    const base = simpleScenario();
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          ...base.userProfile,
+          simulationStartYearMonth: "2026-04",
+          simulationEndYearMonth: "2026-05",
+        },
+        initialAssets: {
+          ...base.initialAssets,
+          cash: 100_000,
+          bankDeposit: 500_000,
+          ordinaryAccountForOptions: 0,
+        },
+        initialAssetCostBasis: {
+          ...base.initialAssetCostBasis,
+          ordinaryAccountForOptions: 0,
+        },
+        monthlyExpenses: {
+          ...base.monthlyExpenses,
+          housing: 0,
+        },
+        optionSubAccounts: [
+          {
+            id: "us-option",
+            name: "米国株オプション",
+            initialValue: 300_000,
+            initialCostBasis: 300_000,
+            startYearMonth: "2026-05",
+            enabled: true,
+            minimumBalance: 300_000,
+            targetBalance: 400_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: false,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(0);
+    expect(result.monthly[0].assetTransferTotal).toBe(0);
+    expect(result.monthly[1].assetTransferTotal).toBe(300_000);
+    expect(result.monthly[1].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(300_000);
+    expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(300_000);
+  });
+
   it("特定口座の源泉徴収なしは売却月に差し引かず、翌年支払予定の譲渡益税に回す", () => {
     const base = simpleScenario();
     const result = simulateScenario(

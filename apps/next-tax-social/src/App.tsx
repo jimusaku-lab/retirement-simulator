@@ -1512,6 +1512,9 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
                 <CardDescription>
                   CFD、米国株オプションなどを別口座として管理します。最低維持額、利益移動、取り崩し優先順位を口座ごとに設定できます。
                 </CardDescription>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  開始年月がシミュレーション開始より後の口座は、その月に現金・普通預金から初期金額を自動移動します。
+                </p>
               </div>
               <Button onClick={addOptionSubAccount}>
                 <Plus className="h-4 w-4" />
@@ -1522,6 +1525,9 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
           <CardContent className="space-y-4">
             <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
               合計評価額 {yen(scenario.initialAssets.ordinaryAccountForOptions)} / 取得原価 {yen(scenario.initialAssetCostBasis.ordinaryAccountForOptions)}
+              <div className="mt-1 text-xs">
+                開始年月が未来の口座は、シミュレーション開始月までは資金を持たず、開始月に現金・普通預金から自動移動します。
+              </div>
             </div>
             {scenario.optionSubAccounts.map((account, index) => {
               const unrealizedGain = account.initialValue - account.initialCostBasis;
@@ -1556,6 +1562,9 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
                         value={account.startYearMonth ?? ""}
                         onChange={(event) => updateOptionSubAccount(index, "startYearMonth", event.target.value || undefined)}
                       />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        開始年月がシミュレーション開始より後なら、その月に現金・普通預金から初期金額を自動移動します。
+                      </p>
                     </Field>
                     <Field label="終了年月">
                       <Input

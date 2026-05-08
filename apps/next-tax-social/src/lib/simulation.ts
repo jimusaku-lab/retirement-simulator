@@ -78,6 +78,7 @@ type TaxableBasisMap = {
 type OptionSubAccountState = OptionSubAccount & {
   balance: number;
   costBasis: number;
+  startFundingApplied: boolean;
 };
 
 const gainTrackedAssetKeys: GainTrackedAssetKey[] = [
@@ -496,13 +497,19 @@ function getEffectiveOptionSubAccounts(scenario: ScenarioData): OptionSubAccount
 }
 
 function createOptionSubAccountStates(scenario: ScenarioData): OptionSubAccountState[] {
+  const simulationStart = ym(scenario.userProfile.simulationStartYearMonth);
   return getEffectiveOptionSubAccounts(scenario)
     .filter((account) => account.enabled)
     .map((account, index) => ({
       ...account,
       withdrawalPriority: Number.isFinite(account.withdrawalPriority) ? account.withdrawalPriority : index + 1,
-      balance: Math.max(0, account.initialValue),
-      costBasis: Math.min(Math.max(0, account.initialCostBasis), Math.max(0, account.initialValue)),
+      balance: account.startYearMonth && ym(account.startYearMonth).isAfter(simulationStart, "month")
+        ? 0
+        : Math.max(0, account.initialValue),
+      costBasis: account.startYearMonth && ym(account.startYearMonth).isAfter(simulationStart, "month")
+        ? 0
+        : Math.min(Math.max(0, account.initialCostBasis), Math.max(0, account.initialValue)),
+      startFundingApplied: !(account.startYearMonth && ym(account.startYearMonth).isAfter(simulationStart, "month")),
     }))
     .sort((a, b) => a.withdrawalPriority - b.withdrawalPriority);
 }
@@ -526,6 +533,35 @@ function syncOptionAggregate(
     sumOptionSubAccountCostBasis(optionSubAccounts),
     balances.ordinaryAccountForOptions,
   );
+}
+
+function applyOptionSubAccountStartFunding(
+  balances: BalanceMap,
+  taxableBasis: TaxableBasisMap,
+  optionSubAccounts: OptionSubAccountState[],
+  yearMonth: YearMonth,
+) {
+  let fundedTotal = 0;
+  for (const account of optionSubAccounts) {
+    if (account.startFundingApplied) continue;
+    if (!account.startYearMonth || yearMonth < account.startYearMonth) continue;
+    if (account.balance > 0 || account.costBasis > 0) {
+      account.startFundingApplied = true;
+      continue;
+    }
+    account.startFundingApplied = true;
+    const requestedAmount = Math.max(0, account.initialValue);
+    if (requestedAmount <= 0) continue;
+    const fundedAmount = fundFromLiquidBuffer(balances, requestedAmount);
+    if (fundedAmount <= 0) continue;
+    account.balance += fundedAmount;
+    account.costBasis += fundedAmount;
+    fundedTotal += fundedAmount;
+  }
+  if (fundedTotal > 0) {
+    syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
+  }
+  return fundedTotal;
 }
 
 function getOptionAccount(accountId: string | undefined, optionSubAccounts: OptionSubAccountState[]) {
@@ -1176,6 +1212,10 @@ function simulateScenarioCore(
     const incomeTotal = externalIncomeTotal + transferredIncomeTotal;
     balances.cash += incomeTotal;
     let assetTransferTotal = 0;
+    const optionStartFundingTotal = optionSubAccounts.length
+      ? applyOptionSubAccountStartFunding(balances, taxableBasis, optionSubAccounts, yearMonth)
+      : 0;
+    assetTransferTotal += optionStartFundingTotal;
     for (const event of scenario.assetTransferEvents ?? []) {
       if (!isAssetTransferActive(event, yearMonth)) continue;
       const transferAmount = Math.min(Math.max(0, event.amount), Math.max(0, balances[event.fromAssetKey]));
