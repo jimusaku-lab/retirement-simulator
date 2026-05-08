@@ -354,7 +354,9 @@ export type MonthlyResult = {
   incomeTotal: number;
   retainedSourceAssetIncomeTotal: number;
   assetTransferTotal: number;
+  assetTransferDetails: string[];
   optionProfitSweepTotal: number;
+  optionProfitSweepDetails: string[];
   optionIncomeSuspendedTotal: number;
   nisaContributionSkippedTotal: number;
   nisaAnnualLimitExceededTotal: number;
@@ -395,7 +397,9 @@ export type AnnualResult = {
   incomeTotal: number;
   retainedSourceAssetIncomeTotal: number;
   assetTransferTotal: number;
+  assetTransferDetails: string[];
   optionProfitSweepTotal: number;
+  optionProfitSweepDetails: string[];
   optionIncomeSuspendedTotal: number;
   nisaContributionSkippedTotal: number;
   nisaAnnualLimitExceededTotal: number;

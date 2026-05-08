@@ -3907,6 +3907,9 @@ describe("simulation", () => {
     );
 
     expect(result.monthly[0].optionProfitSweepTotal).toBe(100_000);
+    expect(result.monthly[0].optionProfitSweepDetails).toEqual([
+      "普通口座（オプション用） -> 普通預金 10万円",
+    ]);
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
   });
 
@@ -5342,8 +5345,67 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(0);
     expect(result.monthly[0].assetTransferTotal).toBe(0);
     expect(result.monthly[1].assetTransferTotal).toBe(300_000);
+    expect(result.monthly[1].assetTransferDetails).toEqual([
+      "現金 10万円 / 普通預金 20万円 -> 米国株オプション 30万円",
+    ]);
     expect(result.monthly[1].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(300_000);
     expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(300_000);
+  });
+
+  it("開始年月が将来で評価額0の普通口座サブ口座は最低維持証拠金を開始時原資として移す", () => {
+    const base = simpleScenario();
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          ...base.userProfile,
+          simulationStartYearMonth: "2026-04",
+          simulationEndYearMonth: "2026-05",
+        },
+        initialAssets: {
+          ...base.initialAssets,
+          cash: 0,
+          bankDeposit: 5_000_000,
+          ordinaryAccountForOptions: 0,
+        },
+        initialAssetCostBasis: {
+          ...base.initialAssetCostBasis,
+          ordinaryAccountForOptions: 0,
+        },
+        monthlyExpenses: {
+          ...base.monthlyExpenses,
+          housing: 0,
+        },
+        optionSubAccounts: [
+          {
+            id: "us-option",
+            name: "米国株オプション",
+            initialValue: 0,
+            initialCostBasis: 0,
+            startYearMonth: "2026-05",
+            enabled: true,
+            minimumBalance: 3_000_000,
+            targetBalance: 4_000_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: false,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(0);
+    expect(result.monthly[1].assetTransferTotal).toBe(3_000_000);
+    expect(result.monthly[1].assetTransferDetails).toEqual([
+      "普通預金 300万円 -> 米国株オプション 300万円",
+    ]);
+    expect(result.monthly[1].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(3_000_000);
+    expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(3_000_000);
   });
 
   it("特定口座の源泉徴収なしは売却月に差し引かず、翌年支払予定の譲渡益税に回す", () => {

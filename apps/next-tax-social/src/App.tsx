@@ -5009,6 +5009,10 @@ function formatWithdrawalSources(breakdown: AnnualResult["withdrawalSourceBreakd
     .join("\n");
 }
 
+function formatDetails(details: string[]) {
+  return details.length ? details.join("\n") : "-";
+}
+
 function compactLimitYen(value: number) {
   return Number.isFinite(value) ? compactYen(value) : "制限なし";
 }
@@ -5045,7 +5049,9 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>追加投資原資不足</Th>
           <Th>口座内積上</Th>
           <Th>原資移動</Th>
+          <Th className="min-w-[320px]">原資移動内訳</Th>
           <Th>普通口座利益移動</Th>
+          <Th className="min-w-[320px]">利益移動内訳</Th>
           <Th>証拠金不足停止</Th>
           <Th>iDeCo源泉</Th>
           <Th>iDeCo手数料</Th>
@@ -5086,7 +5092,13 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td className={row.assetContributionFundingGap > 0 ? "text-destructive" : ""}>{compactYen(row.assetContributionFundingGap)}</Td>
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.assetTransferDetails)}
+              </Td>
               <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.optionProfitSweepDetails)}
+              </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
               <Td>{compactYen(row.idecoFeeTotal)}</Td>
@@ -5125,7 +5137,13 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td className={row.assetContributionFundingGap > 0 ? "text-destructive" : ""}>{compactYen(row.assetContributionFundingGap)}</Td>
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.assetTransferDetails)}
+              </Td>
               <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.optionProfitSweepDetails)}
+              </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
               <Td>{compactYen(row.idecoFeeTotal)}</Td>

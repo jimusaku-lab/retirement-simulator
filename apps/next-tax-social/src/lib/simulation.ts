@@ -56,6 +56,16 @@ const defaultWithdrawOrder: WithdrawalAssetKey[] = [
   "nisa",
 ];
 
+const assetDetailLabels: Record<GrowthAssetKey, string> = {
+  cash: "現金",
+  bankDeposit: "普通預金",
+  timeDeposit: "定期預金",
+  nisa: "NISA非課税口座",
+  specificAccount: "特定口座",
+  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ideco: "iDeCo",
+};
+
 type BalanceMap = {
   cash: number;
   bankDeposit: number;
@@ -535,6 +545,30 @@ function syncOptionAggregate(
   );
 }
 
+function formatLiquidFundingSource(cashUsed: number, bankDepositUsed: number) {
+  return [
+    cashUsed > 0 ? `現金 ${formatCompactYenForDetail(cashUsed)}` : "",
+    bankDepositUsed > 0 ? `普通預金 ${formatCompactYenForDetail(bankDepositUsed)}` : "",
+  ].filter(Boolean).join(" / ");
+}
+
+function formatCompactYenForDetail(value: number) {
+  const rounded = Math.round(value);
+  if (Math.abs(rounded) >= 10_000) return `${Math.round(rounded / 10_000).toLocaleString("ja-JP")}万円`;
+  return `￥${rounded.toLocaleString("ja-JP")}`;
+}
+
+function fundFromLiquidBufferWithDetails(balances: BalanceMap, amount: number) {
+  const beforeCash = balances.cash;
+  const beforeBankDeposit = balances.bankDeposit;
+  const fundedAmount = fundFromLiquidBuffer(balances, amount);
+  return {
+    fundedAmount,
+    cashUsed: Math.max(0, beforeCash - balances.cash),
+    bankDepositUsed: Math.max(0, beforeBankDeposit - balances.bankDeposit),
+  };
+}
+
 function applyOptionSubAccountStartFunding(
   balances: BalanceMap,
   taxableBasis: TaxableBasisMap,
@@ -542,6 +576,7 @@ function applyOptionSubAccountStartFunding(
   yearMonth: YearMonth,
 ) {
   let fundedTotal = 0;
+  const details: string[] = [];
   for (const account of optionSubAccounts) {
     if (account.startFundingApplied) continue;
     if (!account.startYearMonth || yearMonth < account.startYearMonth) continue;
@@ -550,18 +585,22 @@ function applyOptionSubAccountStartFunding(
       continue;
     }
     account.startFundingApplied = true;
-    const requestedAmount = Math.max(0, account.initialValue);
+    const requestedAmount = Math.max(0, account.initialValue || account.minimumBalance);
     if (requestedAmount <= 0) continue;
-    const fundedAmount = fundFromLiquidBuffer(balances, requestedAmount);
+    const funding = fundFromLiquidBufferWithDetails(balances, requestedAmount);
+    const fundedAmount = funding.fundedAmount;
     if (fundedAmount <= 0) continue;
     account.balance += fundedAmount;
     account.costBasis += fundedAmount;
     fundedTotal += fundedAmount;
+    details.push(
+      `${formatLiquidFundingSource(funding.cashUsed, funding.bankDepositUsed)} -> ${account.name} ${formatCompactYenForDetail(fundedAmount)}`,
+    );
   }
   if (fundedTotal > 0) {
     syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
   }
-  return fundedTotal;
+  return { amount: fundedTotal, details };
 }
 
 function getOptionAccount(accountId: string | undefined, optionSubAccounts: OptionSubAccountState[]) {
@@ -997,6 +1036,30 @@ function moveOptionSubAccountProfitToLiquid(
   return transfer;
 }
 
+function moveOptionSubAccountProfitToLiquidWithDetails(
+  balances: BalanceMap,
+  taxableBasis: TaxableBasisMap,
+  optionSubAccounts: OptionSubAccountState[],
+  account: OptionSubAccountState,
+  destination: "cash" | "bankDeposit",
+  amount: number,
+) {
+  const transferredAmount = moveOptionSubAccountProfitToLiquid(
+    balances,
+    taxableBasis,
+    optionSubAccounts,
+    account,
+    destination,
+    amount,
+  );
+  return {
+    transferredAmount,
+    detail: transferredAmount > 0
+      ? `${account.name} -> ${destination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`
+      : "",
+  };
+}
+
 function getOptionProfitSweepAmount(scenario: ScenarioData, balances: BalanceMap, yearMonth: YearMonth) {
   const rules = scenario.optionAccountRules;
   if (!rules.enabled || !rules.profitSweepEnabled) return 0;
@@ -1212,13 +1275,16 @@ function simulateScenarioCore(
     const incomeTotal = externalIncomeTotal + transferredIncomeTotal;
     balances.cash += incomeTotal;
     let assetTransferTotal = 0;
+    const assetTransferDetails: string[] = [];
     const optionStartFundingTotal = optionSubAccounts.length
       ? applyOptionSubAccountStartFunding(balances, taxableBasis, optionSubAccounts, yearMonth)
-      : 0;
-    assetTransferTotal += optionStartFundingTotal;
+      : { amount: 0, details: [] };
+    assetTransferTotal += optionStartFundingTotal.amount;
+    assetTransferDetails.push(...optionStartFundingTotal.details);
     for (const event of scenario.assetTransferEvents ?? []) {
       if (!isAssetTransferActive(event, yearMonth)) continue;
-      const transferAmount = Math.min(Math.max(0, event.amount), Math.max(0, balances[event.fromAssetKey]));
+      const beforeSource = balances[event.fromAssetKey];
+      const transferAmount = Math.min(Math.max(0, event.amount), Math.max(0, beforeSource));
       if (transferAmount <= 0) continue;
       balances[event.fromAssetKey] -= transferAmount;
       if (event.toAssetKey === "ordinaryAccountForOptions" && optionSubAccounts.length) {
@@ -1235,6 +1301,12 @@ function simulateScenarioCore(
         taxableBasis[event.toAssetKey] += transferAmount;
       }
       assetTransferTotal += transferAmount;
+      const targetLabel = event.toAssetKey === "ordinaryAccountForOptions" && event.toOptionSubAccountId
+        ? optionSubAccounts.find((account) => account.id === event.toOptionSubAccountId)?.name ?? "普通口座（オプション用）"
+        : assetDetailLabels[event.toAssetKey];
+      assetTransferDetails.push(
+        `${assetDetailLabels[event.fromAssetKey]} -> ${targetLabel} ${formatCompactYenForDetail(transferAmount)}`,
+      );
     }
     const specialExpenseTotal = scenario.specialExpenses
       .filter((expense) => isSpecialExpenseActive(expense, yearMonth))
@@ -1450,26 +1522,35 @@ function simulateScenarioCore(
       deficitWithdrawalBreakdown[key] += withdrawal.breakdown[key];
     }
     const cashReserveTopUpAmount = Math.max(0, deficit - baseWithdrawalAmount);
-    const optionProfitSweepTotal = optionSubAccounts.length
-      ? optionSubAccounts.reduce(
-          (sum, account) =>
-            sum +
-            moveOptionSubAccountProfitToLiquid(
-              balances,
-              taxableBasis,
-              optionSubAccounts,
-              account,
-              account.profitSweepDestination,
-              getOptionSubAccountProfitSweepAmount(account, yearMonth),
-            ),
-          0,
-        )
-      : moveOptionProfitToLiquid(
+    let optionProfitSweepTotal = 0;
+    const optionProfitSweepDetails: string[] = [];
+    if (optionSubAccounts.length) {
+      for (const account of optionSubAccounts) {
+        const sweep = moveOptionSubAccountProfitToLiquidWithDetails(
           balances,
           taxableBasis,
-          scenario.optionAccountRules.profitSweepDestination,
-          getOptionProfitSweepAmount(scenario, balances, yearMonth),
+          optionSubAccounts,
+          account,
+          account.profitSweepDestination,
+          getOptionSubAccountProfitSweepAmount(account, yearMonth),
         );
+        optionProfitSweepTotal += sweep.transferredAmount;
+        if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
+      }
+    } else {
+      const transferredAmount = moveOptionProfitToLiquid(
+        balances,
+        taxableBasis,
+        scenario.optionAccountRules.profitSweepDestination,
+        getOptionProfitSweepAmount(scenario, balances, yearMonth),
+      );
+      optionProfitSweepTotal += transferredAmount;
+      if (transferredAmount > 0) {
+        optionProfitSweepDetails.push(
+          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
+        );
+      }
+    }
     let plannedDrawdownTotal = getPlannedDrawdownAmount(scenario, balances, yearMonth);
     if (plannedDrawdownTotal > 0) {
       balances.cash -= plannedDrawdownTotal;
@@ -1519,7 +1600,9 @@ function simulateScenarioCore(
       incomeTotal: Math.round(incomeTotal),
       retainedSourceAssetIncomeTotal: Math.round(retainedSourceAssetIncomeTotal),
       assetTransferTotal: Math.round(assetTransferTotal),
+      assetTransferDetails,
       optionProfitSweepTotal: Math.round(optionProfitSweepTotal),
+      optionProfitSweepDetails,
       optionIncomeSuspendedTotal: Math.round(optionIncomeSuspendedTotal),
       nisaContributionSkippedTotal: Math.round(nisaContributionSkippedTotal),
       nisaAnnualLimitExceededTotal: Math.round(nisaAnnualLimitExceededTotal),
@@ -1660,7 +1743,9 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         incomeTotal: 0,
         retainedSourceAssetIncomeTotal: 0,
         assetTransferTotal: 0,
+        assetTransferDetails: [],
         optionProfitSweepTotal: 0,
+        optionProfitSweepDetails: [],
         optionIncomeSuspendedTotal: 0,
         nisaContributionSkippedTotal: 0,
         nisaAnnualLimitExceededTotal: 0,
@@ -1696,7 +1781,9 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.incomeTotal += row.incomeTotal;
     current.retainedSourceAssetIncomeTotal += row.retainedSourceAssetIncomeTotal;
     current.assetTransferTotal += row.assetTransferTotal;
+    current.assetTransferDetails.push(...row.assetTransferDetails);
     current.optionProfitSweepTotal += row.optionProfitSweepTotal;
+    current.optionProfitSweepDetails.push(...row.optionProfitSweepDetails);
     current.optionIncomeSuspendedTotal += row.optionIncomeSuspendedTotal;
     current.nisaContributionSkippedTotal += row.nisaContributionSkippedTotal;
     current.nisaAnnualLimitExceededTotal += row.nisaAnnualLimitExceededTotal;
