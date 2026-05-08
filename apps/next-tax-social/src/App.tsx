@@ -1439,7 +1439,6 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
             </Field>
           ))}
         </FormGrid>
-        {scenario.optionSubAccounts.length === 0 && (
         <Card className="border-dashed">
           <CardHeader>
             <CardTitle>証券・iDeCoの評価額と評価損益</CardTitle>
@@ -1505,7 +1504,6 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
             })}
           </CardContent>
         </Card>
-        )}
         <Card className="border-dashed">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
