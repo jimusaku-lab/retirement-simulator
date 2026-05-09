@@ -1477,9 +1477,40 @@ function simulateScenarioCore(
           return sum + amount;
         }, 0)
       : 0;
-    const liquidFundingCapacityForContribution = Math.max(0, startingLiquidBuffer + incomeTotal - outflow - cashReserve);
+    let optionProfitSweepTotal = 0;
+    const optionProfitSweepDetails: string[] = [];
+    if (optionSubAccounts.length) {
+      for (const account of optionSubAccounts) {
+        const sweep = moveOptionSubAccountProfitToLiquidWithDetails(
+          balances,
+          taxableBasis,
+          optionSubAccounts,
+          account,
+          account.profitSweepDestination,
+          getOptionSubAccountProfitSweepAmount(account, yearMonth),
+        );
+        optionProfitSweepTotal += sweep.transferredAmount;
+        declaredCapitalGainsIncomeTotal += sweep.realizedGain;
+        if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
+      }
+    } else {
+      const transferredAmount = moveOptionProfitToLiquid(
+        balances,
+        taxableBasis,
+        scenario.optionAccountRules.profitSweepDestination,
+        getOptionProfitSweepAmount(scenario, balances, yearMonth),
+      );
+      optionProfitSweepTotal += transferredAmount;
+      if (transferredAmount > 0) {
+        optionProfitSweepDetails.push(
+          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
+        );
+      }
+    }
+    const availableCashLikeInflow = incomeTotal + optionProfitSweepTotal;
+    const liquidFundingCapacityForContribution = Math.max(0, startingLiquidBuffer + availableCashLikeInflow - outflow - cashReserve);
     const assetContributionFundingGap = Math.max(0, assetContributionTotal - liquidFundingCapacityForContribution);
-    const baseWithdrawalAmount = Math.max(0, outflow + assetContributionTotal - incomeTotal);
+    const baseWithdrawalAmount = Math.max(0, outflow + assetContributionTotal - availableCashLikeInflow);
     balances.cash -= outflow;
     sweepBankDepositToCash(balances);
     const liquidBufferBalance = getLiquidBufferBalance(balances);
@@ -1522,36 +1553,6 @@ function simulateScenarioCore(
       deficitWithdrawalBreakdown[key] += withdrawal.breakdown[key];
     }
     const cashReserveTopUpAmount = Math.max(0, deficit - baseWithdrawalAmount);
-    let optionProfitSweepTotal = 0;
-    const optionProfitSweepDetails: string[] = [];
-    if (optionSubAccounts.length) {
-      for (const account of optionSubAccounts) {
-        const sweep = moveOptionSubAccountProfitToLiquidWithDetails(
-          balances,
-          taxableBasis,
-          optionSubAccounts,
-          account,
-          account.profitSweepDestination,
-          getOptionSubAccountProfitSweepAmount(account, yearMonth),
-        );
-        optionProfitSweepTotal += sweep.transferredAmount;
-        declaredCapitalGainsIncomeTotal += sweep.realizedGain;
-        if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
-      }
-    } else {
-      const transferredAmount = moveOptionProfitToLiquid(
-        balances,
-        taxableBasis,
-        scenario.optionAccountRules.profitSweepDestination,
-        getOptionProfitSweepAmount(scenario, balances, yearMonth),
-      );
-      optionProfitSweepTotal += transferredAmount;
-      if (transferredAmount > 0) {
-        optionProfitSweepDetails.push(
-          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
-        );
-      }
-    }
     let plannedDrawdownTotal = getPlannedDrawdownAmount(scenario, balances, yearMonth);
     if (plannedDrawdownTotal > 0) {
       balances.cash -= plannedDrawdownTotal;
@@ -1588,7 +1589,7 @@ function simulateScenarioCore(
       }
     }
     const endingAssets = sumBalances(balances);
-    const netCashFlow = incomeTotal - outflow - assetContributionTotal - capitalGainsTaxTotal - plannedDrawdownTotal;
+    const netCashFlow = availableCashLikeInflow - outflow - assetContributionTotal - capitalGainsTaxTotal - plannedDrawdownTotal;
     const snapshots = getTrackedAssetSnapshots(balances, taxableBasis);
     const nisaLifetimeLimit = getNisaLifetimeLimit(scenario);
     const nisaRemainingLifetimeLimit = scenario.nisaInvestmentRules.enforceAnnualLimit
