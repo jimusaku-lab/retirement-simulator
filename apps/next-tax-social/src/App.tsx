@@ -3499,7 +3499,7 @@ function TaxRowsSummary({
             <Th>後期高齢者医療</Th>
             <Th>国民年金(月額)</Th>
             <Th>介護</Th>
-            <Th>譲渡益課税</Th>
+            <Th>売却時譲渡益税</Th>
             <Th>その他</Th>
             <Th>年間合計目安</Th>
           </Tr>
@@ -3560,26 +3560,40 @@ function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
         <h3 className="font-medium">申告不要・申告確認の判定</h3>
         <p className="text-sm text-muted-foreground">
           公的年金等の申告不要制度を、年金収入400万円以下・年金以外の所得20万円以下を目安に判定します。住民税申告や還付申告の要否は別確認です。
+          本人・配偶者などメンバー別に判定します。
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <thead>
+            <Tr>
+              <Th>年度</Th>
+              <Th>メンバー</Th>
+              <Th>判定</Th>
+              <Th>理由</Th>
+              <Th>年金収入</Th>
+              <Th>年金以外</Th>
+              <Th>所得税</Th>
+              <Th>住民税</Th>
+            </Tr>
+          </thead>
+          <tbody>
         {visibleAdvice.map((item) => (
-          <div key={item.id} className={`rounded-md border px-3 py-3 text-sm ${styleByStatus[item.status]}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-medium">
-                  {item.fiscalYear}年 / {item.memberName}
-                </div>
-                <p className="mt-1">{item.message}</p>
-              </div>
+          <Tr key={item.id} className={styleByStatus[item.status]}>
+            <Td>{item.fiscalYear}</Td>
+            <Td>{item.memberName}</Td>
+            <Td>
               <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
-            </div>
-            <div className="mt-2 text-xs opacity-80">
-              年金収入 {yen(item.pensionGrossAnnual)} / 年金以外の所得 {yen(item.nonPensionIncomeAnnual)} / 所得税 {yen(item.incomeTaxAnnual)} / 住民税
-              {yen(item.residentTaxAnnual)}
-            </div>
-          </div>
+            </Td>
+            <Td className="min-w-[28rem] text-sm">{item.message}</Td>
+            <Td>{yen(item.pensionGrossAnnual)}</Td>
+            <Td>{yen(item.nonPensionIncomeAnnual)}</Td>
+            <Td>{yen(item.incomeTaxAnnual)}</Td>
+            <Td>{yen(item.residentTaxAnnual)}</Td>
+          </Tr>
         ))}
+          </tbody>
+        </Table>
       </div>
     </div>
   );
@@ -3626,6 +3640,7 @@ function TaxCashTimingSummary({
         <h3 className="font-medium">税・社会保険の発生年と支払年</h3>
         <p className="text-sm text-muted-foreground">
           自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。国民年金は対象年の月額支払として扱います。
+          iDeCo源泉徴収と売却時譲渡益税は、結果タブの支払タイミングで別に確認します。
         </p>
       </div>
       <div className="overflow-x-auto rounded-lg border">
@@ -3637,7 +3652,6 @@ function TaxCashTimingSummary({
               <Th>国民年金(当年)</Th>
               <Th>主な支払年</Th>
               <Th>シミュレーション上の支払額</Th>
-              <Th>読み方</Th>
             </Tr>
           </thead>
           <tbody>
@@ -3648,10 +3662,6 @@ function TaxCashTimingSummary({
                 <Td>{yen(row.nationalPensionAnnualTotal)}</Td>
                 <Td>{row.paymentYear}</Td>
                 <Td>{yen(row.simulatedPaymentTotal)}</Td>
-                <Td className="min-w-[28rem] text-sm text-muted-foreground">
-                  {row.incomeYear}年の所得に基づく税・社会保険は、主に{row.paymentYear}年の現金支出として反映します。
-                  iDeCo源泉徴収と譲渡益税は、結果タブでは別列で確認します。
-                </Td>
               </Tr>
             ))}
           </tbody>
@@ -4511,6 +4521,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
             税額の発生根拠と、実際に現金が出ていく年を分けて確認します。自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。
+            iDeCo源泉は受取月に差し引き、売却時譲渡益税は口座区分に応じて売却時控除または翌年支払へ回します。
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -4519,9 +4530,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Tr>
                 <Th>支払年</Th>
                 <Th>税社保支払</Th>
-                <Th>譲渡益税</Th>
+                <Th>売却時譲渡益税</Th>
                 <Th>iDeCo源泉</Th>
-                <Th>読み方</Th>
               </Tr>
             </thead>
             <tbody>
@@ -4531,9 +4541,6 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                   <Td>{compactYen(row.taxInsuranceTotal)}</Td>
                   <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
                   <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
-                  <Td className="min-w-[420px] text-sm text-muted-foreground">
-                    税社保支払は主に前年所得に対する当年の現金支出です。iDeCo源泉は受取月に差し引かれます。譲渡益税は口座区分により売却時控除または翌年支払へ回します。
-                  </Td>
                 </Tr>
               ))}
             </tbody>

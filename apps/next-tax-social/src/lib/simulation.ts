@@ -1025,15 +1025,15 @@ function moveOptionSubAccountProfitToLiquid(
   amount: number,
 ) {
   const transfer = Math.max(0, Math.min(amount, account.balance));
-  if (transfer <= 0) return 0;
-  const gainRatio = getUnrealizedGainRatio(account.balance, account.costBasis);
-  const realizedGain = transfer * gainRatio;
+  if (transfer <= 0) return { transferredAmount: 0, realizedGain: 0 };
+  const unrealizedGain = Math.max(0, account.balance - account.costBasis);
+  const realizedGain = Math.min(transfer, unrealizedGain);
   const costPortion = transfer - realizedGain;
   account.balance -= transfer;
   account.costBasis = Math.max(0, account.costBasis - costPortion);
   balances[destination] += transfer;
   syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
-  return transfer;
+  return { transferredAmount: transfer, realizedGain };
 }
 
 function moveOptionSubAccountProfitToLiquidWithDetails(
@@ -1044,7 +1044,7 @@ function moveOptionSubAccountProfitToLiquidWithDetails(
   destination: "cash" | "bankDeposit",
   amount: number,
 ) {
-  const transferredAmount = moveOptionSubAccountProfitToLiquid(
+  const result = moveOptionSubAccountProfitToLiquid(
     balances,
     taxableBasis,
     optionSubAccounts,
@@ -1053,9 +1053,9 @@ function moveOptionSubAccountProfitToLiquidWithDetails(
     amount,
   );
   return {
-    transferredAmount,
-    detail: transferredAmount > 0
-      ? `${account.name} -> ${destination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`
+    ...result,
+    detail: result.transferredAmount > 0
+      ? `${account.name} -> ${destination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(result.transferredAmount)}`
       : "",
   };
 }
@@ -1535,6 +1535,7 @@ function simulateScenarioCore(
           getOptionSubAccountProfitSweepAmount(account, yearMonth),
         );
         optionProfitSweepTotal += sweep.transferredAmount;
+        declaredCapitalGainsIncomeTotal += sweep.realizedGain;
         if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
       }
     } else {

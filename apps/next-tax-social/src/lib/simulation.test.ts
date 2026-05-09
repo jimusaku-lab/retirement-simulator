@@ -3910,6 +3910,7 @@ describe("simulation", () => {
     expect(result.monthly[0].optionProfitSweepDetails).toEqual([
       "普通口座（オプション用） -> 普通預金 10万円",
     ]);
+    expect(result.monthly[0].declaredCapitalGainsIncomeTotal).toBe(100_000);
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
   });
 
