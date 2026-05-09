@@ -4464,7 +4464,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>投資計画チェック</CardTitle>
           <CardDescription>NISA積立と普通口座（オプション用）の運用制約に引っかかった年を確認します。</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <Table>
             <thead>
               <Tr>
@@ -4524,7 +4524,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             iDeCo源泉は受取月に差し引き、売却時譲渡益税は口座区分に応じて売却時控除または翌年支払へ回します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <Table>
             <thead>
               <Tr>
@@ -4602,7 +4602,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             チャートの区分を年ごとに分解します。原資移動は通常年には出ないため、発生した年だけ下の履歴で確認します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <Table>
             <thead>
               <Tr>
@@ -4768,7 +4768,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>月別収支表</CardTitle>
           <CardDescription>当月不足分、流動資金最低保持額の補充、実際にどの資産から取り崩したかを確認できます。</CardDescription>
         </CardHeader>
-        <CardContent className="max-h-[520px] overflow-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <ResultTable rows={result.monthly.slice(0, 360)} period="month" />
         </CardContent>
       </Card>
@@ -4777,7 +4777,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>年別収支表</CardTitle>
           <CardDescription>年末資産残高、年間不足分、現金補充、取り崩し元、税・社会保険負担を確認します。</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <ResultTable rows={result.annual} period="year" />
         </CardContent>
       </Card>

@@ -37,4 +37,32 @@
   .numeric-input {
     font-variant-numeric: tabular-nums;
   }
+
+  .table-scroll {
+    position: relative;
+  }
+
+  .table-scroll table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: hsl(var(--card));
+    box-shadow: 0 1px 0 hsl(var(--border));
+  }
+
+  .table-scroll table thead th:first-child {
+    left: 0;
+    z-index: 50;
+    box-shadow:
+      1px 0 0 hsl(var(--border)),
+      0 1px 0 hsl(var(--border));
+  }
+
+  .table-scroll table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    background: hsl(var(--card));
+    box-shadow: 1px 0 0 hsl(var(--border));
+  }
 }
