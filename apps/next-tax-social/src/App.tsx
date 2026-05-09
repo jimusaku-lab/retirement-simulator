@@ -4786,17 +4786,34 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 }
 
 function CompareSection({ items }: { items: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }[] }) {
-  const chartData = items.map(({ scenario, result }) => ({
+  const compareRows = items.map(({ scenario, result }) => {
+    const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
+    const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
+    const plannedDrawdown = result.annual.reduce((sum, row) => sum + row.plannedDrawdownTotal, 0);
+    const optionProfitSweep = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal, 0);
+    return {
+      scenario,
+      result,
+      deficitAssetSale,
+      sourceAssetIncome,
+      plannedDrawdown,
+      optionProfitSweep,
+    };
+  });
+  const chartData = compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown }) => ({
     name: scenario.name,
     target: result.targetAgeBalance ?? 0,
-    withdrawal: result.totalWithdrawal,
+    fundingNeed: result.totalWithdrawal,
+    assetMoved: deficitAssetSale + sourceAssetIncome + plannedDrawdown,
   }));
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
-          <CardDescription>資産寿命、指定年齢残高、取り崩し額を横並びで比較します。</CardDescription>
+          <CardDescription>
+            累計資金不足は、生活費・税社保・追加投資などに対して現金収入で足りなかった額です。実際に資産から動いた額は、不足補填売却・収入化した原資・計画取り崩しで分けて確認します。
+          </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -4806,13 +4823,17 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>指定年齢残高</Th>
-                <Th>累計取り崩し</Th>
-                <Th>月平均取り崩し</Th>
+                <Th>累計資金不足</Th>
+                <Th>月平均資金不足</Th>
+                <Th>不足補填売却</Th>
+                <Th>収入化した原資</Th>
+                <Th>計画取り崩し</Th>
+                <Th>普通口座利益移動</Th>
                 <Th>年平均赤字</Th>
               </Tr>
             </thead>
             <tbody>
-              {items.map(({ scenario, result }) => (
+              {compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown, optionProfitSweep }) => (
                 <Tr key={scenario.id}>
                   <Td className="font-medium">{scenario.name}</Td>
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
@@ -4820,6 +4841,10 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
                   <Td>{compactYen(result.totalWithdrawal)}</Td>
                   <Td>{compactYen(result.averageMonthlyWithdrawal)}</Td>
+                  <Td>{compactYen(deficitAssetSale)}</Td>
+                  <Td>{compactYen(sourceAssetIncome)}</Td>
+                  <Td>{compactYen(plannedDrawdown)}</Td>
+                  <Td>{compactYen(optionProfitSweep)}</Td>
                   <Td>{compactYen(result.averageAnnualDeficit)}</Td>
                 </Tr>
               ))}
@@ -4829,7 +4854,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>指定年齢残高と累計取り崩し</CardTitle>
+          <CardTitle>指定年齢残高と累計資金不足</CardTitle>
+          <CardDescription>赤い棒は実際の売却額ではなく、現金収入だけでは足りなかった資金需要です。</CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -4839,7 +4865,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="target" name="指定年齢残高" fill="#0f766e" />
-              <Bar dataKey="withdrawal" name="累計取り崩し" fill="#e11d48" />
+              <Bar dataKey="fundingNeed" name="累計資金不足" fill="#e11d48" />
+              <Bar dataKey="assetMoved" name="実際に資産から動いた額" fill="#64748b" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
