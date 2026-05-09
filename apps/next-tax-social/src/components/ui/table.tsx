@@ -2,7 +2,18 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
-  return <table className={cn("w-full caption-bottom text-sm", className)} {...props} />;
+  return (
+    <table
+      className={cn(
+        "w-full caption-bottom border-separate border-spacing-0 text-sm",
+        "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-20 [&_thead_th]:bg-white",
+        "[&_thead_th:first-child]:z-40 [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:bg-white",
+        "[&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-white",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function Th({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {

@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -251,10 +251,12 @@ function App() {
   } = usePlanStore();
 
   const activeScenario = scenarios.find((scenario) => scenario.id === activeScenarioId) ?? scenarios[0];
-  const result = useMemo(() => simulateScenario(activeScenario), [activeScenario]);
+  const deferredActiveScenario = useDeferredValue(activeScenario);
+  const deferredScenarios = useDeferredValue(scenarios);
+  const result = useMemo(() => simulateScenario(deferredActiveScenario), [deferredActiveScenario]);
   const allResults = useMemo(
-    () => scenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) })),
-    [scenarios],
+    () => deferredScenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) })),
+    [deferredScenarios],
   );
   const isLikelySampleState =
     scenarios.length === sampleState.scenarios.length &&
@@ -483,6 +485,17 @@ function App() {
         )}
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={importJson} />
       </main>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="fixed bottom-5 right-5 z-50 bg-white shadow-md"
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        aria-label="ページ上部へ戻る"
+      >
+        <ArrowUp className="h-4 w-4" />
+        上へ
+      </Button>
     </div>
   );
 }
@@ -4386,6 +4399,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       net: row.netCashFlow,
     };
   });
+  const assetTransferRows = result.annual.filter((row) => row.assetTransferTotal > 0);
   const unrealizedGainChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     total: gainTrackedAssets.reduce((sum, asset) => sum + row.endingTrackedAssetUnrealizedGains[asset.key], 0),
@@ -4578,7 +4592,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>流動資金フロー内訳</CardTitle>
           <CardDescription>
-            チャートの区分を年ごとに分解します。原資移動は普通預金などから運用口座へ移した内部移動で、生活費の支出とは分けて見ます。
+            チャートの区分を年ごとに分解します。原資移動は通常年には出ないため、発生した年だけ下の履歴で確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -4588,7 +4602,6 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
                 <Th>現金収入</Th>
                 <Th>普通口座利益移動</Th>
-                <Th>原資移動</Th>
                 <Th>生活費</Th>
                 <Th>税社保支払</Th>
                 <Th>特別支出</Th>
@@ -4602,7 +4615,6 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                   <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{`${row.year} / ${row.ageYears}歳`}</Td>
                   <Td>{compactYen(row.incomeTotal)}</Td>
                   <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
-                  <Td>{row.assetTransferTotal > 0 ? `-${compactYen(row.assetTransferTotal)}` : "¥0"}</Td>
                   <Td>{row.livingExpenseTotal > 0 ? `-${compactYen(row.livingExpenseTotal)}` : "¥0"}</Td>
                   <Td>
                     {row.taxInsuranceTotal + row.capitalGainsTaxTotal > 0
@@ -4616,6 +4628,41 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               ))}
             </tbody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>原資移動の発生履歴</CardTitle>
+          <CardDescription>
+            普通預金などから運用口座へ移した内部移動だけを表示します。生活費の支出や外部収入とは別扱いです。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {assetTransferRows.length > 0 ? (
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>年 / 年齢</Th>
+                  <Th>移動額</Th>
+                  <Th>移動内容</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {assetTransferRows.map((row) => (
+                  <Tr key={`asset-transfer-${row.year}`}>
+                    <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td className="text-destructive">-{compactYen(row.assetTransferTotal)}</Td>
+                    <Td className="min-w-[360px] text-sm text-muted-foreground">
+                      {row.assetTransferDetails.length > 0 ? row.assetTransferDetails.join(" / ") : "移動詳細なし"}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">このシナリオでは原資移動は発生していません。</p>
+          )}
         </CardContent>
       </Card>
 
