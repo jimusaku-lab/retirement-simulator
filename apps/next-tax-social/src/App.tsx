@@ -4812,7 +4812,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
           <CardDescription>
-            累計資金不足は、生活費・税社保・追加投資などに対して現金収入で足りなかった額です。実際に資産から動いた額は、不足補填売却・収入化した原資・計画取り崩しで分けて確認します。
+            現金収入不足額は、生活費・税社保・追加投資などに対して、年金などの現金収入と普通口座利益移動だけでは足りなかった資金需要です。資産寿命の良し悪しは、指定年齢残高・不足補填売却・普通口座利益移動を合わせて確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -4823,8 +4823,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>指定年齢残高</Th>
-                <Th>累計資金不足</Th>
-                <Th>月平均資金不足</Th>
+                <Th>現金収入不足額</Th>
+                <Th>月平均不足額</Th>
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
                 <Th>計画取り崩し</Th>
@@ -4854,8 +4854,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>指定年齢残高と累計資金不足</CardTitle>
-          <CardDescription>赤い棒は実際の売却額ではなく、現金収入だけでは足りなかった資金需要です。</CardDescription>
+          <CardTitle>指定年齢残高と現金収入不足額</CardTitle>
+          <CardDescription>赤い棒は資産枯渇額ではなく、生活費・税社保・投資予定に対して現金収入だけでは足りなかった累計需要です。</CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -4865,7 +4865,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="target" name="指定年齢残高" fill="#0f766e" />
-              <Bar dataKey="fundingNeed" name="累計資金不足" fill="#e11d48" />
+              <Bar dataKey="fundingNeed" name="現金収入不足額" fill="#e11d48" />
               <Bar dataKey="assetMoved" name="実際に資産から動いた額" fill="#64748b" />
             </BarChart>
           </ResponsiveContainer>
