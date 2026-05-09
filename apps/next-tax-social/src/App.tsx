@@ -4368,17 +4368,24 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   const latestTrackedGainTotal = latestAnnual
     ? gainTrackedAssets.reduce((sum, asset) => sum + latestAnnual.endingTrackedAssetUnrealizedGains[asset.key], 0)
     : 0;
-  const cashflowChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
-    income: row.incomeTotal,
-    optionSweep: row.optionProfitSweepTotal,
-    living: -row.livingExpenseTotal,
-    tax: -(row.taxInsuranceTotal + row.capitalGainsTaxTotal),
-    special: -row.specialExpenseTotal,
-    assetTransfer: -row.assetTransferTotal,
-    contribution: -row.assetContributionTotal,
-    net: row.netCashFlow,
-  }));
+  const liquidFlowSummaryData = result.annual.map((row) => {
+    const cashOut =
+      row.livingExpenseTotal +
+      row.taxInsuranceTotal +
+      row.capitalGainsTaxTotal +
+      row.specialExpenseTotal +
+      row.assetContributionTotal;
+
+    return {
+      ...row,
+      label: `${row.year} / ${row.ageYears}歳`,
+      cashIn: row.incomeTotal,
+      internalIn: row.optionProfitSweepTotal,
+      internalOut: -row.assetTransferTotal,
+      cashOut: -cashOut,
+      net: row.netCashFlow,
+    };
+  });
   const unrealizedGainChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     total: gainTrackedAssets.reduce((sum, asset) => sum + row.endingTrackedAssetUnrealizedGains[asset.key], 0),
@@ -4544,29 +4551,71 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>年別の流動資金フロー</CardTitle>
+          <CardTitle>年別の流動資金フロー（区分別）</CardTitle>
           <CardDescription>
-            外部から入る現金収入、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を年ごとに確認します。
+            外部から入る現金、口座間の内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。普通口座利益移動は外部収入ではなく、普通預金へ戻した内部移動です。
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[30rem]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowChartData} barCategoryGap="18%" barGap={2} maxBarSize={14} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
+            <BarChart data={liquidFlowSummaryData} barCategoryGap="22%" barGap={2} maxBarSize={18} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
-              <Bar dataKey="income" name="現金収入" fill="#0f766e" />
-              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
-              <Bar dataKey="living" name="生活費" fill="#334155" />
-              <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
-              <Bar dataKey="special" name="特別支出" fill="#ea580c" />
-              <Bar dataKey="assetTransfer" name="原資移動" fill="#64748b" />
-              <Bar dataKey="contribution" name="追加投資" fill="#7c3aed" />
+              <Bar dataKey="cashIn" name="入金: 現金収入" fill="#0f766e" />
+              <Bar dataKey="internalIn" name="内部移動: 普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="internalOut" name="内部移動: 原資移動" fill="#64748b" />
+              <Bar dataKey="cashOut" name="出金: 生活費・税社保・投資" fill="#dc2626" />
               <Bar dataKey="net" name="純収支" fill="#2563eb" />
             </BarChart>
           </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>流動資金フロー内訳</CardTitle>
+          <CardDescription>
+            チャートの区分を年ごとに分解します。原資移動は普通預金などから運用口座へ移した内部移動で、生活費の支出とは分けて見ます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <thead>
+              <Tr>
+                <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
+                <Th>現金収入</Th>
+                <Th>普通口座利益移動</Th>
+                <Th>原資移動</Th>
+                <Th>生活費</Th>
+                <Th>税社保支払</Th>
+                <Th>特別支出</Th>
+                <Th>追加投資</Th>
+                <Th>純収支</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {liquidFlowSummaryData.map((row) => (
+                <Tr key={`liquid-flow-${row.year}`}>
+                  <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td>{compactYen(row.incomeTotal)}</Td>
+                  <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+                  <Td>{row.assetTransferTotal > 0 ? `-${compactYen(row.assetTransferTotal)}` : "¥0"}</Td>
+                  <Td>{row.livingExpenseTotal > 0 ? `-${compactYen(row.livingExpenseTotal)}` : "¥0"}</Td>
+                  <Td>
+                    {row.taxInsuranceTotal + row.capitalGainsTaxTotal > 0
+                      ? `-${compactYen(row.taxInsuranceTotal + row.capitalGainsTaxTotal)}`
+                      : "¥0"}
+                  </Td>
+                  <Td>{row.specialExpenseTotal > 0 ? `-${compactYen(row.specialExpenseTotal)}` : "¥0"}</Td>
+                  <Td>{row.assetContributionTotal > 0 ? `-${compactYen(row.assetContributionTotal)}` : "¥0"}</Td>
+                  <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-teal-700"}>{compactYen(row.netCashFlow)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
         </CardContent>
       </Card>
 
