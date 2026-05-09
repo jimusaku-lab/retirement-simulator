@@ -4645,7 +4645,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             普通預金などから運用口座へ移した内部移動だけを表示します。生活費の支出や外部収入とは別扱いです。
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           {assetTransferRows.length > 0 ? (
             <Table>
               <thead>
@@ -4722,7 +4722,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>年末の評価額・取得原価・評価損益</CardTitle>
           <CardDescription>課税口座の取り崩し時課税の元になる取得原価と、年末時点の含み損益を確認します。</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <Table>
             <thead>
               <Tr>
