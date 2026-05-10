@@ -4787,24 +4787,76 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
 function CompareSection({ items }: { items: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }[] }) {
   const compareRows = items.map(({ scenario, result }) => {
+    const yearCount = Math.max(1, result.annual.length);
     const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
     const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
     const plannedDrawdown = result.annual.reduce((sum, row) => sum + row.plannedDrawdownTotal, 0);
     const optionProfitSweep = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal, 0);
+    const cashIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
+    const nisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
+    const additionalInvestment = result.annual.reduce((sum, row) => sum + row.assetContributionTotal, 0);
+    const taxSocial = result.annual.reduce(
+      (sum, row) => sum + row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal,
+      0,
+    );
+    const livingAndTaxNeed = result.annual.reduce(
+      (sum, row) =>
+        sum +
+        Math.max(
+          0,
+          row.livingExpenseTotal +
+            row.specialExpenseTotal +
+            row.taxInsuranceTotal +
+            row.capitalGainsTaxTotal +
+            row.idecoWithholdingTaxTotal +
+            row.idecoFeeTotal -
+            (row.incomeTotal + row.optionProfitSweepTotal),
+        ),
+      0,
+    );
+    const afterLivingCapacity = result.annual.reduce(
+      (sum, row) =>
+        sum +
+        row.incomeTotal +
+        row.optionProfitSweepTotal -
+        row.livingExpenseTotal -
+        row.specialExpenseTotal -
+        row.taxInsuranceTotal -
+        row.capitalGainsTaxTotal -
+        row.idecoWithholdingTaxTotal -
+        row.idecoFeeTotal,
+      0,
+    );
+    const investmentIncludedNeed = result.totalWithdrawal;
     return {
       scenario,
       result,
+      yearCount,
       deficitAssetSale,
       sourceAssetIncome,
       plannedDrawdown,
       optionProfitSweep,
+      cashIncome,
+      nisaSkipped,
+      additionalInvestment,
+      taxSocial,
+      livingAndTaxNeed,
+      afterLivingCapacity,
+      investmentIncludedNeed,
     };
   });
-  const chartData = compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown }) => ({
+  const longevityChartData = compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown, livingAndTaxNeed }) => ({
     name: scenario.name,
     target: result.targetAgeBalance ?? 0,
-    fundingNeed: result.totalWithdrawal,
+    livingAndTaxNeed,
     assetMoved: deficitAssetSale + sourceAssetIncome + plannedDrawdown,
+  }));
+  const efficiencyChartData = compareRows.map(({ scenario, yearCount, cashIncome, optionProfitSweep, taxSocial, afterLivingCapacity }) => ({
+    name: scenario.name,
+    cashIncomeAverage: cashIncome / yearCount,
+    optionProfitSweepAverage: optionProfitSweep / yearCount,
+    taxSocialAverage: taxSocial / yearCount,
+    afterLivingCapacityAverage: afterLivingCapacity / yearCount,
   }));
   return (
     <div className="space-y-6">
@@ -4812,61 +4864,109 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
           <CardDescription>
-            現金収入不足額は、生活費・税社保・追加投資などに対して、年金などの現金収入と普通口座利益移動だけでは足りなかった資金需要です。資産寿命の良し悪しは、指定年齢残高・不足補填売却・普通口座利益移動を合わせて確認します。
+            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座利益移動でどこまで賄えたか、税社保負担とNISA未実行を確認します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="table-scroll overflow-auto">
           <Table>
             <thead>
               <Tr>
-                <Th>シナリオ</Th>
+                <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>指定年齢残高</Th>
-                <Th>現金収入不足額</Th>
-                <Th>月平均不足額</Th>
+                <Th>生活資金不足</Th>
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
                 <Th>計画取り崩し</Th>
                 <Th>普通口座利益移動</Th>
-                <Th>年平均赤字</Th>
+                <Th>NISA未実行</Th>
+                <Th>追加投資</Th>
+                <Th>年平均税社保</Th>
+                <Th>年平均現金収入</Th>
+                <Th>年平均生活後余力</Th>
+                <Th>投資込み資金需要</Th>
               </Tr>
             </thead>
             <tbody>
-              {compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown, optionProfitSweep }) => (
+              {compareRows.map(
+                ({
+                  scenario,
+                  result,
+                  yearCount,
+                  deficitAssetSale,
+                  sourceAssetIncome,
+                  plannedDrawdown,
+                  optionProfitSweep,
+                  cashIncome,
+                  nisaSkipped,
+                  additionalInvestment,
+                  taxSocial,
+                  livingAndTaxNeed,
+                  afterLivingCapacity,
+                  investmentIncludedNeed,
+                }) => (
                 <Tr key={scenario.id}>
-                  <Td className="font-medium">{scenario.name}</Td>
+                  <Td className="sticky-col left-0 z-20 bg-white font-medium">{scenario.name}</Td>
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
-                  <Td>{compactYen(result.totalWithdrawal)}</Td>
-                  <Td>{compactYen(result.averageMonthlyWithdrawal)}</Td>
+                  <Td>{compactYen(livingAndTaxNeed)}</Td>
                   <Td>{compactYen(deficitAssetSale)}</Td>
                   <Td>{compactYen(sourceAssetIncome)}</Td>
                   <Td>{compactYen(plannedDrawdown)}</Td>
                   <Td>{compactYen(optionProfitSweep)}</Td>
-                  <Td>{compactYen(result.averageAnnualDeficit)}</Td>
+                  <Td className={nisaSkipped > 0 ? "text-red-600" : ""}>{compactYen(nisaSkipped)}</Td>
+                  <Td>{compactYen(additionalInvestment)}</Td>
+                  <Td>{compactYen(taxSocial / yearCount)}</Td>
+                  <Td>{compactYen(cashIncome / yearCount)}</Td>
+                  <Td className={afterLivingCapacity < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(afterLivingCapacity / yearCount)}</Td>
+                  <Td className="text-muted-foreground">{compactYen(investmentIncludedNeed)}</Td>
                 </Tr>
-              ))}
+                ),
+              )}
             </tbody>
           </Table>
+          <p className="mt-3 text-xs leading-6 text-muted-foreground">
+            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座利益移動だけでは足りなかった額です。追加投資は含めません。投資込み資金需要は、追加投資予定まで含めた補助指標です。
+          </p>
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>指定年齢残高と現金収入不足額</CardTitle>
-          <CardDescription>赤い棒は資産枯渇額ではなく、生活費・税社保・投資予定に対して現金収入だけでは足りなかった累計需要です。</CardDescription>
+          <CardTitle>資産寿命と生活資金不足</CardTitle>
+          <CardDescription>赤い棒は追加投資を除いた生活資金不足、グレーは実際に資産から動いた額です。緑の棒が指定年齢時点の残高です。</CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData}>
+            <BarChart data={longevityChartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="target" name="指定年齢残高" fill="#0f766e" />
-              <Bar dataKey="fundingNeed" name="現金収入不足額" fill="#e11d48" />
+              <Bar dataKey="livingAndTaxNeed" name="生活資金不足" fill="#e11d48" />
               <Bar dataKey="assetMoved" name="実際に資産から動いた額" fill="#64748b" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>税社保と手取り効率</CardTitle>
+          <CardDescription>年平均で、現金収入・普通口座利益移動・税社保負担・生活後余力を比較します。収入を増やした時に負担がどれだけ増えるかを見るための表です。</CardDescription>
+        </CardHeader>
+        <CardContent className="h-96">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={efficiencyChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <Tooltip formatter={(value) => yen(Number(value))} />
+              <Bar dataKey="cashIncomeAverage" name="年平均現金収入" fill="#0f766e" />
+              <Bar dataKey="optionProfitSweepAverage" name="年平均普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="taxSocialAverage" name="年平均税社保" fill="#dc2626" />
+              <Bar dataKey="afterLivingCapacityAverage" name="年平均生活後余力" fill="#2563eb" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
