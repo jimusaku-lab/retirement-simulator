@@ -4169,7 +4169,7 @@ describe("simulation", () => {
     expect(result.monthly[0].withdrawalSourceBreakdown.nisa).toBe(0);
   });
 
-  it("NISA未実行の繰越残がある年は不足補填元にNISAを使わない", () => {
+  it("NISA未実行の繰越残だけでは生活費不足のNISA補填を止めない", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -4208,11 +4208,11 @@ describe("simulation", () => {
     );
 
     expect(result.monthly[0].nisaContributionSkippedTotal).toBe(200_000);
-    expect(result.monthly[1].deficitWithdrawalBreakdown.nisa).toBe(0);
-    expect(result.monthly[1].deficitWithdrawalBreakdown.specificAccount).toBeGreaterThan(0);
+    expect(result.monthly[1].deficitWithdrawalBreakdown.nisa).toBeGreaterThan(0);
+    expect(result.monthly[1].deficitWithdrawalBreakdown.specificAccount).toBe(0);
   });
 
-  it("NISA追加投資がある年は同じ年の不足補填元にNISAを使わない", () => {
+  it("過去月のNISA追加投資は後月の生活費不足補填を隠さない", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -4222,7 +4222,7 @@ describe("simulation", () => {
         },
         initialAssets: {
           ...base.initialAssets,
-          cash: 0,
+          cash: 200_000,
           nisa: 1_000_000,
           specificAccount: 1_000_000,
         },
@@ -4249,8 +4249,9 @@ describe("simulation", () => {
       }),
     );
 
-    expect(result.monthly.find((row) => row.yearMonth === "2026-05")?.deficitWithdrawalBreakdown.nisa).toBe(0);
-    expect(result.monthly.find((row) => row.yearMonth === "2026-05")?.deficitWithdrawalBreakdown.specificAccount).toBeGreaterThan(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-04")?.nisaContributionTotal).toBe(50_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-05")?.deficitWithdrawalBreakdown.nisa).toBeGreaterThan(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-05")?.deficitWithdrawalBreakdown.specificAccount).toBe(0);
   });
 
   it("NISA未実行分は設定により同一年内の後月へ繰り越して実行する", () => {

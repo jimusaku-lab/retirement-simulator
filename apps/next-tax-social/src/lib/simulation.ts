@@ -931,23 +931,6 @@ function getSpecificAccountWithholdingMode(scenario: ScenarioData) {
   return scenario.taxableAccountSettings?.specificAccountWithholding ?? "withholding";
 }
 
-function getActiveNisaContribution(events: ScenarioData["assetContributionEvents"], yearMonth: YearMonth) {
-  return events.some((event) => event.assetKey === "nisa" && isContributionActive(event, yearMonth));
-}
-
-function getNisaContributionPlannedYears(scenario: ScenarioData, start: dayjs.Dayjs, end: dayjs.Dayjs) {
-  const years = new Set<number>();
-  let cursor = start;
-  while (cursor.isBefore(end) || cursor.isSame(end, "month")) {
-    const yearMonth = formatYm(cursor);
-    if (getActiveNisaContribution(scenario.assetContributionEvents, yearMonth)) {
-      years.add(cursor.year());
-    }
-    cursor = cursor.add(1, "month");
-  }
-  return years;
-}
-
 function getNisaAnnualLimit(scenario: ScenarioData) {
   return Math.max(0, scenario.nisaInvestmentRules.annualLimit * Math.max(1, scenario.nisaInvestmentRules.investorCount));
 }
@@ -1140,7 +1123,6 @@ function simulateScenarioCore(
   const deferredCapitalGainsTaxByIncomeYear = new Map<number, number>();
   const retirementAdjustmentByIncomeEventId = getRetirementAdjustmentByIncomeEventId(scenario);
   const nisaContributionUsedByYear = new Map<number, number>();
-  const nisaProtectedYears = getNisaContributionPlannedYears(scenario, start, end);
   const nisaWithdrawalYears = new Set<number>();
   const nisaContributionCarryoverByEvent = new Map<string, number>();
   const monthlyExpenseProfiles = new Map<YearMonth, MonthlyExpenseProfile>();
@@ -1398,6 +1380,7 @@ function simulateScenarioCore(
     let nisaAnnualLimitExceededTotal = 0;
     let handledNisaContributionThisMonth = false;
     let nisaContributionPlannedThisMonth = false;
+    let nisaContributionExecutedThisMonth = false;
     const carryoverMode = scenario.nisaInvestmentRules.carryOverSkippedMode ??
       (scenario.nisaInvestmentRules.carryOverSkippedWithinYear ? "withinYear" : "none");
     const carryoverEvents = scenario.assetContributionEvents.filter(
@@ -1473,7 +1456,7 @@ function simulateScenarioCore(
       nisaContributionUsedByYear.set(year, used + contributionAmount);
       nisaContributionUsedLifetime += contributionAmount;
       if (contributionAmount > 0) {
-        nisaProtectedYears.add(year);
+        nisaContributionExecutedThisMonth = true;
       }
       const remainingLifetimeLimitAfterExecution = scenario.nisaInvestmentRules.enforceAnnualLimit
         ? Math.max(0, lifetimeLimit - nisaContributionUsedLifetime)
@@ -1559,11 +1542,7 @@ function simulateScenarioCore(
     const liquidBufferBalance = getLiquidBufferBalance(balances);
     const deficit = liquidBufferBalance < cashReserve ? cashReserve - liquidBufferBalance : 0;
     const monthlyReservedAssets = new Set<GrowthAssetKey>(reserveReplenishmentExcludedAssets);
-    const hasNisaContributionPlan =
-      nisaProtectedYears.has(cursor.year()) ||
-      getActiveNisaContribution(scenario.assetContributionEvents, yearMonth) ||
-      nisaContributionPlannedThisMonth;
-    if (scenario.nisaInvestmentRules.protectDuringContribution && hasNisaContributionPlan) {
+    if (scenario.nisaInvestmentRules.protectDuringContribution && nisaContributionExecutedThisMonth) {
       monthlyReservedAssets.add("nisa");
     }
     const withdrawal = deficit
