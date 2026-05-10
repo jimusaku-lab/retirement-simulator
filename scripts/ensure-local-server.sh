@@ -7,9 +7,11 @@ HOST="${HOST:-127.0.0.1}"
 LABEL="com.motomichi.retirement-simulator-static-${APP_NAME}-${PORT}"
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="${APP_ROOT}/apps/${APP_NAME}"
+STATIC_SERVER="${APP_ROOT}/scripts/no-cache-static-server.py"
 RUNTIME_ROOT="${HOME}/.retirement-simulator"
 SITE_DIR="${RUNTIME_ROOT}/site-${APP_NAME}-${PORT}"
 LOG_DIR="${RUNTIME_ROOT}/logs"
+SERVER_SCRIPT="${RUNTIME_ROOT}/no-cache-static-server.py"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/${LABEL}.plist"
 URL="http://${HOST}:${PORT}/"
@@ -24,9 +26,10 @@ fi
 cd "$APP_DIR"
 npm run build
 
-mkdir -p "$SITE_DIR" "$LOG_DIR" "$PLIST_DIR"
+mkdir -p "$SITE_DIR" "$LOG_DIR" "$PLIST_DIR" "$RUNTIME_ROOT"
 rm -rf "${SITE_DIR:?}/"*
 cp -R dist/. "$SITE_DIR/"
+cp "$STATIC_SERVER" "$SERVER_SCRIPT"
 
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -38,8 +41,7 @@ cat > "$PLIST_PATH" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>${PYTHON_BIN}</string>
-    <string>-m</string>
-    <string>http.server</string>
+    <string>${SERVER_SCRIPT}</string>
     <string>${PORT}</string>
     <string>--bind</string>
     <string>${HOST}</string>
