@@ -4806,7 +4806,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       <Card>
         <CardHeader>
           <CardTitle>月別収支表</CardTitle>
-          <CardDescription>当月不足分、流動資金最低保持額の補充、実際にどの資産から取り崩したかを確認できます。</CardDescription>
+          <CardDescription>
+            現金不足は生活費・税社保・特別支出・追加投資などに対して、現金収入と流動資金だけでは足りなかった額です。iDeCoは設定した受取予定として表示します。
+          </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <ResultTable rows={result.monthly.slice(0, 360)} period="month" />
@@ -4815,7 +4817,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       <Card>
         <CardHeader>
           <CardTitle>年別収支表</CardTitle>
-          <CardDescription>年末資産残高、年間不足分、現金補充、取り崩し元、税・社会保険負担を確認します。</CardDescription>
+          <CardDescription>
+            年間現金不足、予定受取元、不足補填売却元、税・社会保険負担を確認します。iDeCoは任意売却ではなく、受取設定に従う予定受取元として扱います。
+          </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <ResultTable rows={result.annual} period="year" />
@@ -5345,6 +5349,8 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
   const { rows, period } = props;
   const stickyHeaderClass = "sticky left-0 z-30 bg-white shadow-[1px_0_0_#cbd5e1]";
   const stickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
+  const showPlannedDrawdown = rows.some((row) => row.plannedDrawdownTotal > 0);
+  const shortageLabel = period === "month" ? "当月現金不足" : "年間現金不足";
   return (
     <Table className="min-w-[2400px]">
       <thead className="sticky top-0 z-10 bg-white shadow-sm">
@@ -5358,12 +5364,12 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>申告対象譲渡益</Th>
           <Th>特別支出</Th>
           <Th>純収支</Th>
-          <Th>計画取り崩し</Th>
-          <Th>当月不足分</Th>
-          <Th>収入化した原資</Th>
-          <Th className="min-w-[300px]">収入化元</Th>
+          {showPlannedDrawdown && <Th>手入力計画取り崩し</Th>}
+          <Th>{shortageLabel}</Th>
+          <Th>予定受取額</Th>
+          <Th className="min-w-[300px]">予定受取元</Th>
           <Th>不足補填売却</Th>
-          <Th className="min-w-[300px]">不足補填元</Th>
+          <Th className="min-w-[300px]">不足補填売却元</Th>
           <Th>追加投資</Th>
           <Th>NISA実行</Th>
           <Th>NISA未実行</Th>
@@ -5399,7 +5405,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
-              <Td>{compactYen(row.plannedDrawdownTotal)}</Td>
+              {showPlannedDrawdown && <Td>{compactYen(row.plannedDrawdownTotal)}</Td>}
               <Td>{compactYen(row.withdrawalAmount)}</Td>
               <Td>{compactYen(row.sourceAssetIncomeWithdrawalAmount)}</Td>
               <Td className="min-w-[300px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
@@ -5448,7 +5454,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
               <Td>{compactYen(row.specialExpenseTotal)}</Td>
               <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-primary"}>{compactYen(row.netCashFlow)}</Td>
-              <Td>{compactYen(row.plannedDrawdownTotal)}</Td>
+              {showPlannedDrawdown && <Td>{compactYen(row.plannedDrawdownTotal)}</Td>}
               <Td>{compactYen(row.withdrawalAmount)}</Td>
               <Td>{compactYen(row.sourceAssetIncomeWithdrawalAmount)}</Td>
               <Td className="min-w-[300px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
