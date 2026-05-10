@@ -355,6 +355,8 @@ export type MonthlyResult = {
   retainedSourceAssetIncomeTotal: number;
   assetTransferTotal: number;
   assetTransferDetails: string[];
+  optionAccountReleaseTotal: number;
+  optionAccountReleaseDetails: string[];
   optionProfitSweepTotal: number;
   optionProfitSweepDetails: string[];
   optionIncomeSuspendedTotal: number;
@@ -398,6 +400,8 @@ export type AnnualResult = {
   retainedSourceAssetIncomeTotal: number;
   assetTransferTotal: number;
   assetTransferDetails: string[];
+  optionAccountReleaseTotal: number;
+  optionAccountReleaseDetails: string[];
   optionProfitSweepTotal: number;
   optionProfitSweepDetails: string[];
   optionIncomeSuspendedTotal: number;

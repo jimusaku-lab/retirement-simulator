@@ -1060,6 +1060,38 @@ function moveOptionSubAccountProfitToLiquidWithDetails(
   };
 }
 
+function releaseEndedOptionSubAccountsToBankDeposit(
+  balances: BalanceMap,
+  taxableBasis: TaxableBasisMap,
+  optionSubAccounts: OptionSubAccountState[],
+  yearMonth: YearMonth,
+  releasedAccountIds: Set<string>,
+) {
+  let transferredAmount = 0;
+  let realizedGain = 0;
+  const details: string[] = [];
+  for (const account of optionSubAccounts) {
+    if (!account.enabled || !account.releaseProtectionAfterEnd || !account.endYearMonth) continue;
+    if (releasedAccountIds.has(account.id)) continue;
+    const releaseYearMonth = formatYm(ym(account.endYearMonth).add(1, "month"));
+    if (releaseYearMonth !== yearMonth) continue;
+    releasedAccountIds.add(account.id);
+    const result = moveOptionSubAccountProfitToLiquid(
+      balances,
+      taxableBasis,
+      optionSubAccounts,
+      account,
+      "bankDeposit",
+      account.balance,
+    );
+    if (result.transferredAmount <= 0) continue;
+    transferredAmount += result.transferredAmount;
+    realizedGain += result.realizedGain;
+    details.push(`${account.name} -> 普通預金 ${formatCompactYenForDetail(result.transferredAmount)}（終了後戻し）`);
+  }
+  return { transferredAmount, realizedGain, details };
+}
+
 function getOptionProfitSweepAmount(scenario: ScenarioData, balances: BalanceMap, yearMonth: YearMonth) {
   const rules = scenario.optionAccountRules;
   if (!rules.enabled || !rules.profitSweepEnabled) return 0;
@@ -1112,6 +1144,7 @@ function simulateScenarioCore(
   const nisaWithdrawalYears = new Set<number>();
   const nisaContributionCarryoverByEvent = new Map<string, number>();
   const monthlyExpenseProfiles = new Map<YearMonth, MonthlyExpenseProfile>();
+  const releasedOptionSubAccountIds = new Set<string>();
   let nisaContributionUsedLifetime = Math.max(0, scenario.nisaInvestmentRules.usedLifetimeLimitAtStart ?? 0);
   let cursor = start;
   let index = 0;
@@ -1319,6 +1352,16 @@ function simulateScenarioCore(
       deferredCapitalGainsTaxByIncomeYear,
     );
     const outflow = livingExpenseTotal + specialExpenseTotal + taxInsuranceTotal;
+    const optionAccountRelease = releaseEndedOptionSubAccountsToBankDeposit(
+      balances,
+      taxableBasis,
+      optionSubAccounts,
+      yearMonth,
+      releasedOptionSubAccountIds,
+    );
+    const optionAccountReleaseTotal = optionAccountRelease.transferredAmount;
+    const optionAccountReleaseDetails = optionAccountRelease.details;
+    declaredCapitalGainsIncomeTotal += optionAccountRelease.realizedGain;
     let optionProfitSweepTotal = 0;
     const optionProfitSweepDetails: string[] = [];
     if (optionSubAccounts.length) {
@@ -1507,7 +1550,7 @@ function simulateScenarioCore(
           return sum + amount;
         }, 0)
       : 0;
-    const availableCashLikeInflow = incomeTotal + optionProfitSweepTotal;
+    const availableCashLikeInflow = incomeTotal + optionProfitSweepTotal + optionAccountReleaseTotal;
     const liquidFundingCapacityForContribution = Math.max(0, startingLiquidBuffer + availableCashLikeInflow - outflow - cashReserve);
     const assetContributionFundingGap = Math.max(0, assetContributionTotal - liquidFundingCapacityForContribution);
     const baseWithdrawalAmount = Math.max(0, outflow + assetContributionTotal - availableCashLikeInflow);
@@ -1603,6 +1646,8 @@ function simulateScenarioCore(
       retainedSourceAssetIncomeTotal: Math.round(retainedSourceAssetIncomeTotal),
       assetTransferTotal: Math.round(assetTransferTotal),
       assetTransferDetails,
+      optionAccountReleaseTotal: Math.round(optionAccountReleaseTotal),
+      optionAccountReleaseDetails,
       optionProfitSweepTotal: Math.round(optionProfitSweepTotal),
       optionProfitSweepDetails,
       optionIncomeSuspendedTotal: Math.round(optionIncomeSuspendedTotal),
@@ -1746,6 +1791,8 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         retainedSourceAssetIncomeTotal: 0,
         assetTransferTotal: 0,
         assetTransferDetails: [],
+        optionAccountReleaseTotal: 0,
+        optionAccountReleaseDetails: [],
         optionProfitSweepTotal: 0,
         optionProfitSweepDetails: [],
         optionIncomeSuspendedTotal: 0,
@@ -1784,6 +1831,8 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.retainedSourceAssetIncomeTotal += row.retainedSourceAssetIncomeTotal;
     current.assetTransferTotal += row.assetTransferTotal;
     current.assetTransferDetails.push(...row.assetTransferDetails);
+    current.optionAccountReleaseTotal += row.optionAccountReleaseTotal;
+    current.optionAccountReleaseDetails.push(...row.optionAccountReleaseDetails);
     current.optionProfitSweepTotal += row.optionProfitSweepTotal;
     current.optionProfitSweepDetails.push(...row.optionProfitSweepDetails);
     current.optionIncomeSuspendedTotal += row.optionIncomeSuspendedTotal;

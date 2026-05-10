@@ -5540,6 +5540,140 @@ describe("simulation", () => {
     expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(3_000_000);
   });
 
+  it("終了翌月に普通口座サブ口座残高を普通預金へ戻す", () => {
+    const base = simpleScenario();
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          ...base.userProfile,
+          simulationStartYearMonth: "2026-04",
+          simulationEndYearMonth: "2026-06",
+        },
+        initialAssets: {
+          ...base.initialAssets,
+          cash: 0,
+          bankDeposit: 0,
+          ordinaryAccountForOptions: 300_000,
+        },
+        initialAssetCostBasis: {
+          ...base.initialAssetCostBasis,
+          ordinaryAccountForOptions: 300_000,
+        },
+        monthlyExpenses: {
+          ...base.monthlyExpenses,
+          housing: 0,
+        },
+        optionSubAccounts: [
+          {
+            id: "us-option",
+            name: "米国株オプション",
+            initialValue: 300_000,
+            initialCostBasis: 300_000,
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-05",
+            enabled: true,
+            minimumBalance: 300_000,
+            targetBalance: 400_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: false,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+      }),
+    );
+
+    const releaseMonth = result.monthly.find((row) => row.yearMonth === "2026-06");
+
+    expect(releaseMonth?.optionAccountReleaseTotal).toBe(300_000);
+    expect(releaseMonth?.optionAccountReleaseDetails).toEqual([
+      "米国株オプション -> 普通預金 30万円（終了後戻し）",
+    ]);
+    expect(releaseMonth?.endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(0);
+    expect(releaseMonth?.endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(0);
+  });
+
+  it("終了後に普通預金へ戻した普通口座資金は同月のNISA未実行分に充当できる", () => {
+    const base = simpleScenario();
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          ...base.userProfile,
+          simulationStartYearMonth: "2026-04",
+          simulationEndYearMonth: "2026-06",
+        },
+        initialAssets: {
+          ...base.initialAssets,
+          cash: 0,
+          bankDeposit: 0,
+          ordinaryAccountForOptions: 300_000,
+        },
+        initialAssetCostBasis: {
+          ...base.initialAssetCostBasis,
+          ordinaryAccountForOptions: 300_000,
+        },
+        monthlyExpenses: {
+          ...base.monthlyExpenses,
+          housing: 0,
+        },
+        assetContributionEvents: [
+          {
+            id: "nisa",
+            name: "NISA積立",
+            assetKey: "nisa",
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-06",
+            monthlyAmount: 300_000,
+            carryOverSkipped: true,
+            contributionPriority: 1,
+          },
+        ],
+        nisaInvestmentRules: {
+          ...base.nisaInvestmentRules,
+          insufficientFundingMode: "skip",
+          carryOverSkippedMode: "acrossYears",
+        },
+        optionSubAccounts: [
+          {
+            id: "us-option",
+            name: "米国株オプション",
+            initialValue: 300_000,
+            initialCostBasis: 300_000,
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-05",
+            enabled: true,
+            minimumBalance: 300_000,
+            targetBalance: 400_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: false,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+      }),
+    );
+
+    const releaseMonth = result.monthly.find((row) => row.yearMonth === "2026-06");
+
+    expect(result.monthly.find((row) => row.yearMonth === "2026-04")?.nisaContributionSkippedTotal).toBe(300_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-05")?.nisaContributionSkippedTotal).toBe(300_000);
+    expect(releaseMonth?.optionAccountReleaseTotal).toBe(300_000);
+    expect(releaseMonth?.assetContributionTotal).toBe(300_000);
+    expect(releaseMonth?.nisaContributionTotal).toBe(300_000);
+    expect(releaseMonth?.endingTrackedAssetBalances.nisa).toBe(300_000);
+    expect(releaseMonth?.endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(0);
+  });
+
   it("特定口座の源泉徴収なしは売却月に差し引かず、翌年支払予定の譲渡益税に回す", () => {
     const base = simpleScenario();
     const result = simulateScenario(

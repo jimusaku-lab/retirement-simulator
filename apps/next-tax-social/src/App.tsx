@@ -323,7 +323,8 @@ function App() {
         "現金収入",
         "口座内積上",
         "原資移動",
-        "普通口座利益移動",
+        "普通口座から流動資金へ",
+        "普通口座終了戻し",
         "証拠金不足停止",
         "NISA未実行",
         "NISA枠超過",
@@ -342,7 +343,8 @@ function App() {
         row.incomeTotal,
         row.retainedSourceAssetIncomeTotal,
         row.assetTransferTotal,
-        row.optionProfitSweepTotal,
+        row.optionProfitSweepTotal + row.optionAccountReleaseTotal,
+        row.optionAccountReleaseTotal,
         row.optionIncomeSuspendedTotal,
         row.nisaContributionSkippedTotal,
         row.nisaAnnualLimitExceededTotal,
@@ -512,7 +514,7 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
   const cashflowChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     income: row.incomeTotal,
-    optionSweep: row.optionProfitSweepTotal,
+    optionSweep: row.optionProfitSweepTotal + row.optionAccountReleaseTotal,
     living: -row.livingExpenseTotal,
     tax: -(row.taxInsuranceTotal + row.capitalGainsTaxTotal),
     special: -row.specialExpenseTotal,
@@ -582,7 +584,7 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
-              <Bar dataKey="optionSweep" name="普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="optionSweep" name="普通口座から流動資金へ" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
@@ -4369,6 +4371,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   const annualIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
   const annualRetainedSourceIncome = result.annual.reduce((sum, row) => sum + row.retainedSourceAssetIncomeTotal, 0);
   const annualAssetTransfer = result.annual.reduce((sum, row) => sum + row.assetTransferTotal, 0);
+  const annualOptionRelease = result.annual.reduce((sum, row) => sum + row.optionAccountReleaseTotal, 0);
   const annualOptionSweep = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal, 0);
   const annualOptionSuspended = result.annual.reduce((sum, row) => sum + row.optionIncomeSuspendedTotal, 0);
   const annualNisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
@@ -4403,13 +4406,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       ...row,
       label: `${row.year} / ${row.ageYears}歳`,
       cashIn: row.incomeTotal,
-      internalIn: row.optionProfitSweepTotal,
+      internalIn: row.optionProfitSweepTotal + row.optionAccountReleaseTotal,
       internalOut: -row.assetTransferTotal,
       cashOut: -cashOut,
       net: row.netCashFlow,
     };
   });
   const assetTransferRows = result.annual.filter((row) => row.assetTransferTotal > 0);
+  const optionReleaseRows = result.annual.filter((row) => row.optionAccountReleaseTotal > 0);
   const unrealizedGainChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     total: gainTrackedAssets.reduce((sum, asset) => sum + row.endingTrackedAssetUnrealizedGains[asset.key], 0),
@@ -4439,6 +4443,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="累計口座内積上" value={compactYen(annualRetainedSourceIncome)} sub="現金化せず原資口座に残した利益" />
         <Metric title="累計原資移動" value={compactYen(annualAssetTransfer)} sub="現金・預金から運用口座へ移した額" />
         <Metric title="累計普通口座利益移動" value={compactYen(annualOptionSweep)} sub="目標残高超過分などの移動" />
+        <Metric title="累計普通口座終了戻し" value={compactYen(annualOptionRelease)} sub="終了後に普通預金へ戻した残高" />
         <Metric title="累計証拠金不足停止" value={compactYen(annualOptionSuspended)} sub="最低維持額未満で止めた収益" />
         <Metric title="累計NISA未実行" value={compactYen(annualNisaSkipped)} sub="原資不足で実行しなかった積立" />
         <Metric title="累計NISA枠超過" value={compactYen(annualNisaLimitExceeded)} sub="年間枠を超えた予定額" />
@@ -4574,7 +4579,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>年別の流動資金フロー（区分別）</CardTitle>
           <CardDescription>
-            外部から入る現金、口座間の内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。普通口座利益移動は外部収入ではなく、普通預金へ戻した内部移動です。
+            外部から入る現金、口座間の内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。普通口座利益移動と終了後戻しは外部収入ではなく、普通預金へ戻した内部移動です。
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[30rem]">
@@ -4586,7 +4591,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
               <Bar dataKey="cashIn" name="入金: 現金収入" fill="#0f766e" />
-              <Bar dataKey="internalIn" name="内部移動: 普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="internalIn" name="内部移動: 普通口座から流動資金へ" fill="#14b8a6" />
               <Bar dataKey="internalOut" name="内部移動: 原資移動" fill="#64748b" />
               <Bar dataKey="cashOut" name="出金: 生活費・税社保・投資" fill="#dc2626" />
               <Bar dataKey="net" name="純収支" fill="#2563eb" />
@@ -4608,7 +4613,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Tr>
                 <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
                 <Th>現金収入</Th>
-                <Th>普通口座利益移動</Th>
+                <Th>普通口座から流動資金へ</Th>
                 <Th>生活費</Th>
                 <Th>税社保支払</Th>
                 <Th>特別支出</Th>
@@ -4621,7 +4626,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Tr key={`liquid-flow-${row.year}`}>
                   <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{`${row.year} / ${row.ageYears}歳`}</Td>
                   <Td>{compactYen(row.incomeTotal)}</Td>
-                  <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+                  <Td>{compactYen(row.optionProfitSweepTotal + row.optionAccountReleaseTotal)}</Td>
                   <Td>{row.livingExpenseTotal > 0 ? `-${compactYen(row.livingExpenseTotal)}` : "¥0"}</Td>
                   <Td>
                     {row.taxInsuranceTotal + row.capitalGainsTaxTotal > 0
@@ -4669,6 +4674,41 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             </Table>
           ) : (
             <p className="text-sm text-muted-foreground">このシナリオでは原資移動は発生していません。</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>普通口座終了後の戻し履歴</CardTitle>
+          <CardDescription>
+            運用終了後に普通口座サブ口座から普通預金へ戻した残高だけを表示します。戻した資金は同月以降の生活費やNISA未実行分の原資に使えます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
+          {optionReleaseRows.length > 0 ? (
+            <Table>
+              <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                <Tr>
+                  <Th className="sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]">年 / 年齢</Th>
+                  <Th>戻し額</Th>
+                  <Th>戻し内容</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {optionReleaseRows.map((row) => (
+                  <Tr key={`option-release-${row.year}`}>
+                    <Td className="sticky left-0 z-10 whitespace-nowrap bg-white shadow-[1px_0_0_#cbd5e1]">{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+                    <Td className="min-w-[360px] text-sm text-muted-foreground">
+                      {row.optionAccountReleaseDetails.length > 0 ? row.optionAccountReleaseDetails.join(" / ") : "戻し詳細なし"}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">このシナリオでは普通口座終了後の戻しは発生していません。</p>
           )}
         </CardContent>
       </Card>
@@ -4791,7 +4831,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
     const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
     const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
     const plannedDrawdown = result.annual.reduce((sum, row) => sum + row.plannedDrawdownTotal, 0);
-    const optionProfitSweep = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal, 0);
+    const optionToLiquid = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal + row.optionAccountReleaseTotal, 0);
     const cashIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
     const nisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
     const additionalInvestment = result.annual.reduce((sum, row) => sum + row.assetContributionTotal, 0);
@@ -4810,7 +4850,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
             row.capitalGainsTaxTotal +
             row.idecoWithholdingTaxTotal +
             row.idecoFeeTotal -
-            (row.incomeTotal + row.optionProfitSweepTotal),
+            (row.incomeTotal + row.optionProfitSweepTotal + row.optionAccountReleaseTotal),
         ),
       0,
     );
@@ -4818,7 +4858,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       (sum, row) =>
         sum +
         row.incomeTotal +
-        row.optionProfitSweepTotal -
+        row.optionProfitSweepTotal +
+        row.optionAccountReleaseTotal -
         row.livingExpenseTotal -
         row.specialExpenseTotal -
         row.taxInsuranceTotal -
@@ -4835,7 +4876,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       deficitAssetSale,
       sourceAssetIncome,
       plannedDrawdown,
-      optionProfitSweep,
+      optionToLiquid,
       cashIncome,
       nisaSkipped,
       additionalInvestment,
@@ -4851,10 +4892,10 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
     livingAndTaxNeed,
     assetMoved: deficitAssetSale + sourceAssetIncome + plannedDrawdown,
   }));
-  const efficiencyChartData = compareRows.map(({ scenario, yearCount, cashIncome, optionProfitSweep, taxSocial, afterLivingCapacity }) => ({
+  const efficiencyChartData = compareRows.map(({ scenario, yearCount, cashIncome, optionToLiquid, taxSocial, afterLivingCapacity }) => ({
     name: scenario.name,
     cashIncomeAverage: cashIncome / yearCount,
-    optionProfitSweepAverage: optionProfitSweep / yearCount,
+    optionToLiquidAverage: optionToLiquid / yearCount,
     taxSocialAverage: taxSocial / yearCount,
     afterLivingCapacityAverage: afterLivingCapacity / yearCount,
   }));
@@ -4864,7 +4905,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
           <CardDescription>
-            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座利益移動でどこまで賄えたか、税社保負担とNISA未実行を確認します。
+            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座から流動資金へ戻した資金でどこまで賄えたか、税社保負担とNISA未実行を確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
@@ -4879,7 +4920,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
                 <Th>計画取り崩し</Th>
-                <Th>普通口座利益移動</Th>
+                <Th>普通口座から流動資金へ</Th>
                 <Th>NISA未実行</Th>
                 <Th>追加投資</Th>
                 <Th>年平均税社保</Th>
@@ -4897,7 +4938,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                   deficitAssetSale,
                   sourceAssetIncome,
                   plannedDrawdown,
-                  optionProfitSweep,
+                  optionToLiquid,
                   cashIncome,
                   nisaSkipped,
                   additionalInvestment,
@@ -4915,7 +4956,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                   <Td>{compactYen(deficitAssetSale)}</Td>
                   <Td>{compactYen(sourceAssetIncome)}</Td>
                   <Td>{compactYen(plannedDrawdown)}</Td>
-                  <Td>{compactYen(optionProfitSweep)}</Td>
+                  <Td>{compactYen(optionToLiquid)}</Td>
                   <Td className={nisaSkipped > 0 ? "text-red-600" : ""}>{compactYen(nisaSkipped)}</Td>
                   <Td>{compactYen(additionalInvestment)}</Td>
                   <Td>{compactYen(taxSocial / yearCount)}</Td>
@@ -4928,7 +4969,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座利益移動だけでは足りなかった額です。追加投資は含めません。投資込み資金需要は、追加投資予定まで含めた補助指標です。
+            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から流動資金へ戻した資金だけでは足りなかった額です。追加投資は含めません。投資込み資金需要は、追加投資予定まで含めた補助指標です。
           </p>
         </CardContent>
       </Card>
@@ -4954,7 +4995,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       <Card>
         <CardHeader>
           <CardTitle>税社保と手取り効率</CardTitle>
-          <CardDescription>年平均で、現金収入・普通口座利益移動・税社保負担・生活後余力を比較します。収入を増やした時に負担がどれだけ増えるかを見るための表です。</CardDescription>
+          <CardDescription>年平均で、現金収入・普通口座から流動資金へ戻した資金・税社保負担・生活後余力を比較します。収入を増やした時に負担がどれだけ増えるかを見るための表です。</CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -4964,7 +5005,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="cashIncomeAverage" name="年平均現金収入" fill="#0f766e" />
-              <Bar dataKey="optionProfitSweepAverage" name="年平均普通口座利益移動" fill="#14b8a6" />
+              <Bar dataKey="optionToLiquidAverage" name="年平均 普通口座から流動資金へ" fill="#14b8a6" />
               <Bar dataKey="taxSocialAverage" name="年平均税社保" fill="#dc2626" />
               <Bar dataKey="afterLivingCapacityAverage" name="年平均生活後余力" fill="#2563eb" />
             </BarChart>
@@ -5282,6 +5323,8 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th className="min-w-[320px]">原資移動内訳</Th>
           <Th>普通口座利益移動</Th>
           <Th className="min-w-[320px]">利益移動内訳</Th>
+          <Th>普通口座終了戻し</Th>
+          <Th className="min-w-[320px]">終了戻し内訳</Th>
           <Th>証拠金不足停止</Th>
           <Th>iDeCo源泉</Th>
           <Th>iDeCo手数料</Th>
@@ -5329,6 +5372,10 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
                 {formatDetails(row.optionProfitSweepDetails)}
               </Td>
+              <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.optionAccountReleaseDetails)}
+              </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
               <Td>{compactYen(row.idecoFeeTotal)}</Td>
@@ -5373,6 +5420,10 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
                 {formatDetails(row.optionProfitSweepDetails)}
+              </Td>
+              <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+              <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                {formatDetails(row.optionAccountReleaseDetails)}
               </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
