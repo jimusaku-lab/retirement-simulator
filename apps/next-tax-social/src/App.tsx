@@ -5284,6 +5284,59 @@ function formatDetails(details: string[]) {
   return details.length ? details.join("\n") : "-";
 }
 
+function parseCompactYenText(value: string) {
+  const normalized = value.replace(/[¥￥,\s]/g, "");
+  const match = normalized.match(/^(-?\d+(?:\.\d+)?)(億円|万円|円)$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (match[2] === "億円") return amount * 100_000_000;
+  if (match[2] === "万円") return amount * 10_000;
+  return amount;
+}
+
+function summarizeAnnualDetails(details: string[]) {
+  const parsed = new Map<string, { route: string; suffix: string; total: number; count: number }>();
+  const unparsed = new Map<string, number>();
+
+  details.forEach((detail) => {
+    const trimmed = detail.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^(.*?)\s+([¥￥]?-?[\d,.]+(?:億円|万円|円))(（[^）]+）)?$/);
+    if (!match) {
+      unparsed.set(trimmed, (unparsed.get(trimmed) ?? 0) + 1);
+      return;
+    }
+
+    const route = match[1].trim();
+    const amount = parseCompactYenText(match[2]);
+    const suffix = match[3] ?? "";
+    if (amount === null || !route) {
+      unparsed.set(trimmed, (unparsed.get(trimmed) ?? 0) + 1);
+      return;
+    }
+
+    const key = `${route}|${suffix}`;
+    const current = parsed.get(key) ?? { route, suffix, total: 0, count: 0 };
+    current.total += amount;
+    current.count += 1;
+    parsed.set(key, current);
+  });
+
+  const lines = Array.from(parsed.values()).map(({ route, suffix, total, count }) =>
+    `${route} ${compactYen(total)}${suffix}${count > 1 ? `（${count}回）` : ""}`,
+  );
+  Array.from(unparsed.entries()).forEach(([detail, count]) => {
+    lines.push(count > 1 ? `${detail}（${count}回）` : detail);
+  });
+
+  return lines.length ? lines.join("\n") : "-";
+}
+
+function formatDetailsForPeriod(details: string[], period: "month" | "year") {
+  return period === "year" ? summarizeAnnualDetails(details) : formatDetails(details);
+}
+
 function compactLimitYen(value: number) {
   return Number.isFinite(value) ? compactYen(value) : "制限なし";
 }
@@ -5366,15 +5419,15 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.assetTransferDetails)}
+                {formatDetailsForPeriod(row.assetTransferDetails, period)}
               </Td>
               <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.optionProfitSweepDetails)}
+                {formatDetailsForPeriod(row.optionProfitSweepDetails, period)}
               </Td>
               <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.optionAccountReleaseDetails)}
+                {formatDetailsForPeriod(row.optionAccountReleaseDetails, period)}
               </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
@@ -5415,15 +5468,15 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
               <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
               <Td>{compactYen(row.assetTransferTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.assetTransferDetails)}
+                {formatDetailsForPeriod(row.assetTransferDetails, period)}
               </Td>
               <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.optionProfitSweepDetails)}
+                {formatDetailsForPeriod(row.optionProfitSweepDetails, period)}
               </Td>
               <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
               <Td className="min-w-[320px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
-                {formatDetails(row.optionAccountReleaseDetails)}
+                {formatDetailsForPeriod(row.optionAccountReleaseDetails, period)}
               </Td>
               <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
               <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
