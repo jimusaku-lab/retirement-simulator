@@ -730,6 +730,99 @@ describe("simulation", () => {
     expect(result.monthly[0].endingAssets).toBe(900_000);
   });
 
+  it("流動資金補充は実際に資産売却で現金化できた額だけを表示する", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-04",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-04",
+          targetBalanceAge: 60,
+          cashReserve: 300_000,
+        },
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+          excludedAssets: 0,
+          debt: 0,
+        },
+      }),
+    );
+
+    expect(result.monthly[0].deficitAssetWithdrawalAmount).toBe(0);
+    expect(result.monthly[0].cashReserveTopUpAmount).toBe(0);
+  });
+
+  it("流動資金補充は不足補填売却がない月には発生しない", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-04",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2026-06",
+          targetBalanceAge: 60,
+          cashReserve: 3_000_000,
+        },
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 500_000,
+          ideco: 0,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 500_000,
+          ideco: 0,
+        },
+        monthlyExpenses: {
+          ...simpleScenario().monthlyExpenses,
+          housing: 0,
+        },
+        optionSubAccounts: [
+          {
+            id: "cfd",
+            name: "CFD",
+            initialValue: 500_000,
+            initialCostBasis: 500_000,
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-05",
+            enabled: true,
+            minimumBalance: 500_000,
+            targetBalance: 500_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: false,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+      }),
+    );
+
+    const releaseMonth = result.monthly.find((row) => row.yearMonth === "2026-06");
+    expect(releaseMonth?.optionAccountReleaseTotal).toBe(500_000);
+    expect(releaseMonth?.deficitAssetWithdrawalAmount).toBe(0);
+    expect(releaseMonth?.cashReserveTopUpAmount).toBe(0);
+    expect(result.annual.find((row) => row.year === 2026)?.cashReserveTopUpAmount).toBe(0);
+  });
+
   it("追加投資は収入ではなく現金または取り崩しから充当する", () => {
     const result = simulateScenario(
       simpleScenario({

@@ -1595,7 +1595,9 @@ function simulateScenarioCore(
       totalWithdrawalBreakdown[key] += withdrawal.breakdown[key];
       deficitWithdrawalBreakdown[key] += withdrawal.breakdown[key];
     }
-    const cashReserveTopUpAmount = Math.max(0, deficit - baseWithdrawalAmount);
+    const cashReserveTopUpAmount = withdrawal.grossWithdrawal > 0
+      ? Math.max(0, withdrawal.netCashAdded - baseWithdrawalAmount)
+      : 0;
     let plannedDrawdownTotal = getPlannedDrawdownAmount(scenario, balances, yearMonth);
     if (plannedDrawdownTotal > 0) {
       balances.cash -= plannedDrawdownTotal;
