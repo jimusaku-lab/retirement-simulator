@@ -1319,6 +1319,36 @@ function simulateScenarioCore(
       deferredCapitalGainsTaxByIncomeYear,
     );
     const outflow = livingExpenseTotal + specialExpenseTotal + taxInsuranceTotal;
+    let optionProfitSweepTotal = 0;
+    const optionProfitSweepDetails: string[] = [];
+    if (optionSubAccounts.length) {
+      for (const account of optionSubAccounts) {
+        const sweep = moveOptionSubAccountProfitToLiquidWithDetails(
+          balances,
+          taxableBasis,
+          optionSubAccounts,
+          account,
+          account.profitSweepDestination,
+          getOptionSubAccountProfitSweepAmount(account, yearMonth),
+        );
+        optionProfitSweepTotal += sweep.transferredAmount;
+        declaredCapitalGainsIncomeTotal += sweep.realizedGain;
+        if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
+      }
+    } else {
+      const transferredAmount = moveOptionProfitToLiquid(
+        balances,
+        taxableBasis,
+        scenario.optionAccountRules.profitSweepDestination,
+        getOptionProfitSweepAmount(scenario, balances, yearMonth),
+      );
+      optionProfitSweepTotal += transferredAmount;
+      if (transferredAmount > 0) {
+        optionProfitSweepDetails.push(
+          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
+        );
+      }
+    }
     let assetContributionTotal = 0;
     let nisaContributionTotal = 0;
     let nisaContributionSkippedTotal = 0;
@@ -1477,36 +1507,6 @@ function simulateScenarioCore(
           return sum + amount;
         }, 0)
       : 0;
-    let optionProfitSweepTotal = 0;
-    const optionProfitSweepDetails: string[] = [];
-    if (optionSubAccounts.length) {
-      for (const account of optionSubAccounts) {
-        const sweep = moveOptionSubAccountProfitToLiquidWithDetails(
-          balances,
-          taxableBasis,
-          optionSubAccounts,
-          account,
-          account.profitSweepDestination,
-          getOptionSubAccountProfitSweepAmount(account, yearMonth),
-        );
-        optionProfitSweepTotal += sweep.transferredAmount;
-        declaredCapitalGainsIncomeTotal += sweep.realizedGain;
-        if (sweep.detail) optionProfitSweepDetails.push(sweep.detail);
-      }
-    } else {
-      const transferredAmount = moveOptionProfitToLiquid(
-        balances,
-        taxableBasis,
-        scenario.optionAccountRules.profitSweepDestination,
-        getOptionProfitSweepAmount(scenario, balances, yearMonth),
-      );
-      optionProfitSweepTotal += transferredAmount;
-      if (transferredAmount > 0) {
-        optionProfitSweepDetails.push(
-          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
-        );
-      }
-    }
     const availableCashLikeInflow = incomeTotal + optionProfitSweepTotal;
     const liquidFundingCapacityForContribution = Math.max(0, startingLiquidBuffer + availableCashLikeInflow - outflow - cashReserve);
     const assetContributionFundingGap = Math.max(0, assetContributionTotal - liquidFundingCapacityForContribution);

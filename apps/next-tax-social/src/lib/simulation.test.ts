@@ -3975,6 +3975,76 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
   });
 
+  it("普通口座利益移動は同月のNISA追加投資原資として使える", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 600_000,
+          ideco: 0,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 500_000,
+          ideco: 0,
+        },
+        monthlyExpenses: {
+          food: 0,
+          dailyGoods: 0,
+          hobbyEntertainment: 0,
+          social: 0,
+          transportation: 0,
+          clothingBeauty: 0,
+          healthMedical: 0,
+          car: 0,
+          educationCulture: 0,
+          specialExpense: 0,
+          cashCard: 0,
+          utilities: 0,
+          communication: 0,
+          housing: 0,
+          taxSocialInsurance: 0,
+          insurance: 0,
+          other: 0,
+        },
+        assetContributionEvents: [
+          {
+            id: "nisa",
+            name: "NISA",
+            assetKey: "nisa",
+            startYearMonth: "2026-04",
+            monthlyAmount: 100_000,
+          },
+        ],
+        optionAccountRules: {
+          enabled: true,
+          minimumBalance: 300_000,
+          targetBalance: 500_000,
+          protectFromWithdrawal: true,
+          suspendIncomeWhenBelowMinimum: true,
+          profitSweepEnabled: true,
+          profitSweepDestination: "bankDeposit",
+          profitSweepTiming: "monthly",
+          profitSweepMethod: "excessOverTarget",
+          fixedSweepAmount: 0,
+        },
+      }),
+    );
+
+    expect(result.monthly[0].optionProfitSweepTotal).toBe(100_000);
+    expect(result.monthly[0].assetContributionTotal).toBe(100_000);
+    expect(result.monthly[0].nisaContributionSkippedTotal).toBe(0);
+    expect(result.monthly[0].endingTrackedAssetBalances.nisa).toBe(100_000);
+    expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
+  });
+
   it("NISA原資不足時は不足分を未実行にする", () => {
     const result = simulateScenario(
       simpleScenario({
