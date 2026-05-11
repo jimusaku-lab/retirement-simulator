@@ -4589,7 +4589,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(480_000);
   });
 
-  it("普通口座の口座内積上は現金化せず残高だけを増やし取引原価は維持する", () => {
+  it("普通口座の口座内積上は現金化せず申告対象損益と取引原価を増やす", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -4648,9 +4648,85 @@ describe("simulation", () => {
     expect(result.monthly[0].incomeTotal).toBe(0);
     expect(result.monthly[0].retainedSourceAssetIncomeTotal).toBe(20_000);
     expect(result.monthly[0].grossAssetWithdrawalAmount).toBe(0);
+    expect(result.monthly[0].declaredCapitalGainsIncomeTotal).toBe(20_000);
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(520_000);
+    expect(result.monthly[0].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(520_000);
+    expect(result.monthly[0].endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions).toBe(0);
+  });
+
+  it("普通口座の口座内積上利益を同月に利益移動しても二重に申告対象へ入れない", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 500_000,
+          ideco: 0,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 500_000,
+          ideco: 0,
+        },
+        monthlyExpenses: {
+          food: 0,
+          dailyGoods: 0,
+          hobbyEntertainment: 0,
+          social: 0,
+          transportation: 0,
+          clothingBeauty: 0,
+          healthMedical: 0,
+          car: 0,
+          educationCulture: 0,
+          specialExpense: 0,
+          cashCard: 0,
+          utilities: 0,
+          communication: 0,
+          housing: 0,
+          taxSocialInsurance: 0,
+          insurance: 0,
+          other: 0,
+        },
+        incomeEvents: [
+          {
+            id: "options-retain",
+            memberId: "member-self",
+            name: "米国株オプション",
+            type: "investmentIncome",
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-04",
+            monthlyAmount: 100_000,
+            taxTreatment: "taxable",
+            sourceAssetKey: "ordinaryAccountForOptions",
+            sourceAssetPayoutMode: "retainInSourceAsset",
+          },
+        ],
+        optionAccountRules: {
+          enabled: true,
+          minimumBalance: 300_000,
+          targetBalance: 500_000,
+          protectFromWithdrawal: true,
+          suspendIncomeWhenBelowMinimum: true,
+          profitSweepEnabled: true,
+          profitSweepDestination: "bankDeposit",
+          profitSweepTiming: "monthly",
+          profitSweepMethod: "excessOverTarget",
+          fixedSweepAmount: 0,
+        },
+      }),
+    );
+
+    expect(result.monthly[0].retainedSourceAssetIncomeTotal).toBe(100_000);
+    expect(result.monthly[0].optionProfitSweepTotal).toBe(100_000);
+    expect(result.monthly[0].declaredCapitalGainsIncomeTotal).toBe(100_000);
+    expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
     expect(result.monthly[0].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(500_000);
-    expect(result.monthly[0].endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions).toBe(20_000);
   });
 
   it("自動計算プラス補正では自動計算に手入力差額を加える", () => {

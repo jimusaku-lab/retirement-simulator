@@ -1201,7 +1201,11 @@ function simulateScenarioCore(
           supportsRetainedSourceAssetIncome(event.sourceAssetKey)
         ) {
           if (event.sourceAssetKey === "ordinaryAccountForOptions" && optionSourceAccount) {
+            // 普通口座オプションの月次利益は、口座内に残しても実現済みの申告対象損益として扱う。
+            // 同じ利益を後で普通預金へ移すだけで再課税しないよう、取得原価にも加算する。
             optionSourceAccount.balance += desiredAmount;
+            optionSourceAccount.costBasis += desiredAmount;
+            declaredCapitalGainsIncomeTotal += desiredAmount;
             syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
           } else {
             balances[event.sourceAssetKey] += desiredAmount;
