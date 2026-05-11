@@ -4441,6 +4441,42 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     annualContribution: row.nisaContributionTotal,
     skipped: row.nisaContributionSkippedTotal,
   }));
+  const declaredGainImpactRows = result.annual
+    .map((incomeYearRow) => {
+      const paymentYearRow = result.annual.find((row) => row.year === incomeYearRow.year + 1);
+      const taxCash = paymentYearRow?.taxCashBreakdown;
+      const taxTotal = taxCash
+        ? taxCash.incomeTaxSettlement + taxCash.residentTax + taxCash.deferredCapitalGainsTax
+        : 0;
+      const socialInsuranceTotal = taxCash
+        ? taxCash.nationalPension +
+          taxCash.nationalHealthInsurance +
+          taxCash.lateElderlyMedical +
+          taxCash.nursingCare +
+          taxCash.otherPublicCost
+        : 0;
+
+      return {
+        incomeYear: incomeYearRow.year,
+        incomeAgeYears: incomeYearRow.ageYears,
+        declaredGain: incomeYearRow.declaredCapitalGainsIncomeTotal,
+        paymentYear: paymentYearRow?.year,
+        paymentAgeYears: paymentYearRow?.ageYears,
+        incomeTaxSettlement: taxCash?.incomeTaxSettlement ?? 0,
+        residentTax: taxCash?.residentTax ?? 0,
+        deferredCapitalGainsTax: taxCash?.deferredCapitalGainsTax ?? 0,
+        nationalHealthInsurance: taxCash?.nationalHealthInsurance ?? 0,
+        lateElderlyMedical: taxCash?.lateElderlyMedical ?? 0,
+        nursingCare: taxCash?.nursingCare ?? 0,
+        nationalPension: taxCash?.nationalPension ?? 0,
+        otherPublicCost: taxCash?.otherPublicCost ?? 0,
+        taxTotal,
+        socialInsuranceTotal,
+      };
+    })
+    .filter((row) => row.declaredGain > 0);
+  const resultStickyHeaderClass = "sticky left-0 z-30 bg-white shadow-[1px_0_0_#cbd5e1]";
+  const resultStickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
 
   return (
     <div className="space-y-6">
@@ -4536,13 +4572,13 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
-          <Table>
-            <thead>
+          <Table className="min-w-[1500px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
-                <Th>支払年</Th>
+                <Th className={resultStickyHeaderClass}>支払年</Th>
                 <Th>所得税精算<br />年金・雑所得等</Th>
                 <Th>住民税</Th>
-                <Th>申告譲渡益分</Th>
+                <Th>譲渡益税<br />翌年支払分</Th>
                 <Th>売却時控除税</Th>
                 <Th>iDeCo源泉</Th>
                 <Th>税金合計</Th>
@@ -4572,7 +4608,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 const cashPaymentTotal = taxTotal + socialInsuranceTotal;
                 return (
                   <Tr key={`tax-cash-${row.year}`}>
-                    <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.incomeTaxSettlement)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.residentTax)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.deferredCapitalGainsTax)}</Td>
@@ -4594,6 +4630,65 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <p className="mt-3 text-sm text-muted-foreground">
             iDeCo源泉は受取時に先に差し引かれる所得税の前払いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
             所得税として二重には引いていません。ただし、住民税・国保・介護などは別計算のため、iDeCo受取や普通口座の申告対象損益により翌年負担が増えることがあります。
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>普通口座申告損益と翌年負担</CardTitle>
+          <CardDescription>
+            普通口座（オプション用）で申告対象になった損益を、翌年の税・社会保険支払と並べて確認します。
+            翌年負担は公的年金・iDeCo・普通口座損益などを合算した全体額で、普通口座損益だけの増分ではありません。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
+          <Table className="min-w-[1500px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+              <Tr>
+                <Th className={resultStickyHeaderClass}>所得年</Th>
+                <Th>普通口座申告対象損益</Th>
+                <Th>支払年</Th>
+                <Th>翌年所得税精算</Th>
+                <Th>翌年住民税</Th>
+                <Th>翌年譲渡益税</Th>
+                <Th>翌年税金合計</Th>
+                <Th>翌年国保</Th>
+                <Th>翌年後期高齢者</Th>
+                <Th>翌年介護</Th>
+                <Th>翌年社会保険等</Th>
+                <Th className="min-w-[360px]">読み方</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {declaredGainImpactRows.map((row) => (
+                <Tr key={`declared-gain-impact-${row.incomeYear}`}>
+                  <Td className={resultStickyCellClass}>{`${row.incomeYear} / ${row.incomeAgeYears}歳`}</Td>
+                  <Td>{compactYen(row.declaredGain)}</Td>
+                  <Td>{row.paymentYear ? `${row.paymentYear} / ${row.paymentAgeYears}歳` : "-"}</Td>
+                  <Td>{compactYen(row.incomeTaxSettlement)}</Td>
+                  <Td>{compactYen(row.residentTax)}</Td>
+                  <Td>{compactYen(row.deferredCapitalGainsTax)}</Td>
+                  <Td className="font-medium">{compactYen(row.taxTotal)}</Td>
+                  <Td>{compactYen(row.nationalHealthInsurance)}</Td>
+                  <Td>{compactYen(row.lateElderlyMedical)}</Td>
+                  <Td>{compactYen(row.nursingCare)}</Td>
+                  <Td className="font-medium">{compactYen(row.socialInsuranceTotal)}</Td>
+                  <Td className="min-w-[360px] text-sm text-muted-foreground">
+                    {row.paymentYear
+                      ? `${row.incomeYear}年の申告対象損益を、${row.paymentYear}年の所得税精算・住民税・国保等に反映しています。`
+                      : "シミュレーション期間外の翌年支払いになるため、支払額は表示対象外です。"}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+          {declaredGainImpactRows.length === 0 && (
+            <p className="text-sm text-muted-foreground">普通口座（オプション用）の申告対象損益はありません。</p>
+          )}
+          <p className="mt-3 text-sm text-muted-foreground">
+            ここでいう普通口座申告対象損益は、税・社会保険タブの自動計算に渡す所得年ベースの金額です。
+            翌年の税・社会保険は、普通口座損益だけでなく公的年金・iDeCo受取・各種控除を合算して計算します。
           </p>
         </CardContent>
       </Card>
