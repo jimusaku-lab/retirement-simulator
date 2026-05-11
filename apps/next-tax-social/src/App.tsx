@@ -4420,6 +4420,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
   });
   const assetTransferRows = result.annual.filter((row) => row.assetTransferTotal > 0);
   const optionReleaseRows = result.annual.filter((row) => row.optionAccountReleaseTotal > 0);
+  const optionProfitVisibilityRows = result.annual.filter(
+    (row) =>
+      row.declaredCapitalGainsIncomeTotal > 0 ||
+      row.retainedSourceAssetIncomeTotal > 0 ||
+      row.optionProfitSweepTotal > 0 ||
+      row.optionAccountReleaseTotal > 0 ||
+      row.optionIncomeSuspendedTotal > 0,
+  );
   const unrealizedGainChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     total: gainTrackedAssets.reduce((sum, asset) => sum + row.endingTrackedAssetUnrealizedGains[asset.key], 0),
@@ -4509,13 +4517,16 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       <Card>
         <CardHeader>
           <CardTitle>投資計画チェック</CardTitle>
-          <CardDescription>NISA積立と普通口座（オプション用）の運用制約に引っかかった年を確認します。</CardDescription>
+          <CardDescription>
+            NISAへ実際に入金できた額、未実行額、普通口座（オプション用）の運用制約に引っかかった年を確認します。
+          </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
           <Table>
             <thead>
               <Tr>
                 <Th>年</Th>
+                <Th>NISA実行</Th>
                 <Th>NISA未実行</Th>
                 <Th>NISA枠超過</Th>
                 <Th>証拠金不足停止</Th>
@@ -4527,6 +4538,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               {result.annual
                 .filter(
                   (row) =>
+                    row.nisaContributionTotal > 0 ||
                     row.nisaContributionSkippedTotal > 0 ||
                     row.nisaAnnualLimitExceededTotal > 0 ||
                     row.optionIncomeSuspendedTotal > 0 ||
@@ -4535,6 +4547,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 .map((row) => (
                   <Tr key={`plan-check-${row.year}`}>
                     <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{compactYen(row.nisaContributionTotal)}</Td>
                     <Td className={row.nisaContributionSkippedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaContributionSkippedTotal)}</Td>
                     <Td className={row.nisaAnnualLimitExceededTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaAnnualLimitExceededTotal)}</Td>
                     <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
@@ -4555,6 +4568,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           </Table>
           {!result.annual.some(
             (row) =>
+              row.nisaContributionTotal > 0 ||
               row.nisaContributionSkippedTotal > 0 ||
               row.nisaAnnualLimitExceededTotal > 0 ||
               row.optionIncomeSuspendedTotal > 0 ||
@@ -4568,7 +4582,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
             実際に現金が出ていく年で、税金と社会保険等を分けて確認します。所得税精算・住民税・国保・介護は原則として前年所得に対する当年支払いです。
-            iDeCo源泉は受取月の所得税前払い、普通口座（オプション用）の申告対象損益は翌年の所得税精算・住民税・国保などに反映します。
+            普通口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -4576,11 +4590,12 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className={resultStickyHeaderClass}>支払年</Th>
-                <Th>所得税精算<br />年金・雑所得等</Th>
-                <Th>住民税</Th>
-                <Th>譲渡益税<br />翌年支払分</Th>
-                <Th>売却時控除税</Th>
-                <Th>iDeCo源泉</Th>
+                <Th>前年普通口座<br />申告対象損益</Th>
+                <Th>所得税精算<br />全所得</Th>
+                <Th>住民税<br />全所得</Th>
+                <Th>申告分離譲渡益税<br />翌年支払分</Th>
+                <Th>売却時源泉・控除税</Th>
+                <Th>iDeCo源泉<br />受取時</Th>
                 <Th>税金合計</Th>
                 <Th>国民年金</Th>
                 <Th>国保</Th>
@@ -4593,6 +4608,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             </thead>
             <tbody>
               {result.annual.map((row) => {
+                const previousIncomeYearRow = result.annual.find((incomeRow) => incomeRow.year === row.year - 1);
                 const taxTotal =
                   row.taxCashBreakdown.incomeTaxSettlement +
                   row.taxCashBreakdown.residentTax +
@@ -4609,6 +4625,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 return (
                   <Tr key={`tax-cash-${row.year}`}>
                     <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{compactYen(previousIncomeYearRow?.declaredCapitalGainsIncomeTotal ?? 0)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.incomeTaxSettlement)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.residentTax)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.deferredCapitalGainsTax)}</Td>
@@ -4628,8 +4645,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             </tbody>
           </Table>
           <p className="mt-3 text-sm text-muted-foreground">
-            iDeCo源泉は受取時に先に差し引かれる所得税の前払いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
-            所得税として二重には引いていません。ただし、住民税・国保・介護などは別計算のため、iDeCo受取や普通口座の申告対象損益により翌年負担が増えることがあります。
+            iDeCo源泉は年金受取時に 7.6575% を所得税の前払いとして差し引く扱いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
+            所得税として二重には引いていません。「申告分離譲渡益税 翌年支払分」は主に特定口座源泉なし等の売却益用で、普通口座オプションの申告対象損益は
+            「所得税精算 全所得」「住民税 全所得」「国保」などに含めて反映します。
           </p>
         </CardContent>
       </Card>
@@ -4649,14 +4667,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th className={resultStickyHeaderClass}>所得年</Th>
                 <Th>普通口座申告対象損益</Th>
                 <Th>支払年</Th>
-                <Th>翌年所得税精算</Th>
-                <Th>翌年住民税</Th>
-                <Th>翌年譲渡益税</Th>
-                <Th>翌年税金合計</Th>
-                <Th>翌年国保</Th>
-                <Th>翌年後期高齢者</Th>
-                <Th>翌年介護</Th>
-                <Th>翌年社会保険等</Th>
+                <Th>翌年所得税精算<br />全所得</Th>
+                <Th>翌年住民税<br />全所得</Th>
+                <Th>翌年譲渡益税<br />源泉なし等</Th>
+                <Th>翌年税金合計<br />全所得</Th>
+                <Th>翌年国保<br />全所得</Th>
+                <Th>翌年後期高齢者<br />全所得</Th>
+                <Th>翌年介護<br />全所得</Th>
+                <Th>翌年社会保険等<br />全所得</Th>
                 <Th className="min-w-[360px]">読み方</Th>
               </Tr>
             </thead>
@@ -4719,7 +4737,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>年別の流動資金フロー（区分別）</CardTitle>
           <CardDescription>
-            外部から入る現金、口座間の内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。普通口座利益移動と終了後戻しは外部収入ではなく、普通預金へ戻した内部移動です。
+            外部から普通預金へ入る受取収入、運用口座から普通預金へ戻した内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。
+            流動資金は「現金 + 普通預金」として扱います。
           </CardDescription>
         </CardHeader>
         <CardContent className="h-[30rem]">
@@ -4730,9 +4749,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
-              <Bar dataKey="cashIn" name="入金: 現金収入" fill="#0f766e" />
-              <Bar dataKey="internalIn" name="内部移動: 普通口座から流動資金へ" fill="#14b8a6" />
-              <Bar dataKey="internalOut" name="内部移動: 原資移動" fill="#64748b" />
+              <Bar dataKey="cashIn" name="入金: 受取収入（普通預金へ）" fill="#0f766e" />
+              <Bar dataKey="internalIn" name="内部移動: 運用口座から普通預金へ" fill="#14b8a6" />
+              <Bar dataKey="internalOut" name="内部移動: 運用口座への原資移動" fill="#64748b" />
               <Bar dataKey="cashOut" name="出金: 生活費・税社保・投資" fill="#dc2626" />
               <Bar dataKey="net" name="純収支" fill="#2563eb" />
             </BarChart>
@@ -4744,7 +4763,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>流動資金フロー内訳</CardTitle>
           <CardDescription>
-            チャートの区分を年ごとに分解します。原資移動は通常年には出ないため、発生した年だけ下の履歴で確認します。
+            チャートの区分を年ごとに分解します。受取収入は公的年金・iDeCo年金・家族からの入金などが普通預金へ入る扱いです。
+            運用口座から普通預金へは、普通口座利益移動と終了後戻しを合算しています。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -4752,8 +4772,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead>
               <Tr>
                 <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
-                <Th>現金収入</Th>
-                <Th>普通口座から流動資金へ</Th>
+                <Th>受取収入<br />普通預金へ</Th>
+                <Th>運用口座から<br />普通預金へ</Th>
                 <Th>生活費</Th>
                 <Th>税社保支払</Th>
                 <Th>特別支出</Th>
@@ -4856,7 +4876,10 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       <Card>
         <CardHeader>
           <CardTitle>評価損益の推移</CardTitle>
-          <CardDescription>積立、利回り、取り崩しのあとで、各口座の評価損益がどう動くかを年ごとに確認します。</CardDescription>
+          <CardDescription>
+            積立、利回り、取り崩しのあとで、各口座の評価損益がどう動くかを年ごとに確認します。
+            普通口座オプションの月次利益は実現損益として扱うため、評価損益には出ません。下の「普通口座オプション損益」で確認します。
+          </CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -4879,7 +4902,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       <Card>
         <CardHeader>
           <CardTitle>普通口座（オプション用）の証拠金推移</CardTitle>
-          <CardDescription>口座残高、取引原価、含み損益を年ごとに確認します。口座内積上を選ぶと、残高と取引原価がここで増えます。</CardDescription>
+          <CardDescription>
+            口座残高、取引原価、含み損益を年ごとに確認します。口座内積上を選ぶと、残高と取引原価が同時に増えるため、評価損益は0のままになることがあります。
+          </CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -4894,6 +4919,57 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Line dataKey="gain" name="評価損益" stroke="#7c3aed" dot={false} />
             </LineChart>
           </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>普通口座オプション損益の見える化</CardTitle>
+          <CardDescription>
+            普通口座（オプション用）の利益は、評価損益ではなく実現損益・申告対象所得として扱います。
+            口座内に積み上げた利益、普通預金へ移した利益、終了後に戻した残高を分けて確認します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
+          {optionProfitVisibilityRows.length > 0 ? (
+            <Table className="min-w-[1200px]">
+              <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                <Tr>
+                  <Th className={resultStickyHeaderClass}>年 / 年齢</Th>
+                  <Th>申告対象損益</Th>
+                  <Th>口座内積上</Th>
+                  <Th>普通預金へ移動</Th>
+                  <Th>終了後戻し</Th>
+                  <Th>証拠金不足停止</Th>
+                  <Th className="min-w-[420px]">読み方</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {optionProfitVisibilityRows.map((row) => (
+                  <Tr key={`option-profit-visibility-${row.year}`}>
+                    <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
+                    <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
+                    <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+                    <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+                    <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
+                    <Td className="min-w-[420px] text-sm text-muted-foreground">
+                      {[
+                        row.retainedSourceAssetIncomeTotal > 0 ? "利益を原資口座内に積み上げています。" : "",
+                        row.optionProfitSweepTotal > 0 ? "目標残高を超えた利益を普通預金へ移しています。" : "",
+                        row.optionAccountReleaseTotal > 0 ? "運用終了後の残高を普通預金へ戻しています。" : "",
+                        row.optionIncomeSuspendedTotal > 0 ? "最低維持証拠金未満のため予定利益を止めています。" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || "申告対象損益だけが発生しています。"}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">普通口座（オプション用）の実現損益はありません。</p>
+          )}
         </CardContent>
       </Card>
 
