@@ -370,6 +370,7 @@ export type MonthlyResult = {
   livingExpenseTotal: number;
   specialExpenseTotal: number;
   taxInsuranceTotal: number;
+  taxCashBreakdown: TaxCashBreakdown;
   capitalGainsTaxTotal: number;
   deferredCapitalGainsTaxTotal: number;
   declaredCapitalGainsIncomeTotal: number;
@@ -415,6 +416,7 @@ export type AnnualResult = {
   livingExpenseTotal: number;
   specialExpenseTotal: number;
   taxInsuranceTotal: number;
+  taxCashBreakdown: TaxCashBreakdown;
   capitalGainsTaxTotal: number;
   deferredCapitalGainsTaxTotal: number;
   declaredCapitalGainsIncomeTotal: number;
@@ -435,6 +437,17 @@ export type AnnualResult = {
   endingTrackedAssetBalances: GainTrackedAssetMap;
   endingTrackedAssetCostBasis: GainTrackedAssetMap;
   endingTrackedAssetUnrealizedGains: GainTrackedAssetMap;
+};
+
+export type TaxCashBreakdown = {
+  incomeTaxSettlement: number;
+  residentTax: number;
+  nationalHealthInsurance: number;
+  lateElderlyMedical: number;
+  nationalPension: number;
+  nursingCare: number;
+  otherPublicCost: number;
+  deferredCapitalGainsTax: number;
 };
 
 export type SimulationResult = {

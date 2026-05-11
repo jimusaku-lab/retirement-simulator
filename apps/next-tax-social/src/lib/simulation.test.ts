@@ -3431,8 +3431,8 @@ describe("simulation", () => {
     const noDeclarationWithholding = noDeclarationResult.monthly.find((row) => row.yearMonth === "2026-04")?.idecoWithholdingTaxTotal ?? 0;
     const declarationSettlement = declarationResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
     const noDeclarationSettlement = noDeclarationResult.annual.find((row) => row.year === 2027)?.taxInsuranceTotal ?? 0;
-    const expectedDeclarationSettlement = Math.round((expectedPriorYearPublicCosts - declarationWithholding) / 12) * 12;
-    const expectedNoDeclarationSettlement = Math.round((expectedPriorYearPublicCosts - noDeclarationWithholding) / 12) * 12;
+    const expectedDeclarationSettlement = Math.round(expectedPriorYearPublicCosts - declarationWithholding);
+    const expectedNoDeclarationSettlement = Math.round(expectedPriorYearPublicCosts - noDeclarationWithholding);
 
     expect(expectedFinalTax).toBeGreaterThan(0);
     expect(Math.abs(declarationWithholding - expectedFinalTax)).toBeLessThanOrEqual(1);
@@ -4898,7 +4898,7 @@ describe("simulation", () => {
     expect(tax2026).toBe(0);
     expect(expectedPriorYearCosts).toBeGreaterThan(0);
     expect(taxMonth2027).toBe(Math.round(expectedPriorYearCosts / 12));
-    expect(tax2027).toBe(Math.round(expectedPriorYearCosts / 12) * 12);
+    expect(tax2027).toBe(Math.round(expectedPriorYearCosts));
   });
 
   it("iDeCo年金と公的年金の合算所得は翌年の税社保支払いに反映する", () => {

@@ -29,6 +29,7 @@ import type {
   ScenarioData,
   SimulationResult,
   SpecialExpenseEvent,
+  TaxCashBreakdown,
   TaxInsuranceByFiscalYear,
   YearMonth,
 } from "@/types";
@@ -438,44 +439,107 @@ function getTaxRowForYear(taxRows: TaxInsuranceByFiscalYear[], year: number) {
   );
 }
 
-function getAutoTaxCashPaymentForMonth(
+function createTaxCashBreakdown(overrides: Partial<TaxCashBreakdown> = {}): TaxCashBreakdown {
+  return {
+    incomeTaxSettlement: 0,
+    residentTax: 0,
+    nationalHealthInsurance: 0,
+    lateElderlyMedical: 0,
+    nationalPension: 0,
+    nursingCare: 0,
+    otherPublicCost: 0,
+    deferredCapitalGainsTax: 0,
+    ...overrides,
+  };
+}
+
+function sumTaxCashBreakdown(breakdown: TaxCashBreakdown) {
+  return (
+    breakdown.incomeTaxSettlement +
+    breakdown.residentTax +
+    breakdown.nationalHealthInsurance +
+    breakdown.lateElderlyMedical +
+    breakdown.nationalPension +
+    breakdown.nursingCare +
+    breakdown.otherPublicCost +
+    breakdown.deferredCapitalGainsTax
+  );
+}
+
+function addTaxCashBreakdown(target: TaxCashBreakdown, source: TaxCashBreakdown) {
+  target.incomeTaxSettlement += source.incomeTaxSettlement;
+  target.residentTax += source.residentTax;
+  target.nationalHealthInsurance += source.nationalHealthInsurance;
+  target.lateElderlyMedical += source.lateElderlyMedical;
+  target.nationalPension += source.nationalPension;
+  target.nursingCare += source.nursingCare;
+  target.otherPublicCost += source.otherPublicCost;
+  target.deferredCapitalGainsTax += source.deferredCapitalGainsTax;
+}
+
+function roundTaxCashBreakdown(breakdown: TaxCashBreakdown): TaxCashBreakdown {
+  return {
+    incomeTaxSettlement: Math.round(breakdown.incomeTaxSettlement),
+    residentTax: Math.round(breakdown.residentTax),
+    nationalHealthInsurance: Math.round(breakdown.nationalHealthInsurance),
+    lateElderlyMedical: Math.round(breakdown.lateElderlyMedical),
+    nationalPension: Math.round(breakdown.nationalPension),
+    nursingCare: Math.round(breakdown.nursingCare),
+    otherPublicCost: Math.round(breakdown.otherPublicCost),
+    deferredCapitalGainsTax: Math.round(breakdown.deferredCapitalGainsTax),
+  };
+}
+
+function allocateAnnualCashAmountToMonth(annualAmount: number, month: number) {
+  const roundedAnnual = Math.round(annualAmount);
+  const base = Math.round(roundedAnnual / 12);
+  return month === 12 ? roundedAnnual - base * 11 : base;
+}
+
+function getAutoTaxCashPaymentBreakdownForMonth(
   taxRows: TaxInsuranceByFiscalYear[],
   yearMonth: YearMonth,
   idecoWithholdingByIncomeYear: Map<number, number>,
-) {
+): TaxCashBreakdown {
   const date = ym(yearMonth);
+  const month = date.month() + 1;
   const paymentYear = date.year();
   const incomeYear = paymentYear - 1;
   const priorYearRow = getTaxRowForYear(taxRows, incomeYear);
   const currentYearRow = getTaxRowForYear(taxRows, paymentYear);
   const priorYearIdecoWithholding = idecoWithholdingByIncomeYear.get(incomeYear) ?? 0;
   const incomeTaxSettlement = priorYearRow ? priorYearRow.incomeTaxAnnual - priorYearIdecoWithholding : 0;
-  const delayedPriorYearCosts = priorYearRow
-    ? (
-        priorYearRow.residentTaxAnnual +
-        incomeTaxSettlement +
-        priorYearRow.nationalHealthInsuranceAnnual +
-        (priorYearRow.lateElderlyMedicalAnnual ?? 0) +
-        priorYearRow.nursingCareAnnual +
-        priorYearRow.otherPublicCostAnnual
-      ) / 12
-    : 0;
-
-  return delayedPriorYearCosts + (currentYearRow ? getNationalPensionAnnual(currentYearRow) / 12 : 0);
+  return createTaxCashBreakdown({
+    incomeTaxSettlement: priorYearRow ? allocateAnnualCashAmountToMonth(incomeTaxSettlement, month) : 0,
+    residentTax: priorYearRow ? allocateAnnualCashAmountToMonth(priorYearRow.residentTaxAnnual, month) : 0,
+    nationalHealthInsurance: priorYearRow
+      ? allocateAnnualCashAmountToMonth(priorYearRow.nationalHealthInsuranceAnnual, month)
+      : 0,
+    lateElderlyMedical: priorYearRow
+      ? allocateAnnualCashAmountToMonth(priorYearRow.lateElderlyMedicalAnnual ?? 0, month)
+      : 0,
+    nursingCare: priorYearRow ? allocateAnnualCashAmountToMonth(priorYearRow.nursingCareAnnual, month) : 0,
+    otherPublicCost: priorYearRow ? allocateAnnualCashAmountToMonth(priorYearRow.otherPublicCostAnnual, month) : 0,
+    nationalPension: currentYearRow ? allocateAnnualCashAmountToMonth(getNationalPensionAnnual(currentYearRow), month) : 0,
+  });
 }
 
-function getTaxInsuranceCashPaymentForMonth(
+function getTaxInsuranceCashPaymentBreakdownForMonth(
   scenario: ScenarioData,
   taxRows: TaxInsuranceByFiscalYear[],
   yearMonth: YearMonth,
   idecoWithholdingByIncomeYear: Map<number, number>,
   deferredCapitalGainsTaxByIncomeYear: Map<number, number>,
-) {
+): TaxCashBreakdown {
   if (scenario.householdProfile.taxCalculationMode === "manual") {
-    return getTaxInsuranceForMonth(taxRows, yearMonth, "fiscal");
+    return createTaxCashBreakdown({ otherPublicCost: getTaxInsuranceForMonth(taxRows, yearMonth, "fiscal") });
   }
-  return getAutoTaxCashPaymentForMonth(taxRows, yearMonth, idecoWithholdingByIncomeYear) +
-    (deferredCapitalGainsTaxByIncomeYear.get(ym(yearMonth).year() - 1) ?? 0) / 12;
+  const breakdown = getAutoTaxCashPaymentBreakdownForMonth(taxRows, yearMonth, idecoWithholdingByIncomeYear);
+  breakdown.deferredCapitalGainsTax = allocateAnnualCashAmountToMonth(
+    deferredCapitalGainsTaxByIncomeYear.get(ym(yearMonth).year() - 1) ?? 0,
+    ym(yearMonth).month() + 1,
+  );
+  return breakdown;
 }
 
 function getEffectiveOptionSubAccounts(scenario: ScenarioData): OptionSubAccount[] {
@@ -1330,13 +1394,14 @@ function simulateScenarioCore(
     const specialExpenseTotal = scenario.specialExpenses
       .filter((expense) => isSpecialExpenseActive(expense, yearMonth))
       .reduce((sum, expense) => sum + expense.amount, 0);
-    const taxInsuranceTotal = getTaxInsuranceCashPaymentForMonth(
+    const taxCashBreakdown = getTaxInsuranceCashPaymentBreakdownForMonth(
       scenario,
       effectiveTaxRows,
       yearMonth,
       idecoWithholdingByIncomeYear,
       deferredCapitalGainsTaxByIncomeYear,
     );
+    const taxInsuranceTotal = sumTaxCashBreakdown(taxCashBreakdown);
     const outflow = livingExpenseTotal + specialExpenseTotal + taxInsuranceTotal;
     const optionAccountRelease = releaseEndedOptionSubAccountsToBankDeposit(
       balances,
@@ -1646,6 +1711,7 @@ function simulateScenarioCore(
       livingExpenseTotal: Math.round(livingExpenseTotal),
       specialExpenseTotal: Math.round(specialExpenseTotal),
       taxInsuranceTotal: Math.round(taxInsuranceTotal),
+      taxCashBreakdown: roundTaxCashBreakdown(taxCashBreakdown),
       capitalGainsTaxTotal: Math.round(capitalGainsTaxTotal),
       deferredCapitalGainsTaxTotal: Math.round(deferredCapitalGainsTaxTotal),
       declaredCapitalGainsIncomeTotal: Math.round(declaredCapitalGainsIncomeTotal),
@@ -1791,6 +1857,7 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         livingExpenseTotal: 0,
         specialExpenseTotal: 0,
         taxInsuranceTotal: 0,
+        taxCashBreakdown: createTaxCashBreakdown(),
         capitalGainsTaxTotal: 0,
         deferredCapitalGainsTaxTotal: 0,
         declaredCapitalGainsIncomeTotal: 0,
@@ -1831,6 +1898,7 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.livingExpenseTotal += row.livingExpenseTotal;
     current.specialExpenseTotal += row.specialExpenseTotal;
     current.taxInsuranceTotal += row.taxInsuranceTotal;
+    addTaxCashBreakdown(current.taxCashBreakdown, row.taxCashBreakdown);
     current.capitalGainsTaxTotal += row.capitalGainsTaxTotal;
     current.deferredCapitalGainsTaxTotal += row.deferredCapitalGainsTaxTotal;
     current.declaredCapitalGainsIncomeTotal += row.declaredCapitalGainsIncomeTotal;

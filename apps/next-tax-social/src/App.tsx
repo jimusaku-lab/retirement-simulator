@@ -3490,6 +3490,11 @@ function TaxRowsSummary({
   }
 
   return (
+    <div className="space-y-2">
+      <p className="text-sm text-muted-foreground">
+        この表は所得が発生した年度ベースの概算です。実際に現金が出ていく年は、結果タブの「税金・社会保険のキャッシュ支払タイミング」で確認します。
+        普通口座（オプション用）の申告対象損益は、売却時控除税ではなく翌年の所得税・住民税・国保などに反映されます。
+      </p>
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <thead>
@@ -3499,9 +3504,9 @@ function TaxRowsSummary({
             <Th>所得税(通常+退職)</Th>
             <Th>国保</Th>
             <Th>後期高齢者医療</Th>
-            <Th>国民年金(月額)</Th>
+            <Th>国民年金(年額)</Th>
             <Th>介護</Th>
-            <Th>売却時譲渡益税</Th>
+            <Th>売却時控除税</Th>
             <Th>その他</Th>
             <Th>年間合計目安</Th>
           </Tr>
@@ -3514,7 +3519,7 @@ function TaxRowsSummary({
               row.incomeTaxAnnual +
               row.nationalHealthInsuranceAnnual +
               (row.lateElderlyMedicalAnnual ?? 0) +
-              row.nationalPensionMonthly * 12 +
+              (row.nationalPensionAnnual ?? row.nationalPensionMonthly * 12) +
               row.nursingCareAnnual +
               capitalGainsTaxAnnual +
               row.otherPublicCostAnnual;
@@ -3525,7 +3530,7 @@ function TaxRowsSummary({
                 <Td>{yen(row.incomeTaxAnnual)}</Td>
                 <Td>{yen(row.nationalHealthInsuranceAnnual)}</Td>
                 <Td>{yen(row.lateElderlyMedicalAnnual ?? 0)}</Td>
-                <Td>{yen(row.nationalPensionMonthly)}</Td>
+                <Td>{yen(row.nationalPensionAnnual ?? row.nationalPensionMonthly * 12)}</Td>
                 <Td>{yen(row.nursingCareAnnual)}</Td>
                 <Td>{yen(capitalGainsTaxAnnual)}</Td>
                 <Td>{yen(row.otherPublicCostAnnual)}</Td>
@@ -3535,6 +3540,7 @@ function TaxRowsSummary({
           })}
         </tbody>
       </Table>
+    </div>
     </div>
   );
 }
@@ -4525,8 +4531,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
-            税額の発生根拠と、実際に現金が出ていく年を分けて確認します。自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。
-            iDeCo源泉は受取月に差し引き、売却時譲渡益税は口座区分に応じて売却時控除または翌年支払へ回します。
+            実際に現金が出ていく年で、税金と社会保険等を分けて確認します。所得税精算・住民税・国保・介護は原則として前年所得に対する当年支払いです。
+            iDeCo源泉は受取月の所得税前払い、普通口座（オプション用）の申告対象損益は翌年の所得税精算・住民税・国保などに反映します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -4534,22 +4540,61 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead>
               <Tr>
                 <Th>支払年</Th>
-                <Th>税社保支払</Th>
-                <Th>売却時譲渡益税</Th>
+                <Th>所得税精算<br />年金・雑所得等</Th>
+                <Th>住民税</Th>
+                <Th>申告譲渡益分</Th>
+                <Th>売却時控除税</Th>
                 <Th>iDeCo源泉</Th>
+                <Th>税金合計</Th>
+                <Th>国民年金</Th>
+                <Th>国保</Th>
+                <Th>後期高齢者</Th>
+                <Th>介護</Th>
+                <Th>その他公的負担</Th>
+                <Th>社会保険等合計</Th>
+                <Th>支払合計</Th>
               </Tr>
             </thead>
             <tbody>
-              {result.annual.map((row) => (
-                <Tr key={`tax-cash-${row.year}`}>
-                  <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
-                  <Td>{compactYen(row.taxInsuranceTotal)}</Td>
-                  <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
-                  <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
-                </Tr>
-              ))}
+              {result.annual.map((row) => {
+                const taxTotal =
+                  row.taxCashBreakdown.incomeTaxSettlement +
+                  row.taxCashBreakdown.residentTax +
+                  row.taxCashBreakdown.deferredCapitalGainsTax +
+                  row.capitalGainsTaxTotal +
+                  row.idecoWithholdingTaxTotal;
+                const socialInsuranceTotal =
+                  row.taxCashBreakdown.nationalPension +
+                  row.taxCashBreakdown.nationalHealthInsurance +
+                  row.taxCashBreakdown.lateElderlyMedical +
+                  row.taxCashBreakdown.nursingCare +
+                  row.taxCashBreakdown.otherPublicCost;
+                const cashPaymentTotal = taxTotal + socialInsuranceTotal;
+                return (
+                  <Tr key={`tax-cash-${row.year}`}>
+                    <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.incomeTaxSettlement)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.residentTax)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.deferredCapitalGainsTax)}</Td>
+                    <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
+                    <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
+                    <Td className="font-medium">{compactYen(taxTotal)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.nationalPension)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.nationalHealthInsurance)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.lateElderlyMedical)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.nursingCare)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.otherPublicCost)}</Td>
+                    <Td className="font-medium">{compactYen(socialInsuranceTotal)}</Td>
+                    <Td className="font-medium">{compactYen(cashPaymentTotal)}</Td>
+                  </Tr>
+                );
+              })}
             </tbody>
           </Table>
+          <p className="mt-3 text-sm text-muted-foreground">
+            iDeCo源泉は受取時に先に差し引かれる所得税の前払いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
+            所得税として二重には引いていません。ただし、住民税・国保・介護などは別計算のため、iDeCo受取や普通口座の申告対象損益により翌年負担が増えることがあります。
+          </p>
         </CardContent>
       </Card>
 
