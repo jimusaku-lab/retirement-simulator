@@ -102,6 +102,20 @@ type HouseholdRelationship = HouseholdMember["relationship"];
 const RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY = 430_000;
 const RESIDENT_TAX_RATE_FOR_DISPLAY = 0.1;
 const RESIDENT_TAX_FLAT_FOR_DISPLAY = 5_000;
+const DECLARED_OPTION_INCOME_TAX_RATE_FOR_DISPLAY = 0.15315;
+const DECLARED_OPTION_RESIDENT_TAX_RATE_FOR_DISPLAY = 0.05;
+
+function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
+  const taxableGain = Math.max(0, declaredGain);
+  const incomeTaxEquivalent = Math.round(taxableGain * DECLARED_OPTION_INCOME_TAX_RATE_FOR_DISPLAY);
+  const residentTaxEquivalent = Math.round(taxableGain * DECLARED_OPTION_RESIDENT_TAX_RATE_FOR_DISPLAY);
+  return {
+    taxableGain,
+    incomeTaxEquivalent,
+    residentTaxEquivalent,
+    totalEquivalent: incomeTaxEquivalent + residentTaxEquivalent,
+  };
+}
 
 function incomeTaxFormulaLabel(taxableIncome: number) {
   if (taxableIncome <= 0) return "課税ベース0円のため0円";
@@ -4405,12 +4419,17 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       row.livingExpenseTotal +
       row.taxInsuranceTotal +
       row.capitalGainsTaxTotal +
+      row.idecoWithholdingTaxTotal +
+      row.idecoFeeTotal +
       row.specialExpenseTotal +
       row.assetContributionTotal;
 
     return {
       ...row,
       label: `${row.year} / ${row.ageYears}歳`,
+      startLiquid: row.startingLiquidBuffer,
+      endLiquid: row.endingLiquidBuffer,
+      liquidChange: row.endingLiquidBuffer - row.startingLiquidBuffer,
       cashIn: row.incomeTotal,
       internalIn: row.optionProfitSweepTotal + row.optionAccountReleaseTotal,
       internalOut: -row.assetTransferTotal,
@@ -4442,6 +4461,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     basis: row.endingTrackedAssetCostBasis.ordinaryAccountForOptions,
     gain: row.endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions,
   }));
+  const optionsRealizedProfitChartData = result.annual.map((row) => ({
+    label: `${row.year} / ${row.ageYears}歳`,
+    declaredProfit: row.declaredCapitalGainsIncomeTotal,
+    retainedProfit: row.retainedSourceAssetIncomeTotal,
+    sweptProfit: row.optionProfitSweepTotal,
+    releasedCollateral: row.optionAccountReleaseTotal,
+    suspendedProfit: row.optionIncomeSuspendedTotal,
+  }));
   const nisaLimitChartData = result.annual.map((row) => ({
     label: `${row.year} / ${row.ageYears}歳`,
     cumulative: row.nisaCumulativeInvestment,
@@ -4453,6 +4480,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     .map((incomeYearRow) => {
       const paymentYearRow = result.annual.find((row) => row.year === incomeYearRow.year + 1);
       const taxCash = paymentYearRow?.taxCashBreakdown;
+      const declaredOptionTax = declaredOptionTaxBreakdownForDisplay(incomeYearRow.declaredCapitalGainsIncomeTotal);
       const taxTotal = taxCash
         ? taxCash.incomeTaxSettlement + taxCash.residentTax + taxCash.deferredCapitalGainsTax
         : 0;
@@ -4468,6 +4496,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         incomeYear: incomeYearRow.year,
         incomeAgeYears: incomeYearRow.ageYears,
         declaredGain: incomeYearRow.declaredCapitalGainsIncomeTotal,
+        declaredIncomeTaxEquivalent: declaredOptionTax.incomeTaxEquivalent,
+        declaredResidentTaxEquivalent: declaredOptionTax.residentTaxEquivalent,
+        declaredTaxEquivalentTotal: declaredOptionTax.totalEquivalent,
         paymentYear: paymentYearRow?.year,
         paymentAgeYears: paymentYearRow?.ageYears,
         incomeTaxSettlement: taxCash?.incomeTaxSettlement ?? 0,
@@ -4483,6 +4514,45 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       };
     })
     .filter((row) => row.declaredGain > 0);
+  const incomeBurdenGuideRows = result.annual
+    .map((paymentYearRow) => {
+      const incomeYearRow = result.annual.find((row) => row.year === paymentYearRow.year - 1);
+      const taxCash = paymentYearRow.taxCashBreakdown;
+      const taxTotal =
+        taxCash.incomeTaxSettlement + taxCash.residentTax + taxCash.deferredCapitalGainsTax + paymentYearRow.capitalGainsTaxTotal;
+      const socialInsuranceTotal =
+        taxCash.nationalPension +
+        taxCash.nationalHealthInsurance +
+        taxCash.lateElderlyMedical +
+        taxCash.nursingCare +
+        taxCash.otherPublicCost;
+
+      return {
+        paymentYear: paymentYearRow.year,
+        paymentAgeYears: paymentYearRow.ageYears,
+        incomeYear: incomeYearRow?.year,
+        incomeAgeYears: incomeYearRow?.ageYears,
+        previousCashIncome: incomeYearRow?.incomeTotal ?? 0,
+        previousDeclaredGain: incomeYearRow?.declaredCapitalGainsIncomeTotal ?? 0,
+        previousReferenceIncome: (incomeYearRow?.incomeTotal ?? 0) + (incomeYearRow?.declaredCapitalGainsIncomeTotal ?? 0),
+        incomeTaxSettlement: taxCash.incomeTaxSettlement,
+        residentTax: taxCash.residentTax,
+        nationalPension: taxCash.nationalPension,
+        nationalHealthInsurance: taxCash.nationalHealthInsurance,
+        lateElderlyMedical: taxCash.lateElderlyMedical,
+        nursingCare: taxCash.nursingCare,
+        socialInsuranceTotal,
+        taxAndSocialTotal: taxTotal + socialInsuranceTotal,
+      };
+    })
+    .filter(
+      (row) =>
+        row.incomeYear !== undefined &&
+        (row.previousCashIncome > 0 || row.previousDeclaredGain > 0 || row.taxAndSocialTotal > 0),
+    );
+  const showSourceFreeDeferredCapitalGainsTax = result.annual.some(
+    (row) => row.taxCashBreakdown.deferredCapitalGainsTax > 0,
+  );
   const resultStickyHeaderClass = "sticky left-0 z-30 bg-white shadow-[1px_0_0_#cbd5e1]";
   const resultStickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
 
@@ -4582,7 +4652,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
             実際に現金が出ていく年で、税金と社会保険等を分けて確認します。所得税精算・住民税・国保・介護は原則として前年所得に対する当年支払いです。
-            普通口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。
+            普通口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。申告分離の税相当額は目安として別表示します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -4591,10 +4661,11 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Tr>
                 <Th className={resultStickyHeaderClass}>支払年</Th>
                 <Th>前年普通口座<br />申告対象損益</Th>
+                <Th>普通口座申告分<br />税相当目安</Th>
                 <Th>所得税精算<br />全所得</Th>
                 <Th>住民税<br />全所得</Th>
-                <Th>申告分離譲渡益税<br />翌年支払分</Th>
-                <Th>売却時源泉・控除税</Th>
+                {showSourceFreeDeferredCapitalGainsTax && <Th>源泉なし等<br />売却益税翌年分</Th>}
+                <Th>売却時控除税</Th>
                 <Th>iDeCo源泉<br />受取時</Th>
                 <Th>税金合計</Th>
                 <Th>国民年金</Th>
@@ -4609,6 +4680,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {result.annual.map((row) => {
                 const previousIncomeYearRow = result.annual.find((incomeRow) => incomeRow.year === row.year - 1);
+                const previousDeclaredGain = previousIncomeYearRow?.declaredCapitalGainsIncomeTotal ?? 0;
+                const declaredOptionTax = declaredOptionTaxBreakdownForDisplay(previousDeclaredGain);
                 const taxTotal =
                   row.taxCashBreakdown.incomeTaxSettlement +
                   row.taxCashBreakdown.residentTax +
@@ -4625,10 +4698,19 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 return (
                   <Tr key={`tax-cash-${row.year}`}>
                     <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
-                    <Td>{compactYen(previousIncomeYearRow?.declaredCapitalGainsIncomeTotal ?? 0)}</Td>
+                    <Td>{compactYen(previousDeclaredGain)}</Td>
+                    <Td>
+                      <div>{compactYen(declaredOptionTax.totalEquivalent)}</div>
+                      {declaredOptionTax.totalEquivalent > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          所得税相当 {compactYen(declaredOptionTax.incomeTaxEquivalent)} / 住民税相当{" "}
+                          {compactYen(declaredOptionTax.residentTaxEquivalent)}
+                        </div>
+                      )}
+                    </Td>
                     <Td>{compactYen(row.taxCashBreakdown.incomeTaxSettlement)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.residentTax)}</Td>
-                    <Td>{compactYen(row.taxCashBreakdown.deferredCapitalGainsTax)}</Td>
+                    {showSourceFreeDeferredCapitalGainsTax && <Td>{compactYen(row.taxCashBreakdown.deferredCapitalGainsTax)}</Td>}
                     <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
                     <Td>{compactYen(row.idecoWithholdingTaxTotal)}</Td>
                     <Td className="font-medium">{compactYen(taxTotal)}</Td>
@@ -4646,8 +4728,10 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           </Table>
           <p className="mt-3 text-sm text-muted-foreground">
             iDeCo源泉は年金受取時に 7.6575% を所得税の前払いとして差し引く扱いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
-            所得税として二重には引いていません。「申告分離譲渡益税 翌年支払分」は主に特定口座源泉なし等の売却益用で、普通口座オプションの申告対象損益は
-            「所得税精算 全所得」「住民税 全所得」「国保」などに含めて反映します。
+            所得税として二重には引いていません。「普通口座申告分 税相当目安」は、普通口座オプションの申告対象損益に 20.315% を掛けた参考内訳です。
+            実際の現金支払いは「所得税精算 全所得」「住民税 全所得」「国保」などに含まれるため、税金合計には二重加算していません。
+            源泉なし等の売却益税が全期間0円の場合、その列は非表示にしています。
+            国民年金は、世帯内で20歳以上60歳未満・国保加入・後期高齢者医療対象外のメンバー分を数えます。本人が60歳以降でも、配偶者や子どもが該当すれば表示されます。
           </p>
         </CardContent>
       </Card>
@@ -4657,19 +4741,20 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>普通口座申告損益と翌年負担</CardTitle>
           <CardDescription>
             普通口座（オプション用）で申告対象になった損益を、翌年の税・社会保険支払と並べて確認します。
-            翌年負担は公的年金・iDeCo・普通口座損益などを合算した全体額で、普通口座損益だけの増分ではありません。
+            「申告分離税相当」は普通口座損益だけに20.315%を掛けた参考額です。翌年負担は公的年金・iDeCo・普通口座損益などを合算した全体額で、普通口座損益だけの増分ではありません。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
-          <Table className="min-w-[1500px]">
+          <Table className="min-w-[1680px]">
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className={resultStickyHeaderClass}>所得年</Th>
                 <Th>普通口座申告対象損益</Th>
+                <Th>申告分離税相当<br />20.315%目安</Th>
                 <Th>支払年</Th>
                 <Th>翌年所得税精算<br />全所得</Th>
                 <Th>翌年住民税<br />全所得</Th>
-                <Th>翌年譲渡益税<br />源泉なし等</Th>
+                {showSourceFreeDeferredCapitalGainsTax && <Th>翌年源泉なし等<br />売却益税</Th>}
                 <Th>翌年税金合計<br />全所得</Th>
                 <Th>翌年国保<br />全所得</Th>
                 <Th>翌年後期高齢者<br />全所得</Th>
@@ -4683,10 +4768,19 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Tr key={`declared-gain-impact-${row.incomeYear}`}>
                   <Td className={resultStickyCellClass}>{`${row.incomeYear} / ${row.incomeAgeYears}歳`}</Td>
                   <Td>{compactYen(row.declaredGain)}</Td>
+                  <Td>
+                    <div>{compactYen(row.declaredTaxEquivalentTotal)}</div>
+                    {row.declaredTaxEquivalentTotal > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        所得税相当 {compactYen(row.declaredIncomeTaxEquivalent)} / 住民税相当{" "}
+                        {compactYen(row.declaredResidentTaxEquivalent)}
+                      </div>
+                    )}
+                  </Td>
                   <Td>{row.paymentYear ? `${row.paymentYear} / ${row.paymentAgeYears}歳` : "-"}</Td>
                   <Td>{compactYen(row.incomeTaxSettlement)}</Td>
                   <Td>{compactYen(row.residentTax)}</Td>
-                  <Td>{compactYen(row.deferredCapitalGainsTax)}</Td>
+                  {showSourceFreeDeferredCapitalGainsTax && <Td>{compactYen(row.deferredCapitalGainsTax)}</Td>}
                   <Td className="font-medium">{compactYen(row.taxTotal)}</Td>
                   <Td>{compactYen(row.nationalHealthInsurance)}</Td>
                   <Td>{compactYen(row.lateElderlyMedical)}</Td>
@@ -4706,7 +4800,62 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           )}
           <p className="mt-3 text-sm text-muted-foreground">
             ここでいう普通口座申告対象損益は、税・社会保険タブの自動計算に渡す所得年ベースの金額です。
-            翌年の税・社会保険は、普通口座損益だけでなく公的年金・iDeCo受取・各種控除を合算して計算します。
+            申告分離税相当は「この損益だけなら税率上どの程度か」を見るための目安です。実際の翌年の税・社会保険は、普通口座損益だけでなく公的年金・iDeCo受取・各種控除を合算して計算します。
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>所得水準別の税・社会保険目安</CardTitle>
+          <CardDescription>
+            現在のシナリオから、前年所得水準と翌年支払の関係を並べた早見表です。制度の汎用料率表ではなく、入力済みの世帯・自治体・年齢条件に基づく目安です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
+          <Table className="min-w-[1580px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+              <Tr>
+                <Th className={resultStickyHeaderClass}>支払年</Th>
+                <Th>判定所得年</Th>
+                <Th>前年現金収入</Th>
+                <Th>前年普通口座<br />申告損益</Th>
+                <Th>参考所得合計</Th>
+                <Th>所得税精算</Th>
+                <Th>住民税</Th>
+                <Th>国民年金</Th>
+                <Th>国保</Th>
+                <Th>後期高齢者</Th>
+                <Th>介護</Th>
+                <Th>社会保険等合計</Th>
+                <Th>支払合計</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {incomeBurdenGuideRows.map((row) => (
+                <Tr key={`income-burden-guide-${row.paymentYear}`}>
+                  <Td className={resultStickyCellClass}>{`${row.paymentYear} / ${row.paymentAgeYears}歳`}</Td>
+                  <Td>{row.incomeYear ? `${row.incomeYear} / ${row.incomeAgeYears ?? "-"}歳` : "-"}</Td>
+                  <Td>{compactYen(row.previousCashIncome)}</Td>
+                  <Td>{compactYen(row.previousDeclaredGain)}</Td>
+                  <Td>{compactYen(row.previousReferenceIncome)}</Td>
+                  <Td>{compactYen(row.incomeTaxSettlement)}</Td>
+                  <Td>{compactYen(row.residentTax)}</Td>
+                  <Td>{compactYen(row.nationalPension)}</Td>
+                  <Td>{compactYen(row.nationalHealthInsurance)}</Td>
+                  <Td>{compactYen(row.lateElderlyMedical)}</Td>
+                  <Td>{compactYen(row.nursingCare)}</Td>
+                  <Td className="font-medium">{compactYen(row.socialInsuranceTotal)}</Td>
+                  <Td className="font-medium">{compactYen(row.taxAndSocialTotal)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+          {incomeBurdenGuideRows.length === 0 && (
+            <p className="text-sm text-muted-foreground">所得水準別の目安を表示できる年がありません。</p>
+          )}
+          <p className="mt-3 text-sm text-muted-foreground">
+            「参考所得合計」は、この表で比較しやすいように前年現金収入と前年普通口座申告損益を足した補助値です。実際の課税計算では、公的年金等控除、基礎控除、扶養控除、社会保険料控除などを別途反映します。
           </p>
         </CardContent>
       </Card>
@@ -4764,14 +4913,15 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>流動資金フロー内訳</CardTitle>
           <CardDescription>
             チャートの区分を年ごとに分解します。受取収入は公的年金・iDeCo年金・家族からの入金などが普通預金へ入る扱いです。
-            運用口座から普通預金へは、普通口座利益移動と終了後戻しを合算しています。
+            運用口座から普通預金へは、普通口座利益移動と終了後戻しを合算しています。年始・年末の流動資金は「現金 + 普通預金」です。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
-          <Table>
+          <Table className="min-w-[1100px]">
             <thead>
               <Tr>
                 <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
+                <Th>年始流動資金</Th>
                 <Th>受取収入<br />普通預金へ</Th>
                 <Th>運用口座から<br />普通預金へ</Th>
                 <Th>生活費</Th>
@@ -4779,12 +4929,14 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>特別支出</Th>
                 <Th>追加投資</Th>
                 <Th>純収支</Th>
+                <Th>年末流動資金</Th>
               </Tr>
             </thead>
             <tbody>
               {liquidFlowSummaryData.map((row) => (
                 <Tr key={`liquid-flow-${row.year}`}>
                   <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td>{compactYen(row.startLiquid)}</Td>
                   <Td>{compactYen(row.incomeTotal)}</Td>
                   <Td>{compactYen(row.optionProfitSweepTotal + row.optionAccountReleaseTotal)}</Td>
                   <Td>{row.livingExpenseTotal > 0 ? `-${compactYen(row.livingExpenseTotal)}` : "¥0"}</Td>
@@ -4796,6 +4948,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                   <Td>{row.specialExpenseTotal > 0 ? `-${compactYen(row.specialExpenseTotal)}` : "¥0"}</Td>
                   <Td>{row.assetContributionTotal > 0 ? `-${compactYen(row.assetContributionTotal)}` : "¥0"}</Td>
                   <Td className={row.netCashFlow < 0 ? "text-destructive" : "text-teal-700"}>{compactYen(row.netCashFlow)}</Td>
+                  <Td>{compactYen(row.endLiquid)}</Td>
                 </Tr>
               ))}
             </tbody>
@@ -4904,6 +5057,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>普通口座（オプション用）の証拠金推移</CardTitle>
           <CardDescription>
             口座残高、取引原価、含み損益を年ごとに確認します。口座内積上を選ぶと、残高と取引原価が同時に増えるため、評価損益は0のままになることがあります。
+            月次利益は実現損益なので、このチャートではなく下の実現損益で確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="h-96">
@@ -4932,41 +5086,59 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
           {optionProfitVisibilityRows.length > 0 ? (
-            <Table className="min-w-[1200px]">
-              <thead className="sticky top-0 z-10 bg-white shadow-sm">
-                <Tr>
-                  <Th className={resultStickyHeaderClass}>年 / 年齢</Th>
-                  <Th>申告対象損益</Th>
-                  <Th>口座内積上</Th>
-                  <Th>普通預金へ移動</Th>
-                  <Th>終了後戻し</Th>
-                  <Th>証拠金不足停止</Th>
-                  <Th className="min-w-[420px]">読み方</Th>
-                </Tr>
-              </thead>
-              <tbody>
-                {optionProfitVisibilityRows.map((row) => (
-                  <Tr key={`option-profit-visibility-${row.year}`}>
-                    <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
-                    <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
-                    <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
-                    <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
-                    <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
-                    <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
-                    <Td className="min-w-[420px] text-sm text-muted-foreground">
-                      {[
-                        row.retainedSourceAssetIncomeTotal > 0 ? "利益を原資口座内に積み上げています。" : "",
-                        row.optionProfitSweepTotal > 0 ? "目標残高を超えた利益を普通預金へ移しています。" : "",
-                        row.optionAccountReleaseTotal > 0 ? "運用終了後の残高を普通預金へ戻しています。" : "",
-                        row.optionIncomeSuspendedTotal > 0 ? "最低維持証拠金未満のため予定利益を止めています。" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || "申告対象損益だけが発生しています。"}
-                    </Td>
+            <div className="space-y-6">
+              <div className="h-80 min-w-[900px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={optionsRealizedProfitChartData} barCategoryGap="22%" barGap={2} maxBarSize={18} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+                    <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                    <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+                    <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+                    <Bar dataKey="declaredProfit" name="申告対象損益" fill="#dc2626" />
+                    <Bar dataKey="sweptProfit" name="普通預金へ移動" fill="#0f766e" />
+                    <Bar dataKey="retainedProfit" name="口座内積上" fill="#2563eb" />
+                    <Bar dataKey="releasedCollateral" name="終了後戻し" fill="#14b8a6" />
+                    <Bar dataKey="suspendedProfit" name="証拠金不足停止" fill="#7c3aed" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <Table className="min-w-[1200px]">
+                <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                  <Tr>
+                    <Th className={resultStickyHeaderClass}>年 / 年齢</Th>
+                    <Th>申告対象損益</Th>
+                    <Th>口座内積上</Th>
+                    <Th>普通預金へ移動</Th>
+                    <Th>終了後戻し</Th>
+                    <Th>証拠金不足停止</Th>
+                    <Th className="min-w-[420px]">読み方</Th>
                   </Tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {optionProfitVisibilityRows.map((row) => (
+                    <Tr key={`option-profit-visibility-${row.year}`}>
+                      <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                      <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
+                      <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
+                      <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+                      <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+                      <Td className={row.optionIncomeSuspendedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.optionIncomeSuspendedTotal)}</Td>
+                      <Td className="min-w-[420px] text-sm text-muted-foreground">
+                        {[
+                          row.retainedSourceAssetIncomeTotal > 0 ? "利益を原資口座内に積み上げています。" : "",
+                          row.optionProfitSweepTotal > 0 ? "目標残高を超えた利益を普通預金へ移しています。" : "",
+                          row.optionAccountReleaseTotal > 0 ? "運用終了後の残高を普通預金へ戻しています。" : "",
+                          row.optionIncomeSuspendedTotal > 0 ? "最低維持証拠金未満のため予定利益を止めています。" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ") || "申告対象損益だけが発生しています。"}
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">普通口座（オプション用）の実現損益はありません。</p>
           )}
@@ -4979,10 +5151,10 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardDescription>課税口座の取り崩し時課税の元になる取得原価と、年末時点の含み損益を確認します。</CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
-          <Table>
-            <thead>
+          <Table className="min-w-[1400px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
-                <Th>年</Th>
+                <Th className={resultStickyHeaderClass}>年</Th>
                 {gainTrackedAssets.map((asset) => (
                   <Th key={`${asset.key}-value`}>{asset.label} 評価額</Th>
                 ))}
@@ -4997,7 +5169,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {result.annual.map((row) => (
                 <Tr key={`gain-${row.year}`}>
-                  <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
                   {gainTrackedAssets.map((asset) => (
                     <Td key={`${row.year}-${asset.key}-value`}>{compactYen(row.endingTrackedAssetBalances[asset.key])}</Td>
                   ))}
@@ -5052,6 +5224,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
     const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
     const plannedDrawdown = result.annual.reduce((sum, row) => sum + row.plannedDrawdownTotal, 0);
     const optionToLiquid = result.annual.reduce((sum, row) => sum + row.optionProfitSweepTotal + row.optionAccountReleaseTotal, 0);
+    const declaredOptionProfit = result.annual.reduce((sum, row) => sum + row.declaredCapitalGainsIncomeTotal, 0);
+    const optionIncomeSuspended = result.annual.reduce((sum, row) => sum + row.optionIncomeSuspendedTotal, 0);
     const cashIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
     const nisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
     const additionalInvestment = result.annual.reduce((sum, row) => sum + row.assetContributionTotal, 0);
@@ -5097,6 +5271,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       sourceAssetIncome,
       plannedDrawdown,
       optionToLiquid,
+      declaredOptionProfit,
+      optionIncomeSuspended,
       cashIncome,
       nisaSkipped,
       additionalInvestment,
@@ -5119,6 +5295,38 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
     taxSocialAverage: taxSocial / yearCount,
     afterLivingCapacityAverage: afterLivingCapacity / yearCount,
   }));
+  const baselineCompareRow = compareRows[0];
+  const optionTaxSocialImpactRows = compareRows.map((row) => {
+    const baselineTaxSocial = baselineCompareRow?.taxSocial ?? 0;
+    const baselineOptionToLiquid = baselineCompareRow?.optionToLiquid ?? 0;
+    const baselineNisaSkipped = baselineCompareRow?.nisaSkipped ?? 0;
+    const baselineTargetBalance = baselineCompareRow?.result.targetAgeBalance ?? 0;
+    return {
+      ...row,
+      taxSocialDelta: row.taxSocial - baselineTaxSocial,
+      optionToLiquidDelta: row.optionToLiquid - baselineOptionToLiquid,
+      nisaSkippedDelta: row.nisaSkipped - baselineNisaSkipped,
+      targetBalanceDelta: (row.result.targetAgeBalance ?? 0) - baselineTargetBalance,
+    };
+  });
+  const getOptionImpactSummary = (row: (typeof optionTaxSocialImpactRows)[number]) => {
+    if (baselineCompareRow?.scenario.id === row.scenario.id) {
+      return "比較基準です。";
+    }
+    if (row.declaredOptionProfit <= 0 && row.optionToLiquidDelta <= 0) {
+      return "普通口座オプション利益はありません。";
+    }
+    if (row.taxSocialDelta > row.optionToLiquidDelta && row.nisaSkippedDelta > 0) {
+      return "利益移動より税社保増分と投資資金需要の影響が大きく、NISA未実行が増えています。";
+    }
+    if (row.taxSocialDelta > row.optionToLiquidDelta) {
+      return "普通口座利益はありますが、税社保増分が利益移動増分を上回っています。";
+    }
+    if (row.nisaSkippedDelta > 0) {
+      return "利益移動は増えていますが、NISA未実行も増えています。生活費・税社保・投資枠の配分を確認してください。";
+    }
+    return "普通口座利益により流動資金が増え、税社保増分を上回っています。";
+  };
   return (
     <div className="space-y-6">
       <Card>
@@ -5143,9 +5351,9 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>普通口座から流動資金へ</Th>
                 <Th>NISA未実行</Th>
                 <Th>追加投資</Th>
-                <Th>年平均税社保</Th>
+                <Th>年平均税社保負担</Th>
                 <Th>年平均現金収入</Th>
-                <Th>年平均生活後余力</Th>
+                <Th>生活費・税社保後余力</Th>
                 <Th>投資込み資金需要</Th>
               </Tr>
             </thead>
@@ -5189,7 +5397,57 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から流動資金へ戻した資金だけでは足りなかった額です。追加投資は含めません。投資込み資金需要は、追加投資予定まで含めた補助指標です。
+            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から流動資金へ戻した資金だけでは足りなかった額です。追加投資は含めません。
+            税社保負担は現金が出ていく費用なのでプラス表示です。生活費・税社保後余力は、生活費・税社保・特別支出を払った後の年平均余力で、マイナスなら生活費側だけでも現金が不足している状態です。
+            投資込み資金需要は、追加投資予定まで含めた補助指標です。
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>普通口座オプション利益と税社保増分</CardTitle>
+          <CardDescription>
+            先頭シナリオを基準に、普通口座オプションの申告対象損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll overflow-auto">
+          <Table className="min-w-[1300px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+              <Tr>
+                <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
+                <Th>普通口座<br />申告対象損益</Th>
+                <Th>普通口座から<br />流動資金へ</Th>
+                <Th>税社保増分<br />基準比</Th>
+                <Th>NISA未実行差<br />基準比</Th>
+                <Th>指定年齢残高差<br />基準比</Th>
+                <Th>証拠金不足停止</Th>
+                <Th className="min-w-[420px]">読み方</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {optionTaxSocialImpactRows.map((row) => (
+                <Tr key={`option-impact-${row.scenario.id}`}>
+                  <Td className="sticky-col left-0 z-20 bg-white font-medium">{row.scenario.name}</Td>
+                  <Td>{compactYen(row.declaredOptionProfit)}</Td>
+                  <Td>{compactYen(row.optionToLiquid)}</Td>
+                  <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
+                    {compactYen(row.taxSocialDelta)}
+                  </Td>
+                  <Td className={row.nisaSkippedDelta > 0 ? "text-red-600" : row.nisaSkippedDelta < 0 ? "text-teal-700" : ""}>
+                    {compactYen(row.nisaSkippedDelta)}
+                  </Td>
+                  <Td className={row.targetBalanceDelta < 0 ? "text-red-600" : row.targetBalanceDelta > 0 ? "text-teal-700" : ""}>
+                    {compactYen(row.targetBalanceDelta)}
+                  </Td>
+                  <Td className={row.optionIncomeSuspended > 0 ? "text-red-600" : ""}>{compactYen(row.optionIncomeSuspended)}</Td>
+                  <Td className="min-w-[420px] text-sm text-muted-foreground">{getOptionImpactSummary(row)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+          <p className="mt-3 text-xs leading-6 text-muted-foreground">
+            ここは「普通口座オプション利益だけの税額」ではなく、シナリオ全体の差分です。普通口座利益は翌年の所得税精算・住民税・国保等に合算されるため、
+            税社保増分として見ます。
           </p>
         </CardContent>
       </Card>
@@ -5215,7 +5473,10 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       <Card>
         <CardHeader>
           <CardTitle>税社保と手取り効率</CardTitle>
-          <CardDescription>年平均で、現金収入・普通口座から流動資金へ戻した資金・税社保負担・生活後余力を比較します。収入を増やした時に負担がどれだけ増えるかを見るための表です。</CardDescription>
+          <CardDescription>
+            年平均で、現金収入・普通口座から流動資金へ戻した資金・税社保負担・生活費等を払った後の余力を比較します。
+            税社保負担は支出額なのでプラス表示、生活費・税社保後余力は不足するとマイナス表示です。
+          </CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -5226,8 +5487,8 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="cashIncomeAverage" name="年平均現金収入" fill="#0f766e" />
               <Bar dataKey="optionToLiquidAverage" name="年平均 普通口座から流動資金へ" fill="#14b8a6" />
-              <Bar dataKey="taxSocialAverage" name="年平均税社保" fill="#dc2626" />
-              <Bar dataKey="afterLivingCapacityAverage" name="年平均生活後余力" fill="#2563eb" />
+              <Bar dataKey="taxSocialAverage" name="年平均税社保負担（支出）" fill="#dc2626" />
+              <Bar dataKey="afterLivingCapacityAverage" name="生活費・税社保後余力" fill="#2563eb" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>

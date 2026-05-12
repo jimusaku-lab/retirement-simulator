@@ -375,6 +375,8 @@ export type MonthlyResult = {
   deferredCapitalGainsTaxTotal: number;
   declaredCapitalGainsIncomeTotal: number;
   idecoWithholdingTaxTotal: number;
+  startingLiquidBuffer: number;
+  endingLiquidBuffer: number;
   growthAmount: number;
   withdrawalAmount: number;
   plannedDrawdownTotal: number;
@@ -421,6 +423,8 @@ export type AnnualResult = {
   deferredCapitalGainsTaxTotal: number;
   declaredCapitalGainsIncomeTotal: number;
   idecoWithholdingTaxTotal: number;
+  startingLiquidBuffer: number;
+  endingLiquidBuffer: number;
   growthAmount: number;
   withdrawalAmount: number;
   plannedDrawdownTotal: number;

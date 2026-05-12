@@ -1682,6 +1682,7 @@ function simulateScenarioCore(
       }
     }
     const endingAssets = sumBalances(balances);
+    const endingLiquidBuffer = getLiquidBufferBalance(balances);
     const netCashFlow = availableCashLikeInflow - outflow - assetContributionTotal - capitalGainsTaxTotal - plannedDrawdownTotal;
     const snapshots = getTrackedAssetSnapshots(balances, taxableBasis);
     const nisaLifetimeLimit = getNisaLifetimeLimit(scenario);
@@ -1716,6 +1717,8 @@ function simulateScenarioCore(
       deferredCapitalGainsTaxTotal: Math.round(deferredCapitalGainsTaxTotal),
       declaredCapitalGainsIncomeTotal: Math.round(declaredCapitalGainsIncomeTotal),
       idecoWithholdingTaxTotal: Math.round(idecoWithholdingTaxTotal),
+      startingLiquidBuffer: Math.round(startingLiquidBuffer),
+      endingLiquidBuffer: Math.round(endingLiquidBuffer),
       growthAmount: Math.round(growthAmount),
       withdrawalAmount: Math.round(baseWithdrawalAmount),
       plannedDrawdownTotal: Math.round(plannedDrawdownTotal),
@@ -1862,6 +1865,8 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
         deferredCapitalGainsTaxTotal: 0,
         declaredCapitalGainsIncomeTotal: 0,
         idecoWithholdingTaxTotal: 0,
+        startingLiquidBuffer: row.startingLiquidBuffer,
+        endingLiquidBuffer: row.endingLiquidBuffer,
         growthAmount: 0,
         withdrawalAmount: 0,
         plannedDrawdownTotal: 0,
@@ -1903,6 +1908,7 @@ export function aggregateAnnualResults(monthly: MonthlyResult[]): AnnualResult[]
     current.deferredCapitalGainsTaxTotal += row.deferredCapitalGainsTaxTotal;
     current.declaredCapitalGainsIncomeTotal += row.declaredCapitalGainsIncomeTotal;
     current.idecoWithholdingTaxTotal += row.idecoWithholdingTaxTotal;
+    current.endingLiquidBuffer = row.endingLiquidBuffer;
     current.growthAmount += row.growthAmount;
     current.withdrawalAmount += row.withdrawalAmount;
     current.plannedDrawdownTotal += row.plannedDrawdownTotal;
