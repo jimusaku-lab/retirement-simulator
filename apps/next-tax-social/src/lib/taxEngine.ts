@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { getIncomeEventAmountForMonth, isIdecoMonexPensionEvent } from "@/lib/incomeEvents";
+import { getPensionPlannerIncomeForMonth, isPensionPlannerReplacingEvent } from "@/lib/pensionPlanner";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import type {
   HouseholdMember,
@@ -358,7 +359,14 @@ function getMemberIncomeBreakdown(
   let retirementDeduction = 0;
 
   for (const month of months) {
+    pension += getPensionPlannerIncomeForMonth(
+      scenario,
+      member.id,
+      month,
+      ym(month).diff(ym(scenario.userProfile.simulationStartYearMonth), "month"),
+    );
     for (const event of events) {
+      if (isPensionPlannerReplacingEvent(scenario, event)) continue;
       if (event.taxTreatment === "nonTaxable") continue;
       const amount = getMonthlyIncomeAmount(event, month, scenario);
       if (amount <= 0) continue;

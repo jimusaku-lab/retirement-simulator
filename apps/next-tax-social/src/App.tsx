@@ -1,5 +1,4 @@
 import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import dayjs from "dayjs";
 import {
   Area,
   AreaChart,
@@ -48,6 +47,17 @@ import {
   getIdecoMonexFirstPayoutYearMonth,
 } from "@/lib/incomeEvents";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import {
+  KAKYU_PENSION_STANDARD_AMOUNT,
+  PENSION_STANDARD_CLAIM_AGE,
+  getPensionPlannerMembers,
+  memberAgeAtEndOfMonth,
+  memberAgeAtEndOfYear,
+  mergePensionPlannerSettings,
+  pensionClaimRate,
+  yearMemberTurnsAge,
+  yearMonthRangeForYear,
+} from "@/lib/pensionPlanner";
 import { compactYen, downloadText, numberOrZero, yen } from "@/lib/utils";
 import {
   getBaseMonthlyExpense,
@@ -130,11 +140,7 @@ const TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY = {
   childSupportCap: 21_000,
 };
 const TAX_SOCIAL_SENSITIVITY_STEPS = [0, 500_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000];
-const PENSION_STANDARD_CLAIM_AGE = 65;
-const PENSION_EARLY_REDUCTION_PER_MONTH = 0.004;
-const PENSION_DELAYED_INCREASE_PER_MONTH = 0.007;
 const PENSION_PLANNER_COMPARE_AGES = [60, 62, 65, 68, 70, 75];
-const KAKYU_PENSION_STANDARD_AMOUNT = 423_700;
 
 function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
   const taxableGain = Math.max(0, declaredGain);
@@ -2580,14 +2586,6 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
-function pensionClaimRate(claimAge: number) {
-  const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
-  if (monthsFrom65 < 0) {
-    return Math.max(0, 1 + monthsFrom65 * PENSION_EARLY_REDUCTION_PER_MONTH);
-  }
-  return 1 + monthsFrom65 * PENSION_DELAYED_INCREASE_PER_MONTH;
-}
-
 function pensionClaimRateLabel(claimAge: number) {
   const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
   const rate = pensionClaimRate(claimAge);
@@ -2596,67 +2594,8 @@ function pensionClaimRateLabel(claimAge: number) {
   return "65歳受給のため増減なし";
 }
 
-function memberAgeAtEndOfYear(member: HouseholdMember, year: number) {
-  return dayjs(`${year}-12-31`).diff(dayjs(member.birthDate), "year");
-}
-
-function memberAgeAtEndOfMonth(member: HouseholdMember, yearMonth: string) {
-  return dayjs(`${yearMonth}-01`).endOf("month").diff(dayjs(member.birthDate), "year");
-}
-
-function yearMemberTurnsAge(member: HouseholdMember, age: number) {
-  return dayjs(member.birthDate).add(age, "year").year();
-}
-
-function yearMonthRangeForYear(year: number) {
-  return Array.from({ length: 12 }, (_, month) => `${year}-${String(month + 1).padStart(2, "0")}`);
-}
-
-function incomeEventAnnualAmount(event: IncomeEvent) {
-  return event.amountInputMode === "annual" ? event.monthlyAmount : event.monthlyAmount * 12;
-}
-
-function findPublicPensionAnnual(scenario: ScenarioData, memberId: string | undefined) {
-  if (!memberId) return 0;
-  return scenario.incomeEvents
-    .filter((event) => event.memberId === memberId && event.type === "pension" && event.sourceAssetKey !== "ideco")
-    .reduce((sum, event) => sum + incomeEventAnnualAmount(event), 0);
-}
-
-function getPensionPlannerDefaults(scenario: ScenarioData, selfMember: HouseholdMember | undefined, spouseMember: HouseholdMember | undefined): PensionPlannerSettings {
-  return {
-    selfBasicAnnual: 0,
-    selfEmployeesAnnual: Math.round(findPublicPensionAnnual(scenario, selfMember?.id)),
-    spouseBasicAnnual: 0,
-    spouseEmployeesAnnual: Math.round(findPublicPensionAnnual(scenario, spouseMember?.id)),
-    selfClaimAge: PENSION_STANDARD_CLAIM_AGE,
-    spouseClaimAge: PENSION_STANDARD_CLAIM_AGE,
-    projectionEndAge: 90,
-    kakyuEligible: Boolean(spouseMember),
-    kakyuAmount: KAKYU_PENSION_STANDARD_AMOUNT,
-    hasOldAgeEmployeesPension: true,
-    employeesPensionMonths: 240,
-    spouseDependentForKakyu: Boolean(spouseMember),
-  };
-}
-
-function mergePensionPlannerSettings(
-  scenario: ScenarioData,
-  selfMember: HouseholdMember | undefined,
-  spouseMember: HouseholdMember | undefined,
-): PensionPlannerSettings {
-  return {
-    ...getPensionPlannerDefaults(scenario, selfMember, spouseMember),
-    ...(scenario.pensionPlannerSettings ?? {}),
-  };
-}
-
 function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
-  const selfMember =
-    scenario.householdMembers.find((member) => member.relationship === "self") ??
-    scenario.householdMembers.find((member) => member.id === scenario.householdProfile.headMemberId) ??
-    scenario.householdMembers[0];
-  const spouseMember = scenario.householdMembers.find((member) => member.relationship === "spouse");
+  const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
   const plannerSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
   const updatePlannerSettings = (patch: Partial<PensionPlannerSettings>) =>
     updateScenario((draft) => {

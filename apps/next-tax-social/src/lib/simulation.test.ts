@@ -5279,6 +5279,96 @@ describe("simulation", () => {
     );
   });
 
+  it("年金プランナー設定がある場合は既存の公的年金イベントを置き換えて月次収入に反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      incomeEvents: [
+        {
+          id: "manual-public-pension",
+          memberId: "member-self",
+          name: "既存公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          monthlyAmount: 999_999,
+          taxTreatment: "taxable",
+        },
+      ],
+      pensionPlannerSettings: {
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 1_200_000,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 60,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const result = simulateScenario(scenario);
+    const april = result.monthly.find((row) => row.yearMonth === "2026-04");
+
+    expect(april?.incomeTotal).toBeCloseTo(76_000, 0);
+  });
+
+  it("年金プランナー設定は税計算の公的年金収入にも反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      incomeEvents: [
+        {
+          id: "manual-public-pension",
+          memberId: "member-self",
+          name: "既存公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          monthlyAmount: 999_999,
+          taxTreatment: "taxable",
+        },
+      ],
+      pensionPlannerSettings: {
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 1_200_000,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 60,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const detail = calculateAutoTaxDetails(scenario).find((row) => row.fiscalYear === 2026);
+
+    expect(detail?.memberDetails[0].pensionGrossAnnual).toBe(684_000);
+  });
+
   it("75歳切替をまたいだ公的保険料も翌年の社会保険料控除に反映する", () => {
     const scenario = simpleScenario({
       userProfile: {

@@ -10,6 +10,7 @@ import {
   getIncomeEventAmountForMonth,
   isIdecoMonexPensionEvent,
 } from "@/lib/incomeEvents";
+import { getPensionPlannerIncomeForMonth, getPensionPlannerMembers, isPensionPlannerReplacingEvent } from "@/lib/pensionPlanner";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
 import type {
@@ -1227,7 +1228,13 @@ function simulateScenarioCore(
     let totalGrossAssetWithdrawalAmount = 0;
     let sourceAssetIncomeWithdrawalAmount = 0;
     let deficitAssetWithdrawalAmount = 0;
+    if (scenario.pensionPlannerSettings) {
+      const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
+      if (selfMember) externalIncomeTotal += getPensionPlannerIncomeForMonth(scenario, selfMember.id, yearMonth, monthsFromStart);
+      if (spouseMember) externalIncomeTotal += getPensionPlannerIncomeForMonth(scenario, spouseMember.id, yearMonth, monthsFromStart);
+    }
     for (const event of scenario.incomeEvents) {
+      if (isPensionPlannerReplacingEvent(scenario, event)) continue;
       if (isIdecoMonexPensionEvent(event)) {
         const firstPayoutYearMonth = getIdecoMonexFirstPayoutYearMonth(event);
         const endYearMonth = getIdecoMonexEndYearMonth(event);
