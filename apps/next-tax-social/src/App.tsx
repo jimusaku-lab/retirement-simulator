@@ -52,6 +52,7 @@ import {
   PENSION_STANDARD_CLAIM_AGE,
   defaultPensionClaimStartYearMonth,
   getPensionPlannerMembers,
+  isPensionPlannerReplacingEvent,
   memberAgeAtEndOfMonth,
   memberAgeAtEndOfYear,
   mergePensionPlannerSettings,
@@ -3063,7 +3064,9 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle>収入イベント入力</CardTitle>
-            <CardDescription>開始月から終了月まで有効。終了月なしの場合は継続します。iDeCo受取は原資資産を iDeCo にしてください。</CardDescription>
+            <CardDescription>
+              開始月から終了月まで有効。公的年金は年金受給プランナーを正として使い、iDeCoなど資産からの年金型受取は原資資産を選んで登録します。
+            </CardDescription>
           </div>
           <Button onClick={add}>
             <Plus className="h-4 w-4" />
@@ -3073,18 +3076,30 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
       </CardHeader>
       <CardContent className="space-y-5">
         <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
-        {scenario.incomeEvents.map((event, index) => (
-          <EventEditor
-            key={event.id}
-            title={event.name || "収入"}
-            onDelete={() => updateScenario((s) => void s.incomeEvents.splice(index, 1))}
-            actions={
-              <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
-                <Copy className="h-4 w-4" />
-                複製
-              </Button>
-            }
-          >
+        {scenario.incomeEvents.map((event, index) => {
+          const replacedByPensionPlanner = isPensionPlannerReplacingEvent(scenario, event);
+          const isExternalPublicPension = event.type === "pension" && !event.sourceAssetKey;
+          return (
+            <EventEditor
+              key={event.id}
+              title={event.name || "収入"}
+              onDelete={() => updateScenario((s) => void s.incomeEvents.splice(index, 1))}
+              actions={
+                <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
+                  <Copy className="h-4 w-4" />
+                  複製
+                </Button>
+              }
+            >
+              {replacedByPensionPlanner ? (
+                <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                  年金受給プランナーを反映中のため、この外部公的年金イベントは本計算では使っていません。年金額・受給開始年月は上のプランナー側を正として保存・計算します。
+                </div>
+              ) : isExternalPublicPension ? (
+                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  これは外部収入として直接入力する公的年金です。年金受給プランナーを「反映する」にすると、本人・配偶者の外部公的年金イベントはプランナー値に置き換わります。
+                </div>
+              ) : null}
             <FormGrid>
               <Field label="名称">
                 <Input value={event.name} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].name = e.target.value))} />
@@ -3377,8 +3392,9 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
                 金額は現在の iDeCo 評価額を総支給回数で割った概算です。
               </p>
             )}
-          </EventEditor>
-        ))}
+            </EventEditor>
+          );
+        })}
         <div className="grid gap-4 md:grid-cols-2">
           <RateField label="年金改定率" value={scenario.inflationSettings.pensionAnnualAdjustmentRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.pensionAnnualAdjustmentRate = value))} />
         </div>
