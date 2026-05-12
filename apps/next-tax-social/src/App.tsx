@@ -693,7 +693,7 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
           sub={result.depletionYearMonth ?? "枯渇なし"}
         />
         <Metric title={`${scenario.userProfile.targetBalanceAge}歳時点残高`} value={compactYen(result.targetAgeBalance ?? 0)} sub="月末残高" />
-        <Metric title="流動資金最低保持額" value={compactYen(scenario.userProfile.cashReserve)} sub="現金と普通預金で維持したい額" />
+        <Metric title="流動資金（現金・普通預金）最低保持額" value={compactYen(scenario.userProfile.cashReserve)} sub="現金と普通預金で維持したい額" />
         <Metric title="月平均現金収入" value={compactYen(averageIncome)} sub="源泉・手数料控除後" />
         <Metric title="月平均追加投資" value={compactYen(averageContribution)} sub="資産別の積立" />
         <Metric title="最大赤字月" value={compactYen(Math.abs(result.maxDeficitMonth?.netCashFlow ?? 0))} sub={result.maxDeficitMonth?.yearMonth ?? "-"} />
@@ -722,7 +722,7 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
 
       <Card>
         <CardHeader>
-          <CardTitle>年別の流動資金フロー</CardTitle>
+          <CardTitle>年別の流動資金（現金・普通預金）フロー</CardTitle>
           <CardDescription>外部から入る現金収入と、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を確認します。</CardDescription>
         </CardHeader>
         <CardContent className="h-[30rem]">
@@ -734,7 +734,7 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
-              <Bar dataKey="optionSweep" name="普通口座から流動資金へ" fill="#14b8a6" />
+              <Bar dataKey="optionSweep" name="普通口座から現金・普通預金へ" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
@@ -5521,9 +5521,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="累計iDeCo源泉" value={compactYen(annualIdecoWithholding)} sub="受取時に差し引き" />
         <Metric title="累計特別支出" value={compactYen(annualSpecial)} sub="単発支出" />
         <Metric title="累計追加投資" value={compactYen(annualContribution)} sub="毎月の積立" />
-        <Metric title="累計追加投資原資不足" value={compactYen(annualContributionGap)} sub="流動資金でも賄えなかった積立額" />
+        <Metric title="累計追加投資原資不足" value={compactYen(annualContributionGap)} sub="現金・普通預金でも賄えなかった積立額" />
         <Metric title="累計iDeCo手数料" value={compactYen(annualIdecoFee)} sub="受取期間中の管理・振込手数料" />
-        <Metric title="累計流動資金補充" value={compactYen(annualReserveTopUp)} sub="現金と普通預金の最低保持額まで戻した分" />
+        <Metric title="累計流動資金（現金・普通預金）補充" value={compactYen(annualReserveTopUp)} sub="現金と普通預金の最低保持額まで戻した分" />
         <Metric title="累計資産売却総額" value={compactYen(annualGrossWithdrawal)} sub="実際に口座から動かした総額" />
         <Metric title="累計計画取り崩し" value={compactYen(annualPlannedDrawdown)} sub="目標残高へ向けた追加支出" />
         <Metric title="累計収支" value={compactYen(annualNet)} sub={annualNet >= 0 ? "黒字" : "赤字"} />
@@ -5830,7 +5830,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>年別の流動資金フロー（区分別）</CardTitle>
+          <CardTitle>年別の流動資金（現金・普通預金）フロー</CardTitle>
           <CardDescription>
             外部から普通預金へ入る受取収入、運用口座から普通預金へ戻した内部移動、生活費・税社保・投資で出ていく金額を分けて確認します。
             流動資金は「現金 + 普通預金」として扱います。
@@ -5856,7 +5856,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>流動資金フロー内訳</CardTitle>
+          <CardTitle>流動資金（現金・普通預金）フロー内訳</CardTitle>
           <CardDescription>
             チャートの区分を年ごとに分解します。受取収入は公的年金・iDeCo年金・家族からの入金などが普通預金へ入る扱いです。
             運用口座から普通預金へは、普通口座利益移動と終了後戻しを合算しています。年始・年末の流動資金は「現金 + 普通預金」です。
@@ -5867,7 +5867,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead>
               <Tr>
                 <Th className="sticky left-0 z-10 bg-card">年 / 年末年齢</Th>
-                <Th>年始流動資金</Th>
+                <Th>年始流動資金<br />（現金・普通預金）</Th>
                 <Th>受取収入<br />普通預金へ</Th>
                 <Th>運用口座から<br />普通預金へ</Th>
                 <Th>生活費</Th>
@@ -5875,7 +5875,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>特別支出</Th>
                 <Th>追加投資</Th>
                 <Th>純収支</Th>
-                <Th>年末流動資金</Th>
+                <Th>年末流動資金<br />（現金・普通預金）</Th>
               </Tr>
             </thead>
             <tbody>
@@ -6150,7 +6150,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Tr>
                 <Th>年月</Th>
                 <Th>年齢</Th>
-                <Th>年始/当月開始<br />流動資金</Th>
+                <Th>当月開始流動資金<br />（現金・普通預金）</Th>
                 <Th>現金収入</Th>
                 <Th>普通口座利益移動</Th>
                 <Th>普通口座終了戻し</Th>
@@ -6164,8 +6164,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>NISA枠超過</Th>
                 <Th>不足補填売却</Th>
                 <Th className="min-w-[280px]">不足補填元</Th>
-                <Th>流動資金補充</Th>
-                <Th>月末流動資金</Th>
+                <Th>流動資金補充<br />（現金・普通預金）</Th>
+                <Th>月末流動資金<br />（現金・普通預金）</Th>
                 <Th>月末総資産</Th>
                 <Th>特定口座</Th>
                 <Th>普通口座<br />オプション</Th>
@@ -6362,7 +6362,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
           <CardDescription>
-            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座から流動資金へ戻した資金でどこまで賄えたか、税社保負担とNISA未実行を確認します。
+            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座から現金・普通預金へ戻した資金でどこまで賄えたか、税社保負担とNISA未実行を確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
@@ -6377,7 +6377,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
                 <Th>計画取り崩し</Th>
-                <Th>普通口座から流動資金へ</Th>
+                <Th>普通口座から<br />現金・普通預金へ</Th>
                 <Th>NISA未実行</Th>
                 <Th>追加投資</Th>
                 <Th>年平均税社保負担</Th>
@@ -6426,7 +6426,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から流動資金へ戻した資金だけでは足りなかった額です。追加投資は含めません。
+            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から現金・普通預金へ戻した資金だけでは足りなかった額です。追加投資は含めません。
             税社保負担は現金が出ていく費用なのでプラス表示です。生活費・税社保後余力は、生活費・税社保・特別支出を払った後の年平均余力で、マイナスなら生活費側だけでも現金が不足している状態です。
             投資込み資金需要は、追加投資予定まで含めた補助指標です。
           </p>
@@ -6445,7 +6445,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th>普通口座<br />申告対象損益</Th>
-                <Th>普通口座から<br />流動資金へ</Th>
+                <Th>普通口座から<br />現金・普通預金へ</Th>
                 <Th>税社保増分<br />基準比</Th>
                 <Th>NISA実行額</Th>
                 <Th>NISA実行額差<br />基準比</Th>
