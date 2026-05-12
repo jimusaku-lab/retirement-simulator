@@ -5363,6 +5363,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     annualContribution: row.nisaContributionTotal,
     skipped: row.nisaContributionSkippedTotal,
   }));
+  const monthlyDiagnosticRows = result.monthly.filter((row) => row.yearMonth >= "2035-12" && row.yearMonth <= "2038-01");
   const declaredGainImpactRows = result.annual
     .map((incomeYearRow) => {
       const paymentYearRow = result.annual.find((row) => row.year === incomeYearRow.year + 1);
@@ -6071,6 +6072,77 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                       {compactYen(row.endingTrackedAssetUnrealizedGains[asset.key])}
                     </Td>
                   ))}
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>2036年前後の月次診断</CardTitle>
+          <CardDescription>
+            2035年12月から2038年1月までを、年次集計ではなく月次内部値のまま抜き出します。不足補填・流動資金補充・NISA未実行・普通口座戻しの発生月を切り分けるための表です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="table-scroll max-h-[520px] overflow-auto">
+          <Table className="min-w-[2600px]">
+            <thead className="sticky top-0 z-10 bg-white shadow-sm">
+              <Tr>
+                <Th>年月</Th>
+                <Th>年齢</Th>
+                <Th>年始/当月開始<br />流動資金</Th>
+                <Th>現金収入</Th>
+                <Th>普通口座利益移動</Th>
+                <Th>普通口座終了戻し</Th>
+                <Th>生活費</Th>
+                <Th>税社保</Th>
+                <Th>譲渡益税</Th>
+                <Th>特別支出</Th>
+                <Th>追加投資</Th>
+                <Th>NISA実行</Th>
+                <Th>NISA未実行</Th>
+                <Th>NISA枠超過</Th>
+                <Th>不足補填売却</Th>
+                <Th className="min-w-[280px]">不足補填元</Th>
+                <Th>流動資金補充</Th>
+                <Th>月末流動資金</Th>
+                <Th>月末総資産</Th>
+                <Th>特定口座</Th>
+                <Th>普通口座<br />オプション</Th>
+                <Th>NISA</Th>
+                <Th>iDeCo</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {monthlyDiagnosticRows.map((row) => (
+                <Tr key={`diagnostic-${row.yearMonth}`}>
+                  <Td>{row.yearMonth}</Td>
+                  <Td>{row.ageYears}歳{row.ageMonths}か月</Td>
+                  <Td>{compactYen(row.startingLiquidBuffer)}</Td>
+                  <Td>{compactYen(row.incomeTotal)}</Td>
+                  <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
+                  <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
+                  <Td>{compactYen(row.livingExpenseTotal)}</Td>
+                  <Td>{compactYen(row.taxInsuranceTotal)}</Td>
+                  <Td>{compactYen(row.capitalGainsTaxTotal)}</Td>
+                  <Td>{compactYen(row.specialExpenseTotal)}</Td>
+                  <Td>{compactYen(row.assetContributionTotal)}</Td>
+                  <Td>{compactYen(row.nisaContributionTotal)}</Td>
+                  <Td className={row.nisaContributionSkippedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaContributionSkippedTotal)}</Td>
+                  <Td className={row.nisaAnnualLimitExceededTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaAnnualLimitExceededTotal)}</Td>
+                  <Td>{compactYen(row.deficitAssetWithdrawalAmount)}</Td>
+                  <Td className="min-w-[280px] whitespace-pre-line break-words text-sm leading-5 text-muted-foreground">
+                    {formatWithdrawalSources(row.deficitWithdrawalBreakdown) || "-"}
+                  </Td>
+                  <Td>{compactYen(row.cashReserveTopUpAmount)}</Td>
+                  <Td>{compactYen(row.endingLiquidBuffer)}</Td>
+                  <Td>{compactYen(row.endingAssets)}</Td>
+                  <Td>{compactYen(row.endingTrackedAssetBalances.specificAccount)}</Td>
+                  <Td>{compactYen(row.endingTrackedAssetBalances.ordinaryAccountForOptions)}</Td>
+                  <Td>{compactYen(row.endingTrackedAssetBalances.nisa)}</Td>
+                  <Td>{compactYen(row.endingTrackedAssetBalances.ideco)}</Td>
                 </Tr>
               ))}
             </tbody>
