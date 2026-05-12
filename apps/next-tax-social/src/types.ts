@@ -319,6 +319,7 @@ export type TaxableAccountSettings = {
 
 export type PensionPlannerSettings = {
   applyToSimulation: boolean;
+  settingsVersion?: number;
   selfBasicAnnual: number;
   selfEmployeesAnnual: number;
   spouseBasicAnnual: number;
