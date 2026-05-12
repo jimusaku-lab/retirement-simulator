@@ -326,6 +326,8 @@ export type PensionPlannerSettings = {
   spouseEmployeesAnnual: number;
   selfClaimAge: number;
   spouseClaimAge: number;
+  selfClaimStartYearMonth?: YearMonth;
+  spouseClaimStartYearMonth?: YearMonth;
   projectionEndAge: number;
   kakyuEligible: boolean;
   kakyuAmount: number;

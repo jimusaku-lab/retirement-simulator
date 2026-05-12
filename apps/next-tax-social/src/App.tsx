@@ -50,11 +50,16 @@ import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
   PENSION_STANDARD_CLAIM_AGE,
+  defaultPensionClaimStartYearMonth,
   getPensionPlannerMembers,
   memberAgeAtEndOfMonth,
   memberAgeAtEndOfYear,
   mergePensionPlannerSettings,
+  pensionClaimAgeFromStartYearMonth,
+  pensionClaimMonthsFromStandardStart,
   pensionClaimRate,
+  pensionClaimRateForStartYearMonth,
+  pensionStandardStartYearMonth,
   yearMemberTurnsAge,
   yearMonthRangeForYear,
 } from "@/lib/pensionPlanner";
@@ -2586,12 +2591,12 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
-function pensionClaimRateLabel(claimAge: number) {
-  const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
-  const rate = pensionClaimRate(claimAge);
-  if (monthsFrom65 < 0) return `65歳より${Math.abs(monthsFrom65)}か月早いので ${((1 - rate) * 100).toFixed(1)}%減額`;
-  if (monthsFrom65 > 0) return `65歳より${monthsFrom65}か月遅いので ${((rate - 1) * 100).toFixed(1)}%増額`;
-  return "65歳受給のため増減なし";
+function pensionClaimRateLabel(member: HouseholdMember, claimStartYearMonth: string) {
+  const monthsFromStandardStart = pensionClaimMonthsFromStandardStart(member, claimStartYearMonth);
+  const rate = pensionClaimRateForStartYearMonth(member, claimStartYearMonth);
+  if (monthsFromStandardStart < 0) return `65歳標準開始月より${Math.abs(monthsFromStandardStart)}か月早いので ${((1 - rate) * 100).toFixed(1)}%減額`;
+  if (monthsFromStandardStart > 0) return `65歳標準開始月より${monthsFromStandardStart}か月遅いので ${((rate - 1) * 100).toFixed(1)}%増額`;
+  return "65歳標準開始月と同じため増減なし";
 }
 
 function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
@@ -2616,6 +2621,8 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
     spouseEmployeesAnnual,
     selfClaimAge,
     spouseClaimAge,
+    selfClaimStartYearMonth,
+    spouseClaimStartYearMonth,
     projectionEndAge,
     applyToSimulation,
     kakyuEligible,
@@ -2629,8 +2636,11 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
     if (!selfMember) return null;
     const selfStandardAnnual = selfBasicAnnual + selfEmployeesAnnual;
     const spouseStandardAnnual = spouseBasicAnnual + spouseEmployeesAnnual;
-    const selfRate = pensionClaimRate(selfClaimAge);
-    const spouseRate = pensionClaimRate(spouseClaimAge);
+    const canonicalSelfClaimStart = selfClaimStartYearMonth ?? defaultPensionClaimStartYearMonth(selfMember, selfClaimAge);
+    const canonicalSpouseClaimStart =
+      spouseMember && spouseClaimStartYearMonth ? spouseClaimStartYearMonth : spouseMember ? defaultPensionClaimStartYearMonth(spouseMember, spouseClaimAge) : undefined;
+    const selfRate = pensionClaimRateForStartYearMonth(selfMember, canonicalSelfClaimStart);
+    const spouseRate = spouseMember && canonicalSpouseClaimStart ? pensionClaimRateForStartYearMonth(spouseMember, canonicalSpouseClaimStart) : pensionClaimRate(spouseClaimAge);
     const selfAdjustedAnnual = Math.round(selfStandardAnnual * selfRate);
     const spouseAdjustedAnnual = Math.round(spouseStandardAnnual * spouseRate);
     const startYear = yearMemberTurnsAge(selfMember, 60);
@@ -2641,8 +2651,8 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
       const selfAge = memberAgeAtEndOfYear(selfMember, year);
       const spouseAge = spouseMember ? memberAgeAtEndOfYear(spouseMember, year) : undefined;
       const months = yearMonthRangeForYear(year);
-      const selfPensionMonths = months.filter((yearMonth) => memberAgeAtEndOfMonth(selfMember, yearMonth) >= selfClaimAge).length;
-      const spousePensionMonths = spouseMember ? months.filter((yearMonth) => memberAgeAtEndOfMonth(spouseMember, yearMonth) >= spouseClaimAge).length : 0;
+      const selfPensionMonths = months.filter((yearMonth) => yearMonth >= canonicalSelfClaimStart).length;
+      const spousePensionMonths = spouseMember && canonicalSpouseClaimStart ? months.filter((yearMonth) => yearMonth >= canonicalSpouseClaimStart).length : 0;
       const kakyuMonths =
         kakyuEligible && spouseMember && hasOldAgeEmployeesPension && employeesPensionMonths >= 240 && spouseDependentForKakyu
           ? months.filter((yearMonth) => {
@@ -2677,6 +2687,8 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
       spouseRate,
       selfAdjustedAnnual,
       spouseAdjustedAnnual,
+      selfClaimStartYearMonth: canonicalSelfClaimStart,
+      spouseClaimStartYearMonth: canonicalSpouseClaimStart,
       rows,
     };
   }, [
@@ -2687,10 +2699,12 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
     hasOldAgeEmployeesPension,
     selfBasicAnnual,
     selfClaimAge,
+    selfClaimStartYearMonth,
     selfEmployeesAnnual,
     selfMember,
     spouseBasicAnnual,
     spouseClaimAge,
+    spouseClaimStartYearMonth,
     spouseDependentForKakyu,
     spouseEmployeesAnnual,
     spouseMember,
@@ -2700,15 +2714,18 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
     if (!selfMember) return [];
     const selfStandardAnnual = selfBasicAnnual + selfEmployeesAnnual;
     return PENSION_PLANNER_COMPARE_AGES.map((claimAge) => {
-      const annual = Math.round(selfStandardAnnual * pensionClaimRate(claimAge));
+      const claimStartYearMonth = defaultPensionClaimStartYearMonth(selfMember, claimAge);
+      const rate = pensionClaimRateForStartYearMonth(selfMember, claimStartYearMonth);
+      const annual = Math.round(selfStandardAnnual * rate);
       const startYear = yearMemberTurnsAge(selfMember, 60);
       const endYear = yearMemberTurnsAge(selfMember, projectionEndAge);
       const receivingMonths = Array.from({ length: Math.max(0, endYear - startYear + 1) }, (_, index) => startYear + index)
         .flatMap((year) => yearMonthRangeForYear(year))
-        .filter((yearMonth) => memberAgeAtEndOfMonth(selfMember, yearMonth) >= claimAge).length;
+        .filter((yearMonth) => yearMonth >= claimStartYearMonth).length;
       return {
         claimAge,
-        rate: pensionClaimRate(claimAge),
+        claimStartYearMonth,
+        rate,
         annual,
         cumulative: Math.round((annual / 12) * receivingMonths),
       };
@@ -2775,16 +2792,47 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
               <Input type="number" value={selfEmployeesAnnual} onChange={(event) => updatePlannerSettings({ selfEmployeesAnnual: numberOrZero(event.target.value) })} />
             </Field>
             <Field label={`受給開始年齢 ${selfClaimAge}歳`}>
-              <Input type="range" min={60} max={75} step={1} value={selfClaimAge} onChange={(event) => updatePlannerSettings({ selfClaimAge: Number(event.target.value) })} />
+              <Input
+                type="range"
+                min={60}
+                max={75}
+                step={1}
+                value={selfClaimAge}
+                onChange={(event) => {
+                  const nextAge = Number(event.target.value);
+                  updatePlannerSettings({
+                    selfClaimAge: nextAge,
+                    selfClaimStartYearMonth: defaultPensionClaimStartYearMonth(selfMember, nextAge),
+                  });
+                }}
+              />
+            </Field>
+            <Field label="受給開始年月">
+              <Input
+                type="month"
+                value={planner?.selfClaimStartYearMonth ?? ""}
+                onChange={(event) => {
+                  const nextStart = event.target.value || defaultPensionClaimStartYearMonth(selfMember, selfClaimAge);
+                  updatePlannerSettings({
+                    selfClaimStartYearMonth: nextStart,
+                    selfClaimAge: pensionClaimAgeFromStartYearMonth(selfMember, nextStart),
+                  });
+                }}
+              />
             </Field>
             <Field label="調整後年額">
               <Input value={yen(planner?.selfAdjustedAnnual ?? 0)} readOnly />
             </Field>
           </FormGrid>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {pensionClaimRateLabel(selfClaimAge)}。65歳標準年額 {yen(planner?.selfStandardAnnual ?? 0)} × {(planner?.selfRate ?? 1).toFixed(3)} ={" "}
-            {yen(planner?.selfAdjustedAnnual ?? 0)}
-          </p>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>
+              誕生日から見た65歳標準開始月: {pensionStandardStartYearMonth(selfMember)} / 入力した受給開始月: {planner?.selfClaimStartYearMonth}
+            </p>
+            <p>
+              {planner ? pensionClaimRateLabel(selfMember, planner.selfClaimStartYearMonth) : ""}。65歳標準年額 {yen(planner?.selfStandardAnnual ?? 0)} ×{" "}
+              {(planner?.selfRate ?? 1).toFixed(3)} = {yen(planner?.selfAdjustedAnnual ?? 0)}
+            </p>
+          </div>
         </div>
 
         <div className="rounded-md border bg-slate-50 p-3">
@@ -2813,7 +2861,29 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
                 max={75}
                 step={1}
                 value={spouseClaimAge}
-                onChange={(event) => updatePlannerSettings({ spouseClaimAge: Number(event.target.value) })}
+                onChange={(event) => {
+                  if (!spouseMember) return;
+                  const nextAge = Number(event.target.value);
+                  updatePlannerSettings({
+                    spouseClaimAge: nextAge,
+                    spouseClaimStartYearMonth: defaultPensionClaimStartYearMonth(spouseMember, nextAge),
+                  });
+                }}
+                disabled={!spouseMember}
+              />
+            </Field>
+            <Field label="受給開始年月">
+              <Input
+                type="month"
+                value={planner?.spouseClaimStartYearMonth ?? ""}
+                onChange={(event) => {
+                  if (!spouseMember) return;
+                  const nextStart = event.target.value || defaultPensionClaimStartYearMonth(spouseMember, spouseClaimAge);
+                  updatePlannerSettings({
+                    spouseClaimStartYearMonth: nextStart,
+                    spouseClaimAge: pensionClaimAgeFromStartYearMonth(spouseMember, nextStart),
+                  });
+                }}
                 disabled={!spouseMember}
               />
             </Field>
@@ -2821,11 +2891,21 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
               <Input value={spouseMember ? yen(planner?.spouseAdjustedAnnual ?? 0) : "-"} readOnly />
             </Field>
           </FormGrid>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {spouseMember
-              ? `${pensionClaimRateLabel(spouseClaimAge)}。65歳標準年額 ${yen(planner?.spouseStandardAnnual ?? 0)} × ${(planner?.spouseRate ?? 1).toFixed(3)} = ${yen(planner?.spouseAdjustedAnnual ?? 0)}`
-              : "配偶者が基本情報に登録されていないため、配偶者分は試算しません。"}
-          </p>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {spouseMember && planner?.spouseClaimStartYearMonth ? (
+              <>
+                <p>
+                  誕生日から見た65歳標準開始月: {pensionStandardStartYearMonth(spouseMember)} / 入力した受給開始月: {planner.spouseClaimStartYearMonth}
+                </p>
+                <p>
+                  {pensionClaimRateLabel(spouseMember, planner.spouseClaimStartYearMonth)}。65歳標準年額 {yen(planner?.spouseStandardAnnual ?? 0)} ×{" "}
+                  {(planner?.spouseRate ?? 1).toFixed(3)} = {yen(planner?.spouseAdjustedAnnual ?? 0)}
+                </p>
+              </>
+            ) : (
+              <p>配偶者が基本情報に登録されていないため、配偶者分は試算しません。</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2884,6 +2964,7 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
             <thead>
               <Tr>
                 <Th>受給開始</Th>
+                <Th>開始年月</Th>
                 <Th>調整率</Th>
                 <Th>年額</Th>
                 <Th>{projectionEndAge}歳まで累計</Th>
@@ -2893,6 +2974,7 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
               {comparisonRows.map((row) => (
                 <Tr key={row.claimAge}>
                   <Td>{row.claimAge}歳</Td>
+                  <Td>{row.claimStartYearMonth}</Td>
                   <Td>{(row.rate * 100).toFixed(1)}%</Td>
                   <Td>{yen(row.annual)}</Td>
                   <Td>{yen(row.cumulative)}</Td>

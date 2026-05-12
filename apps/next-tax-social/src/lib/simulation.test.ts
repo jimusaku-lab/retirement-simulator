@@ -5427,6 +5427,107 @@ describe("simulation", () => {
     expect(november?.incomeTotal).toBeCloseTo(148_717, 0);
   });
 
+  it("年金プランナーは誕生日から受給開始月を出し月単位で反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-10-15",
+        simulationStartYearMonth: "2026-10",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-11",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-10-15",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [],
+      pensionPlannerSettings: {
+        applyToSimulation: true,
+        settingsVersion: 4,
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 2_348_163,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 60,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const result = simulateScenario(scenario);
+    const october = result.monthly.find((row) => row.yearMonth === "2026-10");
+    const november = result.monthly.find((row) => row.yearMonth === "2026-11");
+
+    expect(october?.incomeTotal).toBeCloseTo(0, 0);
+    expect(november?.incomeTotal).toBeCloseTo(148_717, 0);
+  });
+
+  it("年金プランナーは手入力した受給開始年月を正として減額率も月単位で再計算する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-10-15",
+        simulationStartYearMonth: "2026-12",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2027-01",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-10-15",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [],
+      pensionPlannerSettings: {
+        applyToSimulation: true,
+        settingsVersion: 4,
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 2_348_163,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 60,
+        spouseClaimAge: 65,
+        selfClaimStartYearMonth: "2027-01",
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const result = simulateScenario(scenario);
+    const december = result.monthly.find((row) => row.yearMonth === "2026-12");
+    const january = result.monthly.find((row) => row.yearMonth === "2027-01");
+
+    expect(december?.incomeTotal).toBeCloseTo(0, 0);
+    expect(january?.incomeTotal).toBeCloseTo(150_282, 0);
+  });
+
   it("壊れた保存済みプランナー年額が既存公的年金より明らかに小さい場合は既存イベントから復元する", () => {
     const scenario = simpleScenario({
       userProfile: {

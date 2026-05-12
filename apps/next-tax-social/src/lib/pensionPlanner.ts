@@ -5,7 +5,11 @@ export const PENSION_STANDARD_CLAIM_AGE = 65;
 export const PENSION_EARLY_REDUCTION_PER_MONTH = 0.004;
 export const PENSION_DELAYED_INCREASE_PER_MONTH = 0.007;
 export const KAKYU_PENSION_STANDARD_AMOUNT = 423_700;
-const PENSION_PLANNER_SETTINGS_VERSION = 3;
+const PENSION_PLANNER_SETTINGS_VERSION = 4;
+
+function yearMonthDate(yearMonth: YearMonth) {
+  return dayjs(`${yearMonth}-01`);
+}
 
 export function pensionClaimRate(claimAge: number) {
   const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
@@ -16,7 +20,7 @@ export function pensionClaimRate(claimAge: number) {
 }
 
 export function memberAgeAtEndOfMonth(member: HouseholdMember, yearMonth: YearMonth) {
-  return dayjs(`${yearMonth}-01`).endOf("month").diff(dayjs(member.birthDate), "year");
+  return yearMonthDate(yearMonth).endOf("month").diff(dayjs(member.birthDate), "year");
 }
 
 export function memberAgeAtEndOfYear(member: HouseholdMember, year: number) {
@@ -25,6 +29,34 @@ export function memberAgeAtEndOfYear(member: HouseholdMember, year: number) {
 
 export function yearMemberTurnsAge(member: HouseholdMember, age: number) {
   return dayjs(member.birthDate).add(age, "year").year();
+}
+
+export function memberReachesAgeYearMonth(member: HouseholdMember, age: number): YearMonth {
+  return dayjs(member.birthDate).add(age, "year").subtract(1, "day").format("YYYY-MM");
+}
+
+export function defaultPensionClaimStartYearMonth(member: HouseholdMember, claimAge: number): YearMonth {
+  return dayjs(memberReachesAgeYearMonth(member, claimAge)).add(1, "month").format("YYYY-MM");
+}
+
+export function pensionStandardStartYearMonth(member: HouseholdMember): YearMonth {
+  return defaultPensionClaimStartYearMonth(member, PENSION_STANDARD_CLAIM_AGE);
+}
+
+export function pensionClaimMonthsFromStandardStart(member: HouseholdMember, claimStartYearMonth: YearMonth) {
+  return yearMonthDate(claimStartYearMonth).diff(yearMonthDate(pensionStandardStartYearMonth(member)), "month");
+}
+
+export function pensionClaimRateForStartYearMonth(member: HouseholdMember, claimStartYearMonth: YearMonth) {
+  const monthsFromStandardStart = pensionClaimMonthsFromStandardStart(member, claimStartYearMonth);
+  if (monthsFromStandardStart < 0) {
+    return Math.max(0, 1 + monthsFromStandardStart * PENSION_EARLY_REDUCTION_PER_MONTH);
+  }
+  return 1 + monthsFromStandardStart * PENSION_DELAYED_INCREASE_PER_MONTH;
+}
+
+export function pensionClaimAgeFromStartYearMonth(member: HouseholdMember, claimStartYearMonth: YearMonth) {
+  return Math.min(75, Math.max(60, memberAgeAtEndOfMonth(member, claimStartYearMonth)));
 }
 
 export function yearMonthRangeForYear(year: number) {
@@ -47,16 +79,22 @@ export function findPublicPensionAnnual(scenario: ScenarioData, memberId: string
 }
 
 function inferPublicPensionClaimAge(scenario: ScenarioData, member: HouseholdMember | undefined) {
+  const claimStartYearMonth = inferPublicPensionClaimStartYearMonth(scenario, member);
+  if (!claimStartYearMonth || !member) return PENSION_STANDARD_CLAIM_AGE;
+  return pensionClaimAgeFromStartYearMonth(member, claimStartYearMonth);
+}
+
+function inferPublicPensionClaimStartYearMonth(scenario: ScenarioData, member: HouseholdMember | undefined) {
   const event = getPublicPensionEvents(scenario, member?.id).sort((a, b) => a.startYearMonth.localeCompare(b.startYearMonth))[0];
-  if (!event || !member) return PENSION_STANDARD_CLAIM_AGE;
-  return Math.min(75, Math.max(60, memberAgeAtEndOfMonth(member, event.startYearMonth)));
+  if (!event || !member) return undefined;
+  return event.startYearMonth;
 }
 
 function inferPublicPensionStandardAnnual(scenario: ScenarioData, member: HouseholdMember | undefined) {
   const annual = findPublicPensionAnnual(scenario, member?.id);
   if (!member || annual <= 0) return 0;
-  const claimAge = inferPublicPensionClaimAge(scenario, member);
-  return Math.round(annual / pensionClaimRate(claimAge));
+  const claimStartYearMonth = inferPublicPensionClaimStartYearMonth(scenario, member) ?? defaultPensionClaimStartYearMonth(member, PENSION_STANDARD_CLAIM_AGE);
+  return Math.round(annual / pensionClaimRateForStartYearMonth(member, claimStartYearMonth));
 }
 
 export function getPensionPlannerDefaults(
@@ -66,6 +104,12 @@ export function getPensionPlannerDefaults(
 ): PensionPlannerSettings {
   const inferredSelfClaimAge = inferPublicPensionClaimAge(scenario, selfMember);
   const inferredSpouseClaimAge = inferPublicPensionClaimAge(scenario, spouseMember);
+  const inferredSelfClaimStartYearMonth = selfMember
+    ? inferPublicPensionClaimStartYearMonth(scenario, selfMember) ?? defaultPensionClaimStartYearMonth(selfMember, inferredSelfClaimAge)
+    : undefined;
+  const inferredSpouseClaimStartYearMonth = spouseMember
+    ? inferPublicPensionClaimStartYearMonth(scenario, spouseMember) ?? defaultPensionClaimStartYearMonth(spouseMember, inferredSpouseClaimAge)
+    : undefined;
   return {
     applyToSimulation: false,
     settingsVersion: PENSION_PLANNER_SETTINGS_VERSION,
@@ -75,6 +119,8 @@ export function getPensionPlannerDefaults(
     spouseEmployeesAnnual: inferPublicPensionStandardAnnual(scenario, spouseMember),
     selfClaimAge: inferredSelfClaimAge,
     spouseClaimAge: inferredSpouseClaimAge,
+    selfClaimStartYearMonth: inferredSelfClaimStartYearMonth,
+    spouseClaimStartYearMonth: inferredSpouseClaimStartYearMonth,
     projectionEndAge: 90,
     kakyuEligible: Boolean(spouseMember),
     kakyuAmount: KAKYU_PENSION_STANDARD_AMOUNT,
@@ -107,21 +153,32 @@ export function mergePensionPlannerSettings(
   if (!stored) return defaults;
   const rawSelfAnnual = Math.round(findPublicPensionAnnual(scenario, selfMember?.id));
   const rawSpouseAnnual = Math.round(findPublicPensionAnnual(scenario, spouseMember?.id));
-  const isLegacyStoredSettings = (stored.settingsVersion ?? 1) < PENSION_PLANNER_SETTINGS_VERSION;
+  const isLegacyAnnualSettings = (stored.settingsVersion ?? 1) < 3;
   const shouldRecoverSelfAnnual =
     rawSelfAnnual > 0 &&
-    ((isLegacyStoredSettings && Math.round(stored.selfEmployeesAnnual) === rawSelfAnnual) ||
+    ((isLegacyAnnualSettings && Math.round(stored.selfEmployeesAnnual) === rawSelfAnnual) ||
       stored.selfBasicAnnual + stored.selfEmployeesAnnual < rawSelfAnnual * 0.5);
   const shouldRecoverSpouseAnnual =
     rawSpouseAnnual > 0 &&
-    ((isLegacyStoredSettings && Math.round(stored.spouseEmployeesAnnual) === rawSpouseAnnual) ||
+    ((isLegacyAnnualSettings && Math.round(stored.spouseEmployeesAnnual) === rawSpouseAnnual) ||
       stored.spouseBasicAnnual + stored.spouseEmployeesAnnual < rawSpouseAnnual * 0.5);
+  const selfClaimAge = stored.selfClaimAge ?? defaults.selfClaimAge;
+  const spouseClaimAge = stored.spouseClaimAge ?? defaults.spouseClaimAge;
+  const selfClaimStartYearMonth =
+    stored.selfClaimStartYearMonth ?? (selfMember ? defaultPensionClaimStartYearMonth(selfMember, selfClaimAge) : defaults.selfClaimStartYearMonth);
+  const spouseClaimStartYearMonth =
+    stored.spouseClaimStartYearMonth ?? (spouseMember ? defaultPensionClaimStartYearMonth(spouseMember, spouseClaimAge) : defaults.spouseClaimStartYearMonth);
+
   return {
     ...defaults,
     ...stored,
     settingsVersion: PENSION_PLANNER_SETTINGS_VERSION,
     selfEmployeesAnnual: shouldRecoverSelfAnnual ? Math.max(0, defaults.selfEmployeesAnnual - stored.selfBasicAnnual) : stored.selfEmployeesAnnual,
     spouseEmployeesAnnual: shouldRecoverSpouseAnnual ? Math.max(0, defaults.spouseEmployeesAnnual - stored.spouseBasicAnnual) : stored.spouseEmployeesAnnual,
+    selfClaimAge,
+    spouseClaimAge,
+    selfClaimStartYearMonth,
+    spouseClaimStartYearMonth,
   };
 }
 
@@ -154,9 +211,10 @@ export function getPensionPlannerIncomeForMonth(
 
   if (memberId === selfMember?.id) {
     const selfAge = memberAgeAtEndOfMonth(selfMember, yearMonth);
+    const selfClaimStartYearMonth = settings.selfClaimStartYearMonth ?? defaultPensionClaimStartYearMonth(selfMember, settings.selfClaimAge);
     const basePension =
-      selfAge >= settings.selfClaimAge
-        ? ((settings.selfBasicAnnual + settings.selfEmployeesAnnual) * pensionClaimRate(settings.selfClaimAge) * adjustmentFactor) / 12
+      yearMonth >= selfClaimStartYearMonth
+        ? ((settings.selfBasicAnnual + settings.selfEmployeesAnnual) * pensionClaimRateForStartYearMonth(selfMember, selfClaimStartYearMonth) * adjustmentFactor) / 12
         : 0;
     const kakyuPension =
       settings.kakyuEligible &&
@@ -172,9 +230,9 @@ export function getPensionPlannerIncomeForMonth(
   }
 
   if (memberId === spouseMember?.id) {
-    const spouseAge = memberAgeAtEndOfMonth(spouseMember, yearMonth);
-    return spouseAge >= settings.spouseClaimAge
-      ? ((settings.spouseBasicAnnual + settings.spouseEmployeesAnnual) * pensionClaimRate(settings.spouseClaimAge) * adjustmentFactor) / 12
+    const spouseClaimStartYearMonth = settings.spouseClaimStartYearMonth ?? defaultPensionClaimStartYearMonth(spouseMember, settings.spouseClaimAge);
+    return yearMonth >= spouseClaimStartYearMonth
+      ? ((settings.spouseBasicAnnual + settings.spouseEmployeesAnnual) * pensionClaimRateForStartYearMonth(spouseMember, spouseClaimStartYearMonth) * adjustmentFactor) / 12
       : 0;
   }
 
