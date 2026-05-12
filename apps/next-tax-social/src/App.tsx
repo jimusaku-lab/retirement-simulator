@@ -405,8 +405,10 @@ function App() {
   const deferredScenarios = useDeferredValue(scenarios);
   const result = useMemo(() => simulateScenario(deferredActiveScenario), [deferredActiveScenario]);
   const allResults = useMemo(
-    () => deferredScenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) })),
-    [deferredScenarios],
+    () => activeTab === "compare"
+      ? deferredScenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) }))
+      : [],
+    [activeTab, deferredScenarios],
   );
   const isLikelySampleState =
     scenarios.length === sampleState.scenarios.length &&
