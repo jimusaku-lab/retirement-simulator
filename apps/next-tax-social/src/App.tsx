@@ -1,4 +1,5 @@
 import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import dayjs from "dayjs";
 import {
   Area,
   AreaChart,
@@ -77,6 +78,7 @@ import type {
   WithdrawalAssetKey,
   OptionSubAccount,
   RetirementIncomeEvent,
+  PensionPlannerSettings,
 } from "@/types";
 
 const tabs = [
@@ -104,6 +106,35 @@ const RESIDENT_TAX_RATE_FOR_DISPLAY = 0.1;
 const RESIDENT_TAX_FLAT_FOR_DISPLAY = 5_000;
 const DECLARED_OPTION_INCOME_TAX_RATE_FOR_DISPLAY = 0.15315;
 const DECLARED_OPTION_RESIDENT_TAX_RATE_FOR_DISPLAY = 0.05;
+const OTA_NHI_RATES_FOR_DISPLAY = {
+  baseIncomeDeduction: 430_000,
+  medicalIncomeRate: 0.0751,
+  medicalPerCapita: 47_600,
+  medicalCap: 670_000,
+  supportIncomeRate: 0.028,
+  supportPerCapita: 17_600,
+  supportCap: 260_000,
+  childSupportIncomeRate: 0.0027,
+  childSupportPerCapita: 1_873,
+  childSupportCap: 30_000,
+  careIncomeRate: 0.0243,
+  carePerCapita: 17_800,
+  careCap: 170_000,
+};
+const TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY = {
+  medicalIncomeRate: 0.0988,
+  medicalPerCapita: 53_300,
+  medicalCap: 850_000,
+  childSupportIncomeRate: 0.0026,
+  childSupportPerCapita: 1_300,
+  childSupportCap: 21_000,
+};
+const TAX_SOCIAL_SENSITIVITY_STEPS = [0, 500_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000];
+const PENSION_STANDARD_CLAIM_AGE = 65;
+const PENSION_EARLY_REDUCTION_PER_MONTH = 0.004;
+const PENSION_DELAYED_INCREASE_PER_MONTH = 0.007;
+const PENSION_PLANNER_COMPARE_AGES = [60, 62, 65, 68, 70, 75];
+const KAKYU_PENSION_STANDARD_AMOUNT = 423_700;
 
 function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
   const taxableGain = Math.max(0, declaredGain);
@@ -131,6 +162,99 @@ function incomeTaxFormulaLabel(taxableIncome: number) {
 function residentTaxFormulaLabel(taxableIncome: number) {
   if (taxableIncome <= 0) return "課税ベース0円のため0円";
   return `課税ベース × ${(RESIDENT_TAX_RATE_FOR_DISPLAY * 100).toFixed(0)}% + 均等割 ${yen(RESIDENT_TAX_FLAT_FOR_DISPLAY)}`;
+}
+
+function incomeTaxFormulaSubstitution(taxableIncome: number, tax: number) {
+  if (taxableIncome <= 0) {
+    return ["所得税", "= 0円", "= 課税所得が0円のため0円"];
+  }
+  const band =
+    taxableIncome <= 1_949_000
+      ? { rate: 0.05, deduction: 0 }
+      : taxableIncome <= 3_299_000
+        ? { rate: 0.1, deduction: 97_500 }
+        : taxableIncome <= 6_949_000
+          ? { rate: 0.2, deduction: 427_500 }
+          : taxableIncome <= 8_999_000
+            ? { rate: 0.23, deduction: 636_000 }
+            : taxableIncome <= 17_999_000
+              ? { rate: 0.33, deduction: 1_536_000 }
+              : taxableIncome <= 39_999_000
+                ? { rate: 0.4, deduction: 2_796_000 }
+                : { rate: 0.45, deduction: 4_796_000 };
+  return [
+    "所得税",
+    "= (課税所得 × 税率 - 控除額) × 復興特別所得税係数",
+    `= (${yen(taxableIncome)} × ${(band.rate * 100).toFixed(0)}% - ${yen(band.deduction)}) × 1.021`,
+    `= ${yen(tax)}`,
+  ];
+}
+
+function residentTaxFormulaSubstitution(taxableIncome: number, tax: number) {
+  if (taxableIncome <= 0) {
+    return ["住民税", "= 0円", "= 課税所得が0円のため0円"];
+  }
+  return [
+    "住民税",
+    "= 課税所得 × 税率 + 均等割",
+    `= ${yen(taxableIncome)} × ${(RESIDENT_TAX_RATE_FOR_DISPLAY * 100).toFixed(0)}% + ${yen(RESIDENT_TAX_FLAT_FOR_DISPLAY)}`,
+    `= ${yen(tax)}`,
+  ];
+}
+
+function yearEndAgeLabel(year: number, ageYears: number) {
+  return `${year} / 年末${ageYears}歳`;
+}
+
+function yearEndAgeValue(ageYears: number | undefined) {
+  return typeof ageYears === "number" ? `年末${ageYears}歳` : "-";
+}
+
+function taxYearEndAgeLabel(ageYears: number) {
+  return `12月31日時点 ${ageYears}歳`;
+}
+
+function zeroFloorLine(label: string, amount: number) {
+  return amount < 0 ? `${label}はマイナスのため0円として扱います` : `${label}はプラスのためそのまま使います`;
+}
+
+function personMonthLabel(personYears: number) {
+  const months = Math.round(personYears * 12);
+  if (months <= 0) return "0か月分";
+  if (months === 12) return "12か月分（1人が通年加入）";
+  return `${months}か月分（月割り人数 ${personYears.toFixed(2)}人）`;
+}
+
+function capSelectionLines(label: string, calculatedAmount: number, cap: number, result: number) {
+  return [
+    `${label}は、計算額と上限額を比べて低い方を採用します`,
+    `計算額 = ${yen(calculatedAmount)}`,
+    `上限額 = ${yen(cap)}`,
+    calculatedAmount > cap ? `計算額が上限を超えるため、採用額 = ${yen(result)}` : `計算額が上限以下のため、採用額 = ${yen(result)}`,
+  ];
+}
+
+function autoTaxDetailTotal(detail: AutoTaxYearDetail) {
+  const incomeTax = detail.memberDetails.reduce((sum, member) => sum + member.incomeTaxAnnual + member.retirementIncomeTaxAnnual, 0);
+  const residentTax = detail.memberDetails.reduce((sum, member) => sum + member.residentTaxAnnual + member.retirementResidentTaxAnnual, 0);
+  const nationalPension = detail.memberDetails.reduce((sum, member) => sum + member.nationalPensionAnnual, 0);
+  return {
+    incomeTax,
+    residentTax,
+    nationalPension,
+    nationalHealthInsurance: detail.nationalHealthInsuranceAnnual,
+    lateElderlyMedical: detail.lateElderlyMedicalAnnual,
+    nursingCare: detail.nursingCareAnnual,
+    otherPublicCost: detail.otherPublicCostAnnual,
+    total:
+      incomeTax +
+      residentTax +
+      nationalPension +
+      detail.nationalHealthInsuranceAnnual +
+      detail.lateElderlyMedicalAnnual +
+      detail.nursingCareAnnual +
+      detail.otherPublicCostAnnual,
+  };
 }
 
 const expenseLabels: Record<ExpenseKey, string> = {
@@ -333,7 +457,7 @@ function App() {
     const rows = [
       [
         "年月",
-        "年齢",
+        "月末年齢",
         "現金収入",
         "口座内積上",
         "原資移動",
@@ -520,13 +644,13 @@ function Dashboard({ scenario, result }: { scenario: ScenarioData; result: Retur
   const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
   const chartData = result.annual.map((row) => ({
     year: String(row.year),
-    age: `${row.ageYears}歳`,
-    axisLabel: `${row.year} / ${row.ageYears}歳`,
+    age: `年末${row.ageYears}歳`,
+    axisLabel: yearEndAgeLabel(row.year, row.ageYears),
     assets: row.endingAssets,
     withdrawal: row.withdrawalAmount,
   }));
   const cashflowChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
+    label: yearEndAgeLabel(row.year, row.ageYears),
     income: row.incomeTotal,
     optionSweep: row.optionProfitSweepTotal + row.optionAccountReleaseTotal,
     living: -row.livingExpenseTotal,
@@ -2456,6 +2580,420 @@ function ExpensesSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
+function pensionClaimRate(claimAge: number) {
+  const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
+  if (monthsFrom65 < 0) {
+    return Math.max(0, 1 + monthsFrom65 * PENSION_EARLY_REDUCTION_PER_MONTH);
+  }
+  return 1 + monthsFrom65 * PENSION_DELAYED_INCREASE_PER_MONTH;
+}
+
+function pensionClaimRateLabel(claimAge: number) {
+  const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
+  const rate = pensionClaimRate(claimAge);
+  if (monthsFrom65 < 0) return `65歳より${Math.abs(monthsFrom65)}か月早いので ${((1 - rate) * 100).toFixed(1)}%減額`;
+  if (monthsFrom65 > 0) return `65歳より${monthsFrom65}か月遅いので ${((rate - 1) * 100).toFixed(1)}%増額`;
+  return "65歳受給のため増減なし";
+}
+
+function memberAgeAtEndOfYear(member: HouseholdMember, year: number) {
+  return dayjs(`${year}-12-31`).diff(dayjs(member.birthDate), "year");
+}
+
+function memberAgeAtEndOfMonth(member: HouseholdMember, yearMonth: string) {
+  return dayjs(`${yearMonth}-01`).endOf("month").diff(dayjs(member.birthDate), "year");
+}
+
+function yearMemberTurnsAge(member: HouseholdMember, age: number) {
+  return dayjs(member.birthDate).add(age, "year").year();
+}
+
+function yearMonthRangeForYear(year: number) {
+  return Array.from({ length: 12 }, (_, month) => `${year}-${String(month + 1).padStart(2, "0")}`);
+}
+
+function incomeEventAnnualAmount(event: IncomeEvent) {
+  return event.amountInputMode === "annual" ? event.monthlyAmount : event.monthlyAmount * 12;
+}
+
+function findPublicPensionAnnual(scenario: ScenarioData, memberId: string | undefined) {
+  if (!memberId) return 0;
+  return scenario.incomeEvents
+    .filter((event) => event.memberId === memberId && event.type === "pension" && event.sourceAssetKey !== "ideco")
+    .reduce((sum, event) => sum + incomeEventAnnualAmount(event), 0);
+}
+
+function getPensionPlannerDefaults(scenario: ScenarioData, selfMember: HouseholdMember | undefined, spouseMember: HouseholdMember | undefined): PensionPlannerSettings {
+  return {
+    selfBasicAnnual: 0,
+    selfEmployeesAnnual: Math.round(findPublicPensionAnnual(scenario, selfMember?.id)),
+    spouseBasicAnnual: 0,
+    spouseEmployeesAnnual: Math.round(findPublicPensionAnnual(scenario, spouseMember?.id)),
+    selfClaimAge: PENSION_STANDARD_CLAIM_AGE,
+    spouseClaimAge: PENSION_STANDARD_CLAIM_AGE,
+    projectionEndAge: 90,
+    kakyuEligible: Boolean(spouseMember),
+    kakyuAmount: KAKYU_PENSION_STANDARD_AMOUNT,
+    hasOldAgeEmployeesPension: true,
+    employeesPensionMonths: 240,
+    spouseDependentForKakyu: Boolean(spouseMember),
+  };
+}
+
+function mergePensionPlannerSettings(
+  scenario: ScenarioData,
+  selfMember: HouseholdMember | undefined,
+  spouseMember: HouseholdMember | undefined,
+): PensionPlannerSettings {
+  return {
+    ...getPensionPlannerDefaults(scenario, selfMember, spouseMember),
+    ...(scenario.pensionPlannerSettings ?? {}),
+  };
+}
+
+function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
+  const selfMember =
+    scenario.householdMembers.find((member) => member.relationship === "self") ??
+    scenario.householdMembers.find((member) => member.id === scenario.householdProfile.headMemberId) ??
+    scenario.householdMembers[0];
+  const spouseMember = scenario.householdMembers.find((member) => member.relationship === "spouse");
+  const plannerSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
+  const updatePlannerSettings = (patch: Partial<PensionPlannerSettings>) =>
+    updateScenario((draft) => {
+      const draftSelfMember =
+        draft.householdMembers.find((member) => member.relationship === "self") ??
+        draft.householdMembers.find((member) => member.id === draft.householdProfile.headMemberId) ??
+        draft.householdMembers[0];
+      const draftSpouseMember = draft.householdMembers.find((member) => member.relationship === "spouse");
+      draft.pensionPlannerSettings = {
+        ...mergePensionPlannerSettings(draft, draftSelfMember, draftSpouseMember),
+        ...patch,
+      };
+    });
+  const {
+    selfBasicAnnual,
+    selfEmployeesAnnual,
+    spouseBasicAnnual,
+    spouseEmployeesAnnual,
+    selfClaimAge,
+    spouseClaimAge,
+    projectionEndAge,
+    kakyuEligible,
+    kakyuAmount,
+    hasOldAgeEmployeesPension,
+    employeesPensionMonths,
+    spouseDependentForKakyu,
+  } = plannerSettings;
+
+  const planner = useMemo(() => {
+    if (!selfMember) return null;
+    const selfStandardAnnual = selfBasicAnnual + selfEmployeesAnnual;
+    const spouseStandardAnnual = spouseBasicAnnual + spouseEmployeesAnnual;
+    const selfRate = pensionClaimRate(selfClaimAge);
+    const spouseRate = pensionClaimRate(spouseClaimAge);
+    const selfAdjustedAnnual = Math.round(selfStandardAnnual * selfRate);
+    const spouseAdjustedAnnual = Math.round(spouseStandardAnnual * spouseRate);
+    const startYear = yearMemberTurnsAge(selfMember, 60);
+    const endYear = yearMemberTurnsAge(selfMember, projectionEndAge);
+    let cumulative = 0;
+    const rows = [];
+    for (let year = startYear; year <= endYear; year += 1) {
+      const selfAge = memberAgeAtEndOfYear(selfMember, year);
+      const spouseAge = spouseMember ? memberAgeAtEndOfYear(spouseMember, year) : undefined;
+      const months = yearMonthRangeForYear(year);
+      const selfPensionMonths = months.filter((yearMonth) => memberAgeAtEndOfMonth(selfMember, yearMonth) >= selfClaimAge).length;
+      const spousePensionMonths = spouseMember ? months.filter((yearMonth) => memberAgeAtEndOfMonth(spouseMember, yearMonth) >= spouseClaimAge).length : 0;
+      const kakyuMonths =
+        kakyuEligible && spouseMember && hasOldAgeEmployeesPension && employeesPensionMonths >= 240 && spouseDependentForKakyu
+          ? months.filter((yearMonth) => {
+              const monthlySelfAge = memberAgeAtEndOfMonth(selfMember, yearMonth);
+              const monthlySpouseAge = memberAgeAtEndOfMonth(spouseMember, yearMonth);
+              return monthlySelfAge >= PENSION_STANDARD_CLAIM_AGE && monthlySpouseAge < PENSION_STANDARD_CLAIM_AGE;
+            }).length
+          : 0;
+      const selfPension = Math.round((selfAdjustedAnnual / 12) * selfPensionMonths);
+      const spousePension = Math.round((spouseAdjustedAnnual / 12) * spousePensionMonths);
+      const kakyuPension = Math.round((kakyuAmount / 12) * kakyuMonths);
+      const annualTotal = selfPension + spousePension + kakyuPension;
+      cumulative += annualTotal;
+      rows.push({
+        year,
+        selfAge,
+        spouseAge,
+        selfPensionMonths,
+        spousePensionMonths,
+        kakyuMonths,
+        selfPension,
+        spousePension,
+        kakyuPension,
+        annualTotal,
+        cumulative,
+      });
+    }
+    return {
+      selfStandardAnnual,
+      spouseStandardAnnual,
+      selfRate,
+      spouseRate,
+      selfAdjustedAnnual,
+      spouseAdjustedAnnual,
+      rows,
+    };
+  }, [
+    kakyuAmount,
+    kakyuEligible,
+    projectionEndAge,
+    employeesPensionMonths,
+    hasOldAgeEmployeesPension,
+    selfBasicAnnual,
+    selfClaimAge,
+    selfEmployeesAnnual,
+    selfMember,
+    spouseBasicAnnual,
+    spouseClaimAge,
+    spouseDependentForKakyu,
+    spouseEmployeesAnnual,
+    spouseMember,
+  ]);
+
+  const comparisonRows = useMemo(() => {
+    if (!selfMember) return [];
+    const selfStandardAnnual = selfBasicAnnual + selfEmployeesAnnual;
+    return PENSION_PLANNER_COMPARE_AGES.map((claimAge) => {
+      const annual = Math.round(selfStandardAnnual * pensionClaimRate(claimAge));
+      const startYear = yearMemberTurnsAge(selfMember, 60);
+      const endYear = yearMemberTurnsAge(selfMember, projectionEndAge);
+      const receivingMonths = Array.from({ length: Math.max(0, endYear - startYear + 1) }, (_, index) => startYear + index)
+        .flatMap((year) => yearMonthRangeForYear(year))
+        .filter((yearMonth) => memberAgeAtEndOfMonth(selfMember, yearMonth) >= claimAge).length;
+      return {
+        claimAge,
+        rate: pensionClaimRate(claimAge),
+        annual,
+        cumulative: Math.round((annual / 12) * receivingMonths),
+      };
+    });
+  }, [projectionEndAge, selfBasicAnnual, selfEmployeesAnnual, selfMember]);
+
+  if (!selfMember) return null;
+
+  const spouse65Year = spouseMember ? yearMemberTurnsAge(spouseMember, 65) : undefined;
+  const self65Year = yearMemberTurnsAge(selfMember, 65);
+  const kakyuConditionMet = Boolean(kakyuEligible && spouseMember && hasOldAgeEmployeesPension && employeesPensionMonths >= 240 && spouseDependentForKakyu);
+  const kakyuStartYear = self65Year;
+  const kakyuEndYear = spouse65Year;
+  const kakyuMonthCount = planner?.rows.reduce((sum, row) => sum + row.kakyuMonths, 0) ?? 0;
+  const kakyuReason = !spouseMember
+    ? "配偶者が登録されていません"
+    : !kakyuEligible
+      ? "加給年金を試算に含めない設定です"
+      : !hasOldAgeEmployeesPension
+        ? "本人の老齢厚生年金を受け取る前提がOFFです"
+        : employeesPensionMonths < 240
+          ? "本人の厚生年金加入月数が240月未満です"
+          : !spouseDependentForKakyu
+            ? "配偶者を生計維持対象にしない設定です"
+            : kakyuMonthCount > 0
+              ? "条件を満たす月だけ月割りで加算します"
+              : "本人65歳以降かつ配偶者65歳未満の月がありません";
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="flex flex-col gap-2 border-b pb-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="font-medium">年金受給プランナー（試算）</h3>
+          <p className="text-sm text-muted-foreground">
+            65歳標準年額を入れ、繰上げ・繰下げ後の年額と累計を確認します。この試算は既存の収入イベントには反映しません。
+          </p>
+        </div>
+        <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          繰上げは月0.4%減、繰下げは月0.7%増の目安で表示
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-md border bg-slate-50 p-3">
+          <div className="text-sm font-medium">{selfMember.name === "本人" ? "本人" : `${selfMember.name}（本人）`}</div>
+          <FormGrid>
+            <Field label="老齢基礎年金 65歳標準年額">
+              <Input type="number" value={selfBasicAnnual} onChange={(event) => updatePlannerSettings({ selfBasicAnnual: numberOrZero(event.target.value) })} />
+            </Field>
+            <Field label="老齢厚生年金 65歳標準年額">
+              <Input type="number" value={selfEmployeesAnnual} onChange={(event) => updatePlannerSettings({ selfEmployeesAnnual: numberOrZero(event.target.value) })} />
+            </Field>
+            <Field label={`受給開始年齢 ${selfClaimAge}歳`}>
+              <Input type="range" min={60} max={75} step={1} value={selfClaimAge} onChange={(event) => updatePlannerSettings({ selfClaimAge: Number(event.target.value) })} />
+            </Field>
+            <Field label="調整後年額">
+              <Input value={yen(planner?.selfAdjustedAnnual ?? 0)} readOnly />
+            </Field>
+          </FormGrid>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {pensionClaimRateLabel(selfClaimAge)}。65歳標準年額 {yen(planner?.selfStandardAnnual ?? 0)} × {(planner?.selfRate ?? 1).toFixed(3)} ={" "}
+            {yen(planner?.selfAdjustedAnnual ?? 0)}
+          </p>
+        </div>
+
+        <div className="rounded-md border bg-slate-50 p-3">
+          <div className="text-sm font-medium">{spouseMember ? (spouseMember.name === "配偶者" ? "配偶者" : `${spouseMember.name}（配偶者）`) : "配偶者"}</div>
+          <FormGrid>
+            <Field label="老齢基礎年金 65歳標準年額">
+              <Input
+                type="number"
+                value={spouseBasicAnnual}
+                onChange={(event) => updatePlannerSettings({ spouseBasicAnnual: numberOrZero(event.target.value) })}
+                disabled={!spouseMember}
+              />
+            </Field>
+            <Field label="老齢厚生年金 65歳標準年額">
+              <Input
+                type="number"
+                value={spouseEmployeesAnnual}
+                onChange={(event) => updatePlannerSettings({ spouseEmployeesAnnual: numberOrZero(event.target.value) })}
+                disabled={!spouseMember}
+              />
+            </Field>
+            <Field label={`受給開始年齢 ${spouseClaimAge}歳`}>
+              <Input
+                type="range"
+                min={60}
+                max={75}
+                step={1}
+                value={spouseClaimAge}
+                onChange={(event) => updatePlannerSettings({ spouseClaimAge: Number(event.target.value) })}
+                disabled={!spouseMember}
+              />
+            </Field>
+            <Field label="調整後年額">
+              <Input value={spouseMember ? yen(planner?.spouseAdjustedAnnual ?? 0) : "-"} readOnly />
+            </Field>
+          </FormGrid>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {spouseMember
+              ? `${pensionClaimRateLabel(spouseClaimAge)}。65歳標準年額 ${yen(planner?.spouseStandardAnnual ?? 0)} × ${(planner?.spouseRate ?? 1).toFixed(3)} = ${yen(planner?.spouseAdjustedAnnual ?? 0)}`
+              : "配偶者が基本情報に登録されていないため、配偶者分は試算しません。"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1.4fr]">
+        <div className="rounded-md border bg-white p-3">
+          <div className="text-sm font-medium">加給年金の目安</div>
+          <FormGrid>
+            <Field label="本人の老齢厚生年金">
+              <Select value={hasOldAgeEmployeesPension ? "yes" : "no"} onChange={(event) => updatePlannerSettings({ hasOldAgeEmployeesPension: event.target.value === "yes" })}>
+                <option value="yes">受け取る前提</option>
+                <option value="no">受け取らない前提</option>
+              </Select>
+            </Field>
+            <Field label="本人の厚生年金加入月数">
+              <Input type="number" min={0} value={employeesPensionMonths} onChange={(event) => updatePlannerSettings({ employeesPensionMonths: numberOrZero(event.target.value) })} />
+            </Field>
+            <Field label="加給年金を試算に含める">
+              <Select value={kakyuEligible ? "yes" : "no"} onChange={(event) => updatePlannerSettings({ kakyuEligible: event.target.value === "yes" })} disabled={!spouseMember}>
+                <option value="yes">含める</option>
+                <option value="no">含めない</option>
+              </Select>
+            </Field>
+            <Field label="配偶者の生計維持">
+              <Select value={spouseDependentForKakyu ? "yes" : "no"} onChange={(event) => updatePlannerSettings({ spouseDependentForKakyu: event.target.value === "yes" })} disabled={!spouseMember}>
+                <option value="yes">対象にする</option>
+                <option value="no">対象にしない</option>
+              </Select>
+            </Field>
+            <Field label="加給年金 年額">
+              <Input type="number" value={kakyuAmount} onChange={(event) => updatePlannerSettings({ kakyuAmount: numberOrZero(event.target.value) })} disabled={!spouseMember || !kakyuEligible} />
+            </Field>
+          </FormGrid>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>
+              表示条件: 本人が月末65歳以上、配偶者が月末65歳未満、本人の厚生年金加入月数が240月以上の月だけ加算します。
+            </p>
+            <p>
+              試算期間: {kakyuConditionMet && kakyuMonthCount > 0 ? `${kakyuStartYear}年から${kakyuEndYear}年の間で${kakyuMonthCount}か月分` : "該当月なし"}
+            </p>
+            <p>判定: {kakyuReason}</p>
+            <p>式: 加給年金年額 {yen(kakyuAmount)} ÷ 12 × 対象月数。繰上げ・繰下げの調整率は加給年金には掛けません。</p>
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-white p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">本人の受給開始年齢別 比較</div>
+              <p className="text-xs text-muted-foreground">本人の65歳標準年額だけで比較します。累計は受給開始月以降を月割りで足します。</p>
+            </div>
+            <Field label="累計比較の終了年齢">
+              <Input type="number" min={70} max={105} value={projectionEndAge} onChange={(event) => updatePlannerSettings({ projectionEndAge: numberOrZero(event.target.value) })} />
+            </Field>
+          </div>
+          <Table className="mt-2">
+            <thead>
+              <Tr>
+                <Th>受給開始</Th>
+                <Th>調整率</Th>
+                <Th>年額</Th>
+                <Th>{projectionEndAge}歳まで累計</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {comparisonRows.map((row) => (
+                <Tr key={row.claimAge}>
+                  <Td>{row.claimAge}歳</Td>
+                  <Td>{(row.rate * 100).toFixed(1)}%</Td>
+                  <Td>{yen(row.annual)}</Td>
+                  <Td>{yen(row.cumulative)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-md border bg-white">
+        <div className="border-b px-3 py-2">
+          <div className="text-sm font-medium">年次受取イメージ</div>
+          <p className="text-xs text-muted-foreground">各年の金額は対象月数で月割りします。税・社会保険への反映は、次工程で既存ロジックと接続します。</p>
+        </div>
+        <Table>
+          <thead>
+            <Tr>
+              <Th>年</Th>
+              <Th>本人年齢</Th>
+              <Th>配偶者年齢</Th>
+              <Th>本人月数</Th>
+              <Th>配偶者月数</Th>
+              <Th>加給月数</Th>
+              <Th>本人年金</Th>
+              <Th>配偶者年金</Th>
+              <Th>加給年金</Th>
+              <Th>年額合計</Th>
+              <Th>累計</Th>
+            </Tr>
+          </thead>
+          <tbody>
+            {(planner?.rows ?? []).slice(0, 36).map((row) => (
+              <Tr key={row.year}>
+                <Td>{row.year}</Td>
+                <Td>{row.selfAge}歳</Td>
+                <Td>{row.spouseAge !== undefined ? `${row.spouseAge}歳` : "-"}</Td>
+                <Td>{row.selfPensionMonths}か月</Td>
+                <Td>{row.spousePensionMonths}か月</Td>
+                <Td>{row.kakyuMonths}か月</Td>
+                <Td>{yen(row.selfPension)}</Td>
+                <Td>{yen(row.spousePension)}</Td>
+                <Td>{yen(row.kakyuPension)}</Td>
+                <Td>{yen(row.annualTotal)}</Td>
+                <Td>{yen(row.cumulative)}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 function IncomeSection({ scenario, updateScenario }: SectionProps) {
   const livingArrangementEvents = scenario.householdLivingArrangementEvents ?? [];
   const add = () =>
@@ -2497,6 +3035,7 @@ function IncomeSection({ scenario, updateScenario }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
         {scenario.incomeEvents.map((event, index) => (
           <EventEditor
             key={event.id}
@@ -3318,6 +3857,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <LateElderlyBurdenRatioTable details={autoDetails} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
+            <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
           </div>
         )}
 
@@ -3354,6 +3894,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <LateElderlyBurdenRatioTable details={autoDetails} />
             <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
+            <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
           </div>
         )}
 
@@ -3745,6 +4286,119 @@ function LateElderlyBurdenRatioTable({ details }: { details: AutoTaxYearDetail[]
   );
 }
 
+function FormulaBlock({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="rounded-md border bg-slate-50 px-3 py-3">
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      <div className="mt-2 space-y-1 font-mono text-xs leading-6 text-slate-700">
+        {lines.map((line, index) => (
+          <div key={`${title}-${index}`}>{line}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TaxSocialSensitivityTable({ scenario, details }: { scenario: ScenarioData; details: AutoTaxYearDetail[] }) {
+  const [selectedYear, setSelectedYear] = useState(details[0]?.fiscalYear ?? new Date().getFullYear());
+  const availableYears = details.map((detail) => detail.fiscalYear);
+  const fiscalYear = availableYears.includes(selectedYear) ? selectedYear : availableYears[0];
+  const headMemberId = scenario.householdProfile.headMemberId || scenario.householdMembers[0]?.id;
+
+  const rows = useMemo(() => {
+    if (!headMemberId || fiscalYear === undefined) return [];
+    const calculated = TAX_SOCIAL_SENSITIVITY_STEPS.map((extraIncome) => {
+      const declaredIncome = new Map<number, Map<string, number>>();
+      declaredIncome.set(fiscalYear, new Map([[headMemberId, extraIncome]]));
+      const detail = calculateAutoTaxDetails(scenario, declaredIncome).find((item) => item.fiscalYear === fiscalYear);
+      if (!detail) return null;
+      return {
+        extraIncome,
+        detail,
+        totals: autoTaxDetailTotal(detail),
+      };
+    }).filter((row): row is { extraIncome: number; detail: AutoTaxYearDetail; totals: ReturnType<typeof autoTaxDetailTotal> } => Boolean(row));
+    const baseTotal = calculated[0]?.totals.total ?? 0;
+    return calculated.map((row, index) => {
+      const previous = calculated[index - 1];
+      const totalDelta = row.totals.total - baseTotal;
+      const incrementalBurden = previous ? row.totals.total - previous.totals.total : 0;
+      const incrementalIncome = previous ? row.extraIncome - previous.extraIncome : 0;
+      return {
+        ...row,
+        totalDelta,
+        incrementalBurden,
+        marginalRate: incrementalIncome > 0 ? incrementalBurden / incrementalIncome : 0,
+        burdenRate: row.extraIncome > 0 ? totalDelta / row.extraIncome : 0,
+      };
+    });
+  }, [fiscalYear, headMemberId, scenario]);
+
+  if (!headMemberId || fiscalYear === undefined || rows.length === 0) return null;
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-white px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-medium">所得水準別の税・社会保険負担テーブル</h3>
+          <p className="text-sm text-muted-foreground">
+            選んだ所得年に、世帯主へ普通口座申告所得が追加で発生した場合の試算です。本体シナリオには保存せず、負担の増え方を見るためだけに一時計算します。
+          </p>
+        </div>
+        <div className="w-40">
+          <Select value={fiscalYear} onChange={(event) => setSelectedYear(numberOrZero(event.target.value))}>
+            {availableYears.map((year) => (
+              <option key={year} value={year}>
+                {year}年
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-lg border">
+        <Table className="min-w-[1200px]">
+          <thead>
+            <Tr>
+              <Th>追加申告所得</Th>
+              <Th>所得税</Th>
+              <Th>住民税</Th>
+              <Th>国民年金</Th>
+              <Th>国保</Th>
+              <Th>後期高齢者医療</Th>
+              <Th>介護</Th>
+              <Th>合計負担</Th>
+              <Th>基準比増分</Th>
+              <Th>直前の所得行からの負担増</Th>
+              <Th>直前行から見た負担率</Th>
+            </Tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <Tr key={`tax-social-sensitivity-${fiscalYear}-${row.extraIncome}`}>
+                <Td>{yen(row.extraIncome)}</Td>
+                <Td>{yen(row.totals.incomeTax)}</Td>
+                <Td>{yen(row.totals.residentTax)}</Td>
+                <Td>{yen(row.totals.nationalPension)}</Td>
+                <Td>{yen(row.totals.nationalHealthInsurance)}</Td>
+                <Td>{yen(row.totals.lateElderlyMedical)}</Td>
+                <Td>{yen(row.totals.nursingCare)}</Td>
+                <Td className="font-medium">{yen(row.totals.total)}</Td>
+                <Td className={row.totalDelta > 0 ? "text-red-600" : ""}>{yen(row.totalDelta)}</Td>
+                <Td>{row.extraIncome === 0 ? "-" : yen(row.incrementalBurden)}</Td>
+                <Td>{row.extraIncome === 0 ? "-" : `${(row.marginalRate * 100).toFixed(1)}%`}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        直前の所得行とは、この表の1つ上の行です。前年度という意味ではありません。たとえば100万円行なら、50万円行から所得が50万円増えたときの追加負担を見ます。
+        直前行から見た負担率は「直前行から所得が増えた分に対して、税・社会保険の合計負担が何%増えたか」です。
+      </p>
+    </div>
+  );
+}
+
 function TaxCalculationDetails({
   details,
   retirementOverlapAdjustments = [],
@@ -3903,7 +4557,7 @@ function TaxCalculationDetails({
                           <Td>
                             <div className="font-medium">{member.memberName}</div>
                             <div className="text-xs text-muted-foreground">
-                              {relationshipLabels[member.relationship]} / {member.ageAtYearEnd}歳
+                              {relationshipLabels[member.relationship]} / {taxYearEndAgeLabel(member.ageAtYearEnd)}
                             </div>
                           </Td>
                           <Td>{yen(member.salaryGrossAnnual)}</Td>
@@ -3930,6 +4584,83 @@ function TaxCalculationDetails({
                       ))}
                     </tbody>
                   </Table>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h4 className="font-medium">計算式ビュー</h4>
+                <p className="text-sm text-muted-foreground">
+                  自動計算で使った中間値を、式に代入して表示します。ここでは再計算せず、上の表と同じ値を式として読める形にしています。
+                </p>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {detail.memberDetails.map((member) => {
+                    const salaryIncome = Math.max(0, member.salaryGrossAnnual - member.salaryDeductionAnnual);
+                    const pensionIncome = Math.max(0, member.pensionGrossAnnual - member.pensionDeductionAnnual);
+                    const incomeTaxBaseBeforeClamp =
+                      member.taxableIncomeBeforeBasicDeductionAnnual -
+                      member.basicDeductionAnnual -
+                      member.dependentDeductionsIncomeTaxAnnual -
+                      member.socialInsuranceDeductionAnnual -
+                      member.medicalExpenseDeductionAnnual;
+                    const residentTaxBaseBeforeClamp =
+                      member.taxableIncomeBeforeBasicDeductionAnnual -
+                      RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY -
+                      member.dependentDeductionsResidentTaxAnnual -
+                      member.socialInsuranceDeductionAnnual -
+                      member.medicalExpenseDeductionAnnual;
+                    return (
+                      <div key={`${detail.fiscalYear}-${member.memberId}-formula`} className="space-y-3 rounded-lg border bg-white p-3">
+                        <div>
+                          <div className="font-medium">{member.memberName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {relationshipLabels[member.relationship]} / {taxYearEndAgeLabel(member.ageAtYearEnd)}
+                          </div>
+                        </div>
+                        <FormulaBlock
+                          title="合計所得"
+                          lines={[
+                            "給与所得 = 給与収入 - 給与所得控除。ただしマイナスなら0円",
+                            `= ${yen(member.salaryGrossAnnual)} - ${yen(member.salaryDeductionAnnual)} → ${yen(salaryIncome)}`,
+                            "公的年金等雑所得 = 年金収入 - 公的年金等控除。ただしマイナスなら0円",
+                            `= ${yen(member.pensionGrossAnnual)} - ${yen(member.pensionDeductionAnnual)} → ${yen(pensionIncome)}`,
+                            "合計所得 = 給与所得 + 公的年金等雑所得 + その他雑所得",
+                            `= ${yen(salaryIncome)} + ${yen(pensionIncome)} + ${yen(member.miscellaneousIncomeAnnual)}`,
+                            `= ${yen(member.taxableIncomeBeforeBasicDeductionAnnual)}`,
+                          ]}
+                        />
+                        <FormulaBlock
+                          title="所得税課税所得"
+                          lines={[
+                            "所得税課税所得 = 合計所得 - 基礎控除 - 扶養/配偶者控除 - 社会保険料控除 - 医療費控除",
+                            `= ${yen(member.taxableIncomeBeforeBasicDeductionAnnual)} - ${yen(member.basicDeductionAnnual)} - ${yen(member.dependentDeductionsIncomeTaxAnnual)} - ${yen(member.socialInsuranceDeductionAnnual)} - ${yen(member.medicalExpenseDeductionAnnual)}`,
+                            `= ${yen(incomeTaxBaseBeforeClamp)}`,
+                            zeroFloorLine("所得税課税所得", incomeTaxBaseBeforeClamp),
+                            `= ${yen(member.incomeTaxBaseAnnual)}`,
+                          ]}
+                        />
+                        <FormulaBlock title="所得税" lines={incomeTaxFormulaSubstitution(member.incomeTaxBaseAnnual, member.incomeTaxAnnual)} />
+                        <FormulaBlock
+                          title="住民税課税所得"
+                          lines={[
+                            "住民税課税所得 = 合計所得 - 基礎控除 - 扶養/配偶者控除 - 社会保険料控除 - 医療費控除",
+                            `= ${yen(member.taxableIncomeBeforeBasicDeductionAnnual)} - ${yen(RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY)} - ${yen(member.dependentDeductionsResidentTaxAnnual)} - ${yen(member.socialInsuranceDeductionAnnual)} - ${yen(member.medicalExpenseDeductionAnnual)}`,
+                            `= ${yen(residentTaxBaseBeforeClamp)}`,
+                            zeroFloorLine("住民税課税所得", residentTaxBaseBeforeClamp),
+                            `= ${yen(member.residentTaxBaseAnnual)}`,
+                          ]}
+                        />
+                        <FormulaBlock title="住民税" lines={residentTaxFormulaSubstitution(member.residentTaxBaseAnnual, member.residentTaxAnnual)} />
+                        <FormulaBlock
+                          title="国民年金"
+                          lines={[
+                            "国民年金 = 対象月数 × 月額保険料",
+                            `= ${member.nationalPensionMonthly > 0 ? Math.round(member.nationalPensionAnnual / member.nationalPensionMonthly) : 0}か月 × ${yen(member.nationalPensionMonthly)}`,
+                            `= ${yen(member.nationalPensionAnnual)}`,
+                          ]}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
 
@@ -4111,6 +4842,109 @@ function TaxCalculationDetails({
 
               <section className="space-y-3">
                 <h4 className="font-medium">公的医療・介護保険の概算</h4>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {(() => {
+                    const nhi = detail.nationalHealthInsuranceBreakdown;
+                    const medicalCalculated =
+                      Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.medicalIncomeRate) +
+                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.medicalPerCapita);
+                    const supportCalculated =
+                      Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.supportIncomeRate) +
+                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.supportPerCapita);
+                    const childSupportCalculated =
+                      Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.childSupportIncomeRate) +
+                      Math.round(nhi.childMemberCount * OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita);
+                    const careCalculated =
+                      Math.round(nhi.careBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.careIncomeRate) +
+                      Math.round(nhi.careMemberCount * OTA_NHI_RATES_FOR_DISPLAY.carePerCapita);
+                    return (
+                      <>
+                        <FormulaBlock
+                          title="国保 医療分"
+                          lines={[
+                            "医療分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
+                            `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.medicalIncomeRate * 100).toFixed(2)}%`,
+                            `均等割 = ${personMonthLabel(nhi.insuredMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.medicalPerCapita)}`,
+                            ...capSelectionLines("医療分", medicalCalculated, OTA_NHI_RATES_FOR_DISPLAY.medicalCap, nhi.medical),
+                          ]}
+                        />
+                        <FormulaBlock
+                          title="国保 支援分"
+                          lines={[
+                            "支援分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
+                            `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.supportIncomeRate * 100).toFixed(2)}%`,
+                            `均等割 = ${personMonthLabel(nhi.insuredMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.supportPerCapita)}`,
+                            ...capSelectionLines("支援分", supportCalculated, OTA_NHI_RATES_FOR_DISPLAY.supportCap, nhi.support),
+                          ]}
+                        />
+                        <FormulaBlock
+                          title="国保 こども分"
+                          lines={[
+                            "こども分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
+                            `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.childSupportIncomeRate * 100).toFixed(2)}%`,
+                            `均等割 = ${personMonthLabel(nhi.childMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita)}`,
+                            ...capSelectionLines("こども分", childSupportCalculated, OTA_NHI_RATES_FOR_DISPLAY.childSupportCap, nhi.childSupport),
+                          ]}
+                        />
+                        <FormulaBlock
+                          title="国保 介護分"
+                          lines={[
+                            "介護分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
+                            `所得割 = 40-64歳対象基礎所得 ${yen(nhi.careBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.careIncomeRate * 100).toFixed(2)}%`,
+                            `均等割 = ${personMonthLabel(nhi.careMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.carePerCapita)}`,
+                            ...capSelectionLines("介護分", careCalculated, OTA_NHI_RATES_FOR_DISPLAY.careCap, detail.nursingCareAnnual),
+                          ]}
+                        />
+                      </>
+                    );
+                  })()}
+                  {detail.lateElderlyMedicalBreakdown.insuredMemberCount > 0 && (
+                    <>
+                      <FormulaBlock
+                        title="後期高齢者医療 均等割軽減"
+                        lines={[
+                          "均等割軽減は、世帯の判定所得が軽減判定の閾値以下かで決まります",
+                          "閾値は固定ではありません。被保険者数と給与/年金所得者数に応じて変わります",
+                          `判定所得 ${yen(detail.lateElderlyMedicalBreakdown.equalReductionJudgmentIncome)} / 閾値 ${yen(detail.lateElderlyMedicalBreakdown.equalReductionThreshold)}`,
+                          `判定結果 = ${detail.lateElderlyMedicalBreakdown.equalReductionLabel}`,
+                          `均等割軽減額 = ${yen(detail.lateElderlyMedicalBreakdown.medicalEqualReductionAmount + detail.lateElderlyMedicalBreakdown.childSupportEqualReductionAmount)}`,
+                        ]}
+                      />
+                      <FormulaBlock
+                        title="後期高齢者医療 医療分"
+                        lines={[
+                          "医療分 = 所得割 + 均等割 - 軽減額。ただし上限額を超えた分は切り捨てます",
+                          `所得割目安 = ${yen(detail.lateElderlyMedicalBreakdown.totalBaseIncome)} × ${(TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY.medicalIncomeRate * 100).toFixed(2)}%`,
+                          `均等割目安 = ${personMonthLabel(detail.lateElderlyMedicalBreakdown.insuredMemberCount)} × ${yen(TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY.medicalPerCapita)}`,
+                          `軽減額 = 均等割 ${yen(detail.lateElderlyMedicalBreakdown.medicalEqualReductionAmount)} + 所得割 ${yen(detail.lateElderlyMedicalBreakdown.medicalIncomeReductionAmount)}`,
+                          `= ${yen(detail.lateElderlyMedicalBreakdown.medical)}`,
+                        ]}
+                      />
+                      <FormulaBlock
+                        title="後期高齢者医療 支援分"
+                        lines={[
+                          "支援分 = 所得割 + 均等割 - 軽減額。ただし上限額を超えた分は切り捨てます",
+                          `所得割目安 = ${yen(detail.lateElderlyMedicalBreakdown.totalBaseIncome)} × ${(TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY.childSupportIncomeRate * 100).toFixed(2)}%`,
+                          `均等割目安 = ${personMonthLabel(detail.lateElderlyMedicalBreakdown.insuredMemberCount)} × ${yen(TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY.childSupportPerCapita)}`,
+                          `軽減額 = 均等割 ${yen(detail.lateElderlyMedicalBreakdown.childSupportEqualReductionAmount)} + 所得割 ${yen(detail.lateElderlyMedicalBreakdown.childSupportIncomeReductionAmount)}`,
+                          `= ${yen(detail.lateElderlyMedicalBreakdown.childSupport)}`,
+                        ]}
+                      />
+                      {detail.lateElderlyBurdenRatios.length > 0 && (
+                        <FormulaBlock
+                          title="後期高齢者医療 窓口負担割合"
+                          lines={[
+                            "窓口負担割合は、住民税課税所得と年金収入+その他所得で判定します",
+                            ...detail.lateElderlyBurdenRatios.map(
+                              (row) =>
+                                `${row.memberName}: 住民税課税所得 ${yen(row.residentTaxBaseAnnual)} / 本人収入判定 ${yen(row.pensionAndOtherIncomeAnnual)} / 世帯判定 ${yen(row.householdPensionAndOtherIncomeAnnual)} → ${Math.round(row.burdenRatio * 10)}割`,
+                            ),
+                          ]}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
                 <div className="overflow-x-auto rounded-lg border">
                   <Table>
                     <thead>
@@ -4125,7 +4959,7 @@ function TaxCalculationDetails({
                       <Tr>
                         <Td>国保加入者</Td>
                         <Td>
-                          {detail.nationalHealthInsuranceBreakdown.insuredMemberCount}人 / {yen(detail.nationalHealthInsuranceBreakdown.totalBaseIncome)}
+                          {personMonthLabel(detail.nationalHealthInsuranceBreakdown.insuredMemberCount)} / {yen(detail.nationalHealthInsuranceBreakdown.totalBaseIncome)}
                         </Td>
                         <Td>{yen(detail.nationalHealthInsuranceAnnual)}</Td>
                         <Td>
@@ -4142,7 +4976,7 @@ function TaxCalculationDetails({
                       <Tr>
                         <Td>後期高齢者医療</Td>
                         <Td>
-                          {detail.lateElderlyMedicalBreakdown.insuredMemberCount}人 / {yen(detail.lateElderlyMedicalBreakdown.totalBaseIncome)}
+                          {personMonthLabel(detail.lateElderlyMedicalBreakdown.insuredMemberCount)} / {yen(detail.lateElderlyMedicalBreakdown.totalBaseIncome)}
                         </Td>
                         <Td>{yen(detail.lateElderlyMedicalAnnual)}</Td>
                         <Td>
@@ -4162,7 +4996,7 @@ function TaxCalculationDetails({
                     <ul className="list-disc space-y-1 pl-5">
                       {detail.nationalHealthInsuranceBreakdown.insuredMemberDetails.map((member) => (
                         <li key={member.memberId}>
-                          {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)}
+                          {member.memberName} {taxYearEndAgeLabel(member.ageAtYearEnd)}: baseIncome {yen(member.baseIncome)}
                         </li>
                       ))}
                     </ul>
@@ -4179,7 +5013,7 @@ function TaxCalculationDetails({
                     <ul className="list-disc space-y-1 pl-5">
                       {detail.lateElderlyMedicalBreakdown.insuredMemberDetails.map((member) => (
                         <li key={member.memberId}>
-                          {member.memberName} {member.ageAtYearEnd}歳: baseIncome {yen(member.baseIncome)} / 所得割軽減 {member.incomeReductionLabel}
+                          {member.memberName} {taxYearEndAgeLabel(member.ageAtYearEnd)}: baseIncome {yen(member.baseIncome)} / 所得割軽減 {member.incomeReductionLabel}
                           {member.incomeReductionAmount > 0 ? ` ${yen(member.incomeReductionAmount)}` : ""}
                         </li>
                       ))}
@@ -4426,7 +5260,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
     return {
       ...row,
-      label: `${row.year} / ${row.ageYears}歳`,
+      label: yearEndAgeLabel(row.year, row.ageYears),
       startLiquid: row.startingLiquidBuffer,
       endLiquid: row.endingLiquidBuffer,
       liquidChange: row.endingLiquidBuffer - row.startingLiquidBuffer,
@@ -4448,7 +5282,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       row.optionIncomeSuspendedTotal > 0,
   );
   const unrealizedGainChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
+    label: yearEndAgeLabel(row.year, row.ageYears),
     total: gainTrackedAssets.reduce((sum, asset) => sum + row.endingTrackedAssetUnrealizedGains[asset.key], 0),
     nisa: row.endingTrackedAssetUnrealizedGains.nisa,
     specificAccount: row.endingTrackedAssetUnrealizedGains.specificAccount,
@@ -4456,13 +5290,13 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     ideco: row.endingTrackedAssetUnrealizedGains.ideco,
   }));
   const optionsCollateralChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
+    label: yearEndAgeLabel(row.year, row.ageYears),
     balance: row.endingTrackedAssetBalances.ordinaryAccountForOptions,
     basis: row.endingTrackedAssetCostBasis.ordinaryAccountForOptions,
     gain: row.endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions,
   }));
   const optionsRealizedProfitChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
+    label: yearEndAgeLabel(row.year, row.ageYears),
     declaredProfit: row.declaredCapitalGainsIncomeTotal,
     retainedProfit: row.retainedSourceAssetIncomeTotal,
     sweptProfit: row.optionProfitSweepTotal,
@@ -4470,7 +5304,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
     suspendedProfit: row.optionIncomeSuspendedTotal,
   }));
   const nisaLimitChartData = result.annual.map((row) => ({
-    label: `${row.year} / ${row.ageYears}歳`,
+    label: yearEndAgeLabel(row.year, row.ageYears),
     cumulative: row.nisaCumulativeInvestment,
     remaining: Number.isFinite(row.nisaRemainingLifetimeLimit) ? row.nisaRemainingLifetimeLimit : 0,
     annualContribution: row.nisaContributionTotal,
@@ -4616,7 +5450,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 )
                 .map((row) => (
                   <Tr key={`plan-check-${row.year}`}>
-                    <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                     <Td>{compactYen(row.nisaContributionTotal)}</Td>
                     <Td className={row.nisaContributionSkippedTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaContributionSkippedTotal)}</Td>
                     <Td className={row.nisaAnnualLimitExceededTotal > 0 ? "text-destructive" : ""}>{compactYen(row.nisaAnnualLimitExceededTotal)}</Td>
@@ -4697,7 +5531,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 const cashPaymentTotal = taxTotal + socialInsuranceTotal;
                 return (
                   <Tr key={`tax-cash-${row.year}`}>
-                    <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td className={resultStickyCellClass}>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                     <Td>{compactYen(previousDeclaredGain)}</Td>
                     <Td>
                       <div>{compactYen(declaredOptionTax.totalEquivalent)}</div>
@@ -4766,7 +5600,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {declaredGainImpactRows.map((row) => (
                 <Tr key={`declared-gain-impact-${row.incomeYear}`}>
-                  <Td className={resultStickyCellClass}>{`${row.incomeYear} / ${row.incomeAgeYears}歳`}</Td>
+                  <Td className={resultStickyCellClass}>{`${row.incomeYear} / ${yearEndAgeValue(row.incomeAgeYears)}`}</Td>
                   <Td>{compactYen(row.declaredGain)}</Td>
                   <Td>
                     <div>{compactYen(row.declaredTaxEquivalentTotal)}</div>
@@ -4777,7 +5611,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                       </div>
                     )}
                   </Td>
-                  <Td>{row.paymentYear ? `${row.paymentYear} / ${row.paymentAgeYears}歳` : "-"}</Td>
+                  <Td>{row.paymentYear ? `${row.paymentYear} / ${yearEndAgeValue(row.paymentAgeYears)}` : "-"}</Td>
                   <Td>{compactYen(row.incomeTaxSettlement)}</Td>
                   <Td>{compactYen(row.residentTax)}</Td>
                   {showSourceFreeDeferredCapitalGainsTax && <Td>{compactYen(row.deferredCapitalGainsTax)}</Td>}
@@ -4834,8 +5668,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {incomeBurdenGuideRows.map((row) => (
                 <Tr key={`income-burden-guide-${row.paymentYear}`}>
-                  <Td className={resultStickyCellClass}>{`${row.paymentYear} / ${row.paymentAgeYears}歳`}</Td>
-                  <Td>{row.incomeYear ? `${row.incomeYear} / ${row.incomeAgeYears ?? "-"}歳` : "-"}</Td>
+                  <Td className={resultStickyCellClass}>{yearEndAgeLabel(row.paymentYear, row.paymentAgeYears)}</Td>
+                  <Td>{row.incomeYear ? `${row.incomeYear} / ${yearEndAgeValue(row.incomeAgeYears)}` : "-"}</Td>
                   <Td>{compactYen(row.previousCashIncome)}</Td>
                   <Td>{compactYen(row.previousDeclaredGain)}</Td>
                   <Td>{compactYen(row.previousReferenceIncome)}</Td>
@@ -4920,7 +5754,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <Table className="min-w-[1100px]">
             <thead>
               <Tr>
-                <Th className="sticky left-0 z-10 bg-card">年 / 年齢</Th>
+                <Th className="sticky left-0 z-10 bg-card">年 / 年末年齢</Th>
                 <Th>年始流動資金</Th>
                 <Th>受取収入<br />普通預金へ</Th>
                 <Th>運用口座から<br />普通預金へ</Th>
@@ -4935,7 +5769,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {liquidFlowSummaryData.map((row) => (
                 <Tr key={`liquid-flow-${row.year}`}>
-                  <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td className="sticky left-0 z-10 whitespace-nowrap bg-card">{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                   <Td>{compactYen(row.startLiquid)}</Td>
                   <Td>{compactYen(row.incomeTotal)}</Td>
                   <Td>{compactYen(row.optionProfitSweepTotal + row.optionAccountReleaseTotal)}</Td>
@@ -4968,7 +5802,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <Table>
               <thead>
                 <Tr>
-                  <Th>年 / 年齢</Th>
+                  <Th>年 / 年末年齢</Th>
                   <Th>移動額</Th>
                   <Th>移動内容</Th>
                 </Tr>
@@ -4976,7 +5810,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <tbody>
                 {assetTransferRows.map((row) => (
                   <Tr key={`asset-transfer-${row.year}`}>
-                    <Td>{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                     <Td className="text-destructive">-{compactYen(row.assetTransferTotal)}</Td>
                     <Td className="min-w-[360px] text-sm text-muted-foreground">
                       {row.assetTransferDetails.length > 0 ? row.assetTransferDetails.join(" / ") : "移動詳細なし"}
@@ -5003,7 +5837,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <Table>
               <thead className="sticky top-0 z-10 bg-white shadow-sm">
                 <Tr>
-                  <Th className="sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]">年 / 年齢</Th>
+                  <Th className="sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]">年 / 年末年齢</Th>
                   <Th>戻し額</Th>
                   <Th>戻し内容</Th>
                 </Tr>
@@ -5011,7 +5845,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <tbody>
                 {optionReleaseRows.map((row) => (
                   <Tr key={`option-release-${row.year}`}>
-                    <Td className="sticky left-0 z-10 whitespace-nowrap bg-white shadow-[1px_0_0_#cbd5e1]">{`${row.year} / ${row.ageYears}歳`}</Td>
+                    <Td className="sticky left-0 z-10 whitespace-nowrap bg-white shadow-[1px_0_0_#cbd5e1]">{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                     <Td>{compactYen(row.optionAccountReleaseTotal)}</Td>
                     <Td className="min-w-[360px] text-sm text-muted-foreground">
                       {row.optionAccountReleaseDetails.length > 0 ? row.optionAccountReleaseDetails.join(" / ") : "戻し詳細なし"}
@@ -5106,7 +5940,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Table className="min-w-[1200px]">
                 <thead className="sticky top-0 z-10 bg-white shadow-sm">
                   <Tr>
-                    <Th className={resultStickyHeaderClass}>年 / 年齢</Th>
+                    <Th className={resultStickyHeaderClass}>年 / 年末年齢</Th>
                     <Th>申告対象損益</Th>
                     <Th>口座内積上</Th>
                     <Th>普通預金へ移動</Th>
@@ -5118,7 +5952,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <tbody>
                   {optionProfitVisibilityRows.map((row) => (
                     <Tr key={`option-profit-visibility-${row.year}`}>
-                      <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                      <Td className={resultStickyCellClass}>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                       <Td>{compactYen(row.declaredCapitalGainsIncomeTotal)}</Td>
                       <Td>{compactYen(row.retainedSourceAssetIncomeTotal)}</Td>
                       <Td>{compactYen(row.optionProfitSweepTotal)}</Td>
@@ -5169,7 +6003,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <tbody>
               {result.annual.map((row) => (
                 <Tr key={`gain-${row.year}`}>
-                  <Td className={resultStickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+                  <Td className={resultStickyCellClass}>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
                   {gainTrackedAssets.map((asset) => (
                     <Td key={`${row.year}-${asset.key}-value`}>{compactYen(row.endingTrackedAssetBalances[asset.key])}</Td>
                   ))}
@@ -5227,7 +6061,9 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
     const declaredOptionProfit = result.annual.reduce((sum, row) => sum + row.declaredCapitalGainsIncomeTotal, 0);
     const optionIncomeSuspended = result.annual.reduce((sum, row) => sum + row.optionIncomeSuspendedTotal, 0);
     const cashIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
+    const nisaExecuted = result.annual.reduce((sum, row) => sum + row.nisaContributionTotal, 0);
     const nisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
+    const finalNisaRemainingLifetimeLimit = result.annual.at(-1)?.nisaRemainingLifetimeLimit ?? 0;
     const additionalInvestment = result.annual.reduce((sum, row) => sum + row.assetContributionTotal, 0);
     const taxSocial = result.annual.reduce(
       (sum, row) => sum + row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal,
@@ -5274,7 +6110,9 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       declaredOptionProfit,
       optionIncomeSuspended,
       cashIncome,
+      nisaExecuted,
       nisaSkipped,
+      finalNisaRemainingLifetimeLimit,
       additionalInvestment,
       taxSocial,
       livingAndTaxNeed,
@@ -5299,13 +6137,17 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
   const optionTaxSocialImpactRows = compareRows.map((row) => {
     const baselineTaxSocial = baselineCompareRow?.taxSocial ?? 0;
     const baselineOptionToLiquid = baselineCompareRow?.optionToLiquid ?? 0;
+    const baselineNisaExecuted = baselineCompareRow?.nisaExecuted ?? 0;
     const baselineNisaSkipped = baselineCompareRow?.nisaSkipped ?? 0;
+    const baselineNisaRemainingLifetimeLimit = baselineCompareRow?.finalNisaRemainingLifetimeLimit ?? 0;
     const baselineTargetBalance = baselineCompareRow?.result.targetAgeBalance ?? 0;
     return {
       ...row,
       taxSocialDelta: row.taxSocial - baselineTaxSocial,
       optionToLiquidDelta: row.optionToLiquid - baselineOptionToLiquid,
+      nisaExecutedDelta: row.nisaExecuted - baselineNisaExecuted,
       nisaSkippedDelta: row.nisaSkipped - baselineNisaSkipped,
+      nisaRemainingLifetimeLimitDelta: row.finalNisaRemainingLifetimeLimit - baselineNisaRemainingLifetimeLimit,
       targetBalanceDelta: (row.result.targetAgeBalance ?? 0) - baselineTargetBalance,
     };
   });
@@ -5317,13 +6159,17 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
       return "普通口座オプション利益はありません。";
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta && row.nisaSkippedDelta > 0) {
-      return "利益移動より税社保増分と投資資金需要の影響が大きく、NISA未実行が増えています。";
+      return row.nisaExecutedDelta > 0
+        ? "NISA実行額は増えていますが、追加の投資予定も増えたため未実行差も増えています。実行額と未実行差を分けて確認してください。"
+        : "利益移動より税社保増分と投資資金需要の影響が大きく、NISA未実行が増えています。";
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta) {
       return "普通口座利益はありますが、税社保増分が利益移動増分を上回っています。";
     }
     if (row.nisaSkippedDelta > 0) {
-      return "利益移動は増えていますが、NISA未実行も増えています。生活費・税社保・投資枠の配分を確認してください。";
+      return row.nisaExecutedDelta > 0
+        ? "利益移動とNISA実行額は増えていますが、未実行差も増えています。資金不足か枠上限かは残り生涯枠も確認してください。"
+        : "利益移動は増えていますが、NISA未実行も増えています。生活費・税社保・投資枠の配分を確認してください。";
     }
     return "普通口座利益により流動資金が増え、税社保増分を上回っています。";
   };
@@ -5418,7 +6264,11 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                 <Th>普通口座<br />申告対象損益</Th>
                 <Th>普通口座から<br />流動資金へ</Th>
                 <Th>税社保増分<br />基準比</Th>
+                <Th>NISA実行額</Th>
+                <Th>NISA実行額差<br />基準比</Th>
                 <Th>NISA未実行差<br />基準比</Th>
+                <Th>NISA残り生涯枠</Th>
+                <Th>NISA残り生涯枠差<br />基準比</Th>
                 <Th>指定年齢残高差<br />基準比</Th>
                 <Th>証拠金不足停止</Th>
                 <Th className="min-w-[420px]">読み方</Th>
@@ -5433,8 +6283,16 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
                   <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
                     {compactYen(row.taxSocialDelta)}
                   </Td>
+                  <Td>{compactYen(row.nisaExecuted)}</Td>
+                  <Td className={row.nisaExecutedDelta < 0 ? "text-red-600" : row.nisaExecutedDelta > 0 ? "text-teal-700" : ""}>
+                    {compactYen(row.nisaExecutedDelta)}
+                  </Td>
                   <Td className={row.nisaSkippedDelta > 0 ? "text-red-600" : row.nisaSkippedDelta < 0 ? "text-teal-700" : ""}>
                     {compactYen(row.nisaSkippedDelta)}
+                  </Td>
+                  <Td>{compactLimitYen(row.finalNisaRemainingLifetimeLimit)}</Td>
+                  <Td className={row.nisaRemainingLifetimeLimitDelta < 0 ? "text-red-600" : row.nisaRemainingLifetimeLimitDelta > 0 ? "text-teal-700" : ""}>
+                    {compactLimitYen(row.nisaRemainingLifetimeLimitDelta)}
                   </Td>
                   <Td className={row.targetBalanceDelta < 0 ? "text-red-600" : row.targetBalanceDelta > 0 ? "text-teal-700" : ""}>
                     {compactYen(row.targetBalanceDelta)}
@@ -5447,7 +6305,7 @@ function CompareSection({ items }: { items: { scenario: ScenarioData; result: Re
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
             ここは「普通口座オプション利益だけの税額」ではなく、シナリオ全体の差分です。普通口座利益は翌年の所得税精算・住民税・国保等に合算されるため、
-            税社保増分として見ます。
+            税社保増分として見ます。NISA未実行差は基準シナリオに対する未実行額の差で、NISA実行額そのものの増減ではありません。資金不足と枠上限を切り分けるため、NISA実行額とNISA残り生涯枠を併せて確認します。
           </p>
         </CardContent>
       </Card>
@@ -5832,8 +6690,8 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
     <Table className="min-w-[2400px]">
       <thead className="sticky top-0 z-10 bg-white shadow-sm">
         <Tr>
-          <Th className={stickyHeaderClass}>{period === "month" ? "年月" : "年 / 年齢"}</Th>
-          {period === "month" && <Th>年齢</Th>}
+          <Th className={stickyHeaderClass}>{period === "month" ? "年月" : "年 / 年末年齢"}</Th>
+          {period === "month" && <Th>月末年齢</Th>}
           <Th>現金収入</Th>
           <Th>生活費</Th>
           <Th>税社保支払</Th>
@@ -5923,7 +6781,7 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
         {period === "year" &&
           rows.map((row) => (
             <Tr key={row.year}>
-              <Td className={stickyCellClass}>{`${row.year} / ${row.ageYears}歳`}</Td>
+              <Td className={stickyCellClass}>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
               <Td>{compactYen(row.incomeTotal)}</Td>
               <Td>{compactYen(row.livingExpenseTotal)}</Td>
               <Td>{compactYen(row.taxInsuranceTotal)}</Td>

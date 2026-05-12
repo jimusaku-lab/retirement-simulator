@@ -128,7 +128,10 @@ export type AutoTaxYearDetail = {
   otherPublicCostAnnual: number;
   nationalHealthInsuranceBreakdown: {
     insuredMemberCount: number;
+    childMemberCount: number;
+    careMemberCount: number;
     totalBaseIncome: number;
+    careBaseIncome: number;
     medical: number;
     support: number;
     childSupport: number;
@@ -150,6 +153,8 @@ export type AutoTaxYearDetail = {
     equalReductionThreshold: number;
     medicalEqualReductionAmount: number;
     childSupportEqualReductionAmount: number;
+    medicalIncomeReductionAmount: number;
+    childSupportIncomeReductionAmount: number;
     incomeReductionAmount: number;
     insuredMemberDetails: Array<{
       memberId: string;
@@ -621,7 +626,10 @@ function calculateOtaNationalHealthInsurance(
       nursingCareAnnual: 0,
       nationalHealthInsuranceBreakdown: {
         insuredMemberCount: 0,
+        childMemberCount: 0,
+        careMemberCount: 0,
         totalBaseIncome: 0,
+        careBaseIncome: 0,
         medical: 0,
         support: 0,
         childSupport: 0,
@@ -644,7 +652,10 @@ function calculateOtaNationalHealthInsurance(
       nursingCareAnnual: 0,
       nationalHealthInsuranceBreakdown: {
         insuredMemberCount: 0,
+        childMemberCount: 0,
+        careMemberCount: 0,
         totalBaseIncome: 0,
+        careBaseIncome: 0,
         medical: 0,
         support: 0,
         childSupport: 0,
@@ -704,7 +715,10 @@ function calculateOtaNationalHealthInsurance(
     nursingCareAnnual: care,
     nationalHealthInsuranceBreakdown: {
       insuredMemberCount,
+      childMemberCount: childCount,
+      careMemberCount: careMemberCount,
       totalBaseIncome,
+      careBaseIncome,
       medical,
       support,
       childSupport,
@@ -730,6 +744,8 @@ function emptyLateElderlyMedicalBreakdown() {
     equalReductionThreshold: 0,
     medicalEqualReductionAmount: 0,
     childSupportEqualReductionAmount: 0,
+    medicalIncomeReductionAmount: 0,
+    childSupportIncomeReductionAmount: 0,
     incomeReductionAmount: 0,
     insuredMemberDetails: [],
   };
@@ -932,6 +948,8 @@ function calculateTokyoLateElderlyMedical(
   const medicalEqualReductionAmount = roundDownToHundred(medicalPerCapitaCharge * equalReduction.medicalRate);
   const childSupportEqualReductionAmount = roundDownToHundred(childSupportPerCapitaCharge * equalReduction.childSupportRate);
   const incomeReductionAmount = memberIncomes.reduce((sum, item) => sum + item.incomeReductionAmount, 0);
+  const medicalIncomeReductionAmount = memberIncomes.reduce((sum, item) => sum + item.medicalIncomeReductionAmount, 0);
+  const childSupportIncomeReductionAmount = memberIncomes.reduce((sum, item) => sum + item.childSupportIncomeReductionAmount, 0);
   const medicalIncomeCharge = memberIncomes.reduce((sum, item) => sum + item.medicalIncomeCharge, 0);
   const childSupportIncomeCharge = memberIncomes.reduce((sum, item) => sum + item.childSupportIncomeCharge, 0);
   const medical = Math.min(
@@ -965,6 +983,8 @@ function calculateTokyoLateElderlyMedical(
       equalReductionThreshold: equalReduction.threshold,
       medicalEqualReductionAmount,
       childSupportEqualReductionAmount,
+      medicalIncomeReductionAmount,
+      childSupportIncomeReductionAmount,
       incomeReductionAmount,
       insuredMemberDetails: memberIncomes.map((item) => ({
         memberId: item.member.id,

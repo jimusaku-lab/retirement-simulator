@@ -317,6 +317,21 @@ export type TaxableAccountSettings = {
   specificAccountWithholding: "withholding" | "noWithholding";
 };
 
+export type PensionPlannerSettings = {
+  selfBasicAnnual: number;
+  selfEmployeesAnnual: number;
+  spouseBasicAnnual: number;
+  spouseEmployeesAnnual: number;
+  selfClaimAge: number;
+  spouseClaimAge: number;
+  projectionEndAge: number;
+  kakyuEligible: boolean;
+  kakyuAmount: number;
+  hasOldAgeEmployeesPension: boolean;
+  employeesPensionMonths: number;
+  spouseDependentForKakyu: boolean;
+};
+
 export type ScenarioData = {
   id: string;
   name: string;
@@ -345,6 +360,7 @@ export type ScenarioData = {
   optionSubAccounts: OptionSubAccount[];
   nisaInvestmentRules: NisaInvestmentRules;
   taxableAccountSettings: TaxableAccountSettings;
+  pensionPlannerSettings?: PensionPlannerSettings;
 };
 
 export type MonthlyResult = {
