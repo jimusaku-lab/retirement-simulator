@@ -2617,6 +2617,7 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
     selfClaimAge,
     spouseClaimAge,
     projectionEndAge,
+    applyToSimulation,
     kakyuEligible,
     kakyuAmount,
     hasOldAgeEmployeesPension,
@@ -2742,11 +2743,24 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
         <div>
           <h3 className="font-medium">年金受給プランナー（試算）</h3>
           <p className="text-sm text-muted-foreground">
-            65歳標準年額を入れ、繰上げ・繰下げ後の年額と累計を確認します。この試算は既存の収入イベントには反映しません。
+            65歳標準年額を入れ、繰上げ・繰下げ後の年額と累計を確認します。標準では試算のみで、既存の収入イベントはそのまま使います。
           </p>
         </div>
-        <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          繰上げは月0.4%減、繰下げは月0.7%増の目安で表示
+        <div className="flex flex-col gap-2 md:items-end">
+          <Field label="シミュレーション反映">
+            <Select
+              value={applyToSimulation ? "on" : "off"}
+              onChange={(event) => updatePlannerSettings({ applyToSimulation: event.target.value === "on" })}
+            >
+              <option value="off">試算のみ</option>
+              <option value="on">反映する</option>
+            </Select>
+          </Field>
+          <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {applyToSimulation
+              ? "本人・配偶者の既存公的年金イベントを置き換えて本計算に反映します"
+              : "ダッシュボードと税計算は既存の収入イベントを使います"}
+          </div>
         </div>
       </div>
 
@@ -2892,7 +2906,9 @@ function PensionPlannerSection({ scenario, updateScenario }: SectionProps) {
       <div className="mt-4 rounded-md border bg-white">
         <div className="border-b px-3 py-2">
           <div className="text-sm font-medium">年次受取イメージ</div>
-          <p className="text-xs text-muted-foreground">各年の金額は対象月数で月割りします。税・社会保険への反映は、次工程で既存ロジックと接続します。</p>
+          <p className="text-xs text-muted-foreground">
+            各年の金額は対象月数で月割りします。シミュレーション反映が「試算のみ」の場合、本計算には使いません。
+          </p>
         </div>
         <Table>
           <thead>

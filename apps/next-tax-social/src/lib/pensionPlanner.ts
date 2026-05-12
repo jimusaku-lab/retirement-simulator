@@ -47,6 +47,7 @@ export function getPensionPlannerDefaults(
   spouseMember: HouseholdMember | undefined,
 ): PensionPlannerSettings {
   return {
+    applyToSimulation: false,
     selfBasicAnnual: 0,
     selfEmployeesAnnual: Math.round(findPublicPensionAnnual(scenario, selfMember?.id)),
     spouseBasicAnnual: 0,
@@ -60,6 +61,10 @@ export function getPensionPlannerDefaults(
     employeesPensionMonths: 240,
     spouseDependentForKakyu: Boolean(spouseMember),
   };
+}
+
+export function shouldApplyPensionPlannerToSimulation(scenario: ScenarioData) {
+  return scenario.pensionPlannerSettings?.applyToSimulation === true;
 }
 
 export function getPensionPlannerMembers(scenario: ScenarioData) {
@@ -83,7 +88,7 @@ export function mergePensionPlannerSettings(
 }
 
 export function isPensionPlannerReplacingEvent(scenario: ScenarioData, event: IncomeEvent) {
-  if (!scenario.pensionPlannerSettings) return false;
+  if (!shouldApplyPensionPlannerToSimulation(scenario)) return false;
   if (event.type !== "pension" || event.sourceAssetKey === "ideco") return false;
   const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
   return event.memberId === selfMember?.id || event.memberId === spouseMember?.id;
@@ -102,7 +107,7 @@ export function getPensionPlannerIncomeForMonth(
   yearMonth: YearMonth,
   monthsFromStart: number,
 ) {
-  if (!scenario.pensionPlannerSettings) return 0;
+  if (!shouldApplyPensionPlannerToSimulation(scenario)) return 0;
   if (yearMonth < scenario.userProfile.simulationStartYearMonth || yearMonth > getScenarioPlannerEndYearMonth(scenario)) return 0;
   const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
   const settings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);

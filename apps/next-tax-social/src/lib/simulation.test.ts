@@ -5279,7 +5279,7 @@ describe("simulation", () => {
     );
   });
 
-  it("年金プランナー設定がある場合は既存の公的年金イベントを置き換えて月次収入に反映する", () => {
+  it("年金プランナー設定があっても反映OFFなら既存の公的年金イベントを月次収入に使う", () => {
     const scenario = simpleScenario({
       userProfile: {
         birthDate: "1966-04-01",
@@ -5301,6 +5301,51 @@ describe("simulation", () => {
         },
       ],
       pensionPlannerSettings: {
+        applyToSimulation: false,
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 1_200_000,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 60,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const result = simulateScenario(scenario);
+    const april = result.monthly.find((row) => row.yearMonth === "2026-04");
+
+    expect(april?.incomeTotal).toBeCloseTo(999_999, 0);
+  });
+
+  it("年金プランナー反映ONの場合は既存の公的年金イベントを置き換えて月次収入に反映する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      incomeEvents: [
+        {
+          id: "manual-public-pension",
+          memberId: "member-self",
+          name: "既存公的年金",
+          type: "pension",
+          startYearMonth: "2026-04",
+          monthlyAmount: 999_999,
+          taxTreatment: "taxable",
+        },
+      ],
+      pensionPlannerSettings: {
+        applyToSimulation: true,
         selfBasicAnnual: 0,
         selfEmployeesAnnual: 1_200_000,
         spouseBasicAnnual: 0,
@@ -5349,6 +5394,7 @@ describe("simulation", () => {
         },
       ],
       pensionPlannerSettings: {
+        applyToSimulation: true,
         selfBasicAnnual: 0,
         selfEmployeesAnnual: 1_200_000,
         spouseBasicAnnual: 0,
