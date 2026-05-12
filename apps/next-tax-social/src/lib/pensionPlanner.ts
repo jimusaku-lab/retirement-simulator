@@ -5,7 +5,7 @@ export const PENSION_STANDARD_CLAIM_AGE = 65;
 export const PENSION_EARLY_REDUCTION_PER_MONTH = 0.004;
 export const PENSION_DELAYED_INCREASE_PER_MONTH = 0.007;
 export const KAKYU_PENSION_STANDARD_AMOUNT = 423_700;
-const PENSION_PLANNER_SETTINGS_VERSION = 2;
+const PENSION_PLANNER_SETTINGS_VERSION = 3;
 
 export function pensionClaimRate(claimAge: number) {
   const monthsFrom65 = Math.round((claimAge - PENSION_STANDARD_CLAIM_AGE) * 12);
@@ -108,26 +108,20 @@ export function mergePensionPlannerSettings(
   const rawSelfAnnual = Math.round(findPublicPensionAnnual(scenario, selfMember?.id));
   const rawSpouseAnnual = Math.round(findPublicPensionAnnual(scenario, spouseMember?.id));
   const isLegacyStoredSettings = (stored.settingsVersion ?? 1) < PENSION_PLANNER_SETTINGS_VERSION;
+  const shouldRecoverSelfAnnual =
+    rawSelfAnnual > 0 &&
+    ((isLegacyStoredSettings && Math.round(stored.selfEmployeesAnnual) === rawSelfAnnual) ||
+      stored.selfBasicAnnual + stored.selfEmployeesAnnual < rawSelfAnnual * 0.5);
+  const shouldRecoverSpouseAnnual =
+    rawSpouseAnnual > 0 &&
+    ((isLegacyStoredSettings && Math.round(stored.spouseEmployeesAnnual) === rawSpouseAnnual) ||
+      stored.spouseBasicAnnual + stored.spouseEmployeesAnnual < rawSpouseAnnual * 0.5);
   return {
     ...defaults,
     ...stored,
     settingsVersion: PENSION_PLANNER_SETTINGS_VERSION,
-    selfEmployeesAnnual:
-      isLegacyStoredSettings && rawSelfAnnual > 0 && Math.round(stored.selfEmployeesAnnual) === rawSelfAnnual
-        ? defaults.selfEmployeesAnnual
-        : stored.selfEmployeesAnnual,
-    spouseEmployeesAnnual:
-      isLegacyStoredSettings && rawSpouseAnnual > 0 && Math.round(stored.spouseEmployeesAnnual) === rawSpouseAnnual
-        ? defaults.spouseEmployeesAnnual
-        : stored.spouseEmployeesAnnual,
-    selfClaimAge:
-      isLegacyStoredSettings && rawSelfAnnual > 0 && Math.round(stored.selfEmployeesAnnual) === rawSelfAnnual
-        ? defaults.selfClaimAge
-        : stored.selfClaimAge,
-    spouseClaimAge:
-      isLegacyStoredSettings && rawSpouseAnnual > 0 && Math.round(stored.spouseEmployeesAnnual) === rawSpouseAnnual
-        ? defaults.spouseClaimAge
-        : stored.spouseClaimAge,
+    selfEmployeesAnnual: shouldRecoverSelfAnnual ? Math.max(0, defaults.selfEmployeesAnnual - stored.selfBasicAnnual) : stored.selfEmployeesAnnual,
+    spouseEmployeesAnnual: shouldRecoverSpouseAnnual ? Math.max(0, defaults.spouseEmployeesAnnual - stored.spouseBasicAnnual) : stored.spouseEmployeesAnnual,
   };
 }
 

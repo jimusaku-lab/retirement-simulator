@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
 import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
-import { isPensionPlannerReplacingEvent } from "@/lib/pensionPlanner";
+import { getPensionPlannerMembers, isPensionPlannerReplacingEvent, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
 import { getRetirementFilingAdvice, getRetirementOverlapAdjustments, getRetirementOverlapWarnings } from "@/lib/retirementIncome";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import {
@@ -5341,13 +5341,13 @@ describe("simulation", () => {
           name: "既存公的年金",
           type: "pension",
           startYearMonth: "2026-04",
-          monthlyAmount: 999_999,
+          monthlyAmount: 100_000,
           taxTreatment: "taxable",
         },
       ],
       pensionPlannerSettings: {
         applyToSimulation: true,
-        settingsVersion: 2,
+        settingsVersion: 3,
         selfBasicAnnual: 0,
         selfEmployeesAnnual: 1_200_000,
         spouseBasicAnnual: 0,
@@ -5405,11 +5405,12 @@ describe("simulation", () => {
       ],
       pensionPlannerSettings: {
         applyToSimulation: true,
+        settingsVersion: 2,
         selfBasicAnnual: 0,
         selfEmployeesAnnual: 1_784_604,
         spouseBasicAnnual: 0,
         spouseEmployeesAnnual: 0,
-        selfClaimAge: 65,
+        selfClaimAge: 60,
         spouseClaimAge: 65,
         projectionEndAge: 90,
         kakyuEligible: false,
@@ -5424,6 +5425,65 @@ describe("simulation", () => {
     const november = result.monthly.find((row) => row.yearMonth === "2026-11");
 
     expect(november?.incomeTotal).toBeCloseTo(148_717, 0);
+  });
+
+  it("壊れた保存済みプランナー年額が既存公的年金より明らかに小さい場合は既存イベントから復元する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-10-15",
+        simulationStartYearMonth: "2026-10",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-10-15",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "manual-public-pension",
+          memberId: "member-self",
+          name: "既存公的年金",
+          type: "pension",
+          startYearMonth: "2026-11",
+          monthlyAmount: 148_717,
+          taxTreatment: "taxable",
+        },
+      ],
+      pensionPlannerSettings: {
+        applyToSimulation: true,
+        settingsVersion: 2,
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 196_692,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 65,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+
+    const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
+    const settings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
+
+    expect(settings.selfEmployeesAnnual).toBe(2_348_163);
+    expect(settings.selfClaimAge).toBe(65);
   });
 
   it("年金プランナー反映ONでも資産由来の年金イベントは置き換えない", () => {
@@ -5497,12 +5557,13 @@ describe("simulation", () => {
           name: "既存公的年金",
           type: "pension",
           startYearMonth: "2026-04",
-          monthlyAmount: 999_999,
+          monthlyAmount: 100_000,
           taxTreatment: "taxable",
         },
       ],
       pensionPlannerSettings: {
         applyToSimulation: true,
+        settingsVersion: 3,
         selfBasicAnnual: 0,
         selfEmployeesAnnual: 1_200_000,
         spouseBasicAnnual: 0,
