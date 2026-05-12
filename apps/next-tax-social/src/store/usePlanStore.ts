@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { sampleState } from "@/data/sampleData";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import { getPensionPlannerMembers, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
 import { cloneScenario } from "@/lib/simulation";
 import type {
   AgeExpenseAdjustment,
@@ -508,6 +509,10 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
 
   delete (scenario.initialAssets as ScenarioData["initialAssets"] & { securities?: number }).securities;
   syncLinkedIncomeEndYearMonths(scenario);
+  if (scenario.pensionPlannerSettings) {
+    const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
+    scenario.pensionPlannerSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
+  }
   return scenario;
 }
 

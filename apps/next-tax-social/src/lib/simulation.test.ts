@@ -5375,7 +5375,7 @@ describe("simulation", () => {
         birthDate: "1966-10-15",
         simulationStartYearMonth: "2026-10",
         simulationEndMode: "yearMonth",
-        simulationEndYearMonth: "2026-12",
+        simulationEndYearMonth: "2031-12",
         targetBalanceAge: 60,
         cashReserve: 0,
       },
@@ -5433,7 +5433,7 @@ describe("simulation", () => {
         birthDate: "1966-10-15",
         simulationStartYearMonth: "2026-10",
         simulationEndMode: "yearMonth",
-        simulationEndYearMonth: "2026-12",
+        simulationEndYearMonth: "2031-12",
         targetBalanceAge: 60,
         cashReserve: 0,
       },
@@ -5484,6 +5484,74 @@ describe("simulation", () => {
 
     expect(settings.selfEmployeesAnnual).toBe(2_348_163);
     expect(settings.selfClaimAge).toBe(65);
+  });
+
+  it("年金プランナー値を正として保存した後は旧公的年金イベントを消しても同じ年金額で計算する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-10-15",
+        simulationStartYearMonth: "2026-10",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2031-12",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      householdMembers: [
+        {
+          id: "member-self",
+          name: "本人",
+          relationship: "self",
+          birthDate: "1966-10-15",
+          isResident: true,
+          isNationalHealthInsuranceMember: true,
+          isLateElderlyMedicalMember: false,
+          isLongTermCareInsured: false,
+          isDependent: false,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "manual-public-pension",
+          memberId: "member-self",
+          name: "既存公的年金",
+          type: "pension",
+          startYearMonth: "2026-11",
+          monthlyAmount: 148_717,
+          taxTreatment: "taxable",
+        },
+      ],
+      pensionPlannerSettings: {
+        applyToSimulation: true,
+        settingsVersion: 2,
+        selfBasicAnnual: 0,
+        selfEmployeesAnnual: 196_692,
+        spouseBasicAnnual: 0,
+        spouseEmployeesAnnual: 0,
+        selfClaimAge: 65,
+        spouseClaimAge: 65,
+        projectionEndAge: 90,
+        kakyuEligible: false,
+        kakyuAmount: 423_700,
+        hasOldAgeEmployeesPension: true,
+        employeesPensionMonths: 240,
+        spouseDependentForKakyu: false,
+      },
+    });
+    const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
+    const canonicalScenario: ScenarioData = {
+      ...scenario,
+      pensionPlannerSettings: mergePensionPlannerSettings(scenario, selfMember, spouseMember),
+    };
+    const withoutLegacyPublicPension: ScenarioData = {
+      ...canonicalScenario,
+      incomeEvents: canonicalScenario.incomeEvents.filter((event) => event.id !== "manual-public-pension"),
+    };
+
+    const beforeDeletion = simulateScenario(canonicalScenario).monthly.find((row) => row.yearMonth === "2031-11");
+    const afterDeletion = simulateScenario(withoutLegacyPublicPension).monthly.find((row) => row.yearMonth === "2031-11");
+
+    expect(beforeDeletion?.incomeTotal).toBeGreaterThan(0);
+    expect(afterDeletion?.incomeTotal).toBeCloseTo(beforeDeletion?.incomeTotal ?? 0, 0);
   });
 
   it("年金プランナー反映ONでも資産由来の年金イベントは置き換えない", () => {
