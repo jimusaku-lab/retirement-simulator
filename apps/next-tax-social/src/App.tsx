@@ -4575,6 +4575,64 @@ function TaxCalculationDetails({
               </section>
 
               <section className="space-y-3">
+                <h4 className="font-medium">国民年金の個人別内訳</h4>
+                <p className="text-sm text-muted-foreground">
+                  国民年金は世帯合計だけでなく、メンバー別の対象月数で確認します。20歳以上60歳未満、国保加入、後期高齢者医療対象外の月だけを数えます。
+                </p>
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <thead>
+                      <Tr>
+                        <Th>メンバー</Th>
+                        <Th>年末年齢</Th>
+                        <Th>対象月数</Th>
+                        <Th>月額</Th>
+                        <Th>年額</Th>
+                        <Th className="min-w-[320px]">読み方</Th>
+                      </Tr>
+                    </thead>
+                    <tbody>
+                      {detail.memberDetails.map((member) => {
+                        const eligibleMonths =
+                          member.nationalPensionMonthly > 0 ? Math.round(member.nationalPensionAnnual / member.nationalPensionMonthly) : 0;
+                        return (
+                          <Tr key={`${detail.fiscalYear}-${member.memberId}-national-pension`}>
+                            <Td>
+                              <div className="font-medium">{member.memberName}</div>
+                              <div className="text-xs text-muted-foreground">{relationshipLabels[member.relationship]}</div>
+                            </Td>
+                            <Td>{taxYearEndAgeLabel(member.ageAtYearEnd)}</Td>
+                            <Td>{eligibleMonths}か月</Td>
+                            <Td>{yen(member.nationalPensionMonthly)}</Td>
+                            <Td className={member.nationalPensionAnnual > 0 ? "font-medium" : ""}>{yen(member.nationalPensionAnnual)}</Td>
+                            <Td className="min-w-[320px] text-sm text-muted-foreground">
+                              {eligibleMonths > 0
+                                ? `${member.memberName}がこの年に${eligibleMonths}か月分の国民年金対象です。`
+                                : `${member.memberName}はこの年の国民年金対象月がありません。`}
+                            </Td>
+                          </Tr>
+                        );
+                      })}
+                      <Tr>
+                        <Td className="font-medium">世帯合計</Td>
+                        <Td>-</Td>
+                        <Td>{detail.memberDetails.reduce(
+                          (sum, member) =>
+                            sum + (member.nationalPensionMonthly > 0 ? Math.round(member.nationalPensionAnnual / member.nationalPensionMonthly) : 0),
+                          0,
+                        )}か月</Td>
+                        <Td>-</Td>
+                        <Td className="font-medium">{yen(nationalPensionAnnualTotal)}</Td>
+                        <Td className="min-w-[320px] text-sm text-muted-foreground">
+                          年度税額の内訳に出る国民年金は、この個人別年額の合計です。
+                        </Td>
+                      </Tr>
+                    </tbody>
+                  </Table>
+                </div>
+              </section>
+
+              <section className="space-y-3">
                 <h4 className="font-medium">メンバー別の課税対象収入と控除</h4>
                 <p className="text-sm text-muted-foreground">この表の収入は {detail.fiscalYear}年1月から12月までの課税対象収入を集計しています。</p>
                 <div className="overflow-x-auto rounded-lg border">
