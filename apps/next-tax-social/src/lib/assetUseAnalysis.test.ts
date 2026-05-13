@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateAdditionalSpendingTrial,
   calculateAssetUseCategoryBreakdown,
   calculateEnjoymentShare,
   calculateTargetBalanceAnalysis,
   findSpecialExpenseCategoryWarnings,
 } from "@/lib/assetUseAnalysis";
+import { sampleState } from "@/data/sampleData";
+import { simulateScenario } from "@/lib/simulation";
 import type { AnnualResult } from "@/types";
 
 function annualRow(overrides: Partial<AnnualResult>): AnnualResult {
@@ -167,5 +170,25 @@ describe("asset use analysis", () => {
         reason: "名称から楽しみ支出の可能性があります。生活維持のままでよいか確認してください。",
       },
     ]);
+  });
+
+  it("runs an additional spending trial without mutating the source scenario", () => {
+    const scenario = structuredClone(sampleState.scenarios[0]);
+    const originalSpecialExpenseCount = scenario.specialExpenses.length;
+    const baselineResult = simulateScenario(scenario);
+    const trial = calculateAdditionalSpendingTrial(scenario, baselineResult, {
+      startAge: 60,
+      endAge: 60,
+      annualAmount: 1_200_000,
+      category: "enjoyment",
+    });
+
+    expect(scenario.specialExpenses).toHaveLength(originalSpecialExpenseCount);
+    expect(trial.monthlyAmount).toBe(100_000);
+    expect(trial.totalAddedExpense).toBeGreaterThan(0);
+    expect(trial.startYearMonth).toBeDefined();
+    expect(trial.endYearMonth).toBeDefined();
+    expect(trial.result.targetAgeBalance ?? 0).toBeLessThan(baselineResult.targetAgeBalance ?? 0);
+    expect(trial.targetBalance.actualAmount).toBe(trial.result.targetAgeBalance);
   });
 });

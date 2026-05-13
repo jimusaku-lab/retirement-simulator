@@ -49,6 +49,7 @@ import {
   type FlexibleFreeCashPeriod,
 } from "@/lib/flexibleFreeCash";
 import {
+  calculateAdditionalSpendingTrial,
   calculateAssetUseCategoryBreakdown,
   calculateEnjoymentShare,
   calculateTargetBalanceAnalysis,
@@ -780,6 +781,10 @@ function FlexibleFreeCashPeriodFields({ period, updateScenario }: { period: Flex
 
 function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
+  const [trialStartAge, setTrialStartAge] = useState(flexibleFreeCashPeriod.startAge);
+  const [trialEndAge, setTrialEndAge] = useState(flexibleFreeCashPeriod.endAge);
+  const [trialAnnualAmount, setTrialAnnualAmount] = useState(1_000_000);
+  const [trialCategory, setTrialCategory] = useState<SpecialExpenseCategory>("enjoyment");
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
   const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
   const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
@@ -801,6 +806,21 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
     { label: "生活費・税社保", value: categoryBreakdown.livingAndTax, note: "通常生活費と税・社会保険" },
   ];
   const categoryChartData = categoryRows.map((row) => ({ name: row.label, amount: row.value }));
+  const additionalSpendingTrial = useMemo(
+    () =>
+      calculateAdditionalSpendingTrial(scenario, result, {
+        startAge: trialStartAge,
+        endAge: trialEndAge,
+        annualAmount: trialAnnualAmount,
+        category: trialCategory,
+      }),
+    [scenario, result, trialAnnualAmount, trialCategory, trialEndAge, trialStartAge],
+  );
+  const targetBalanceImpact = additionalSpendingTrial.targetBalance.actualAmount - targetBalanceAnalysis.actualAmount;
+  const setTrialPeriod = (startAge: number, endAge: number) => {
+    setTrialStartAge(startAge);
+    setTrialEndAge(Math.max(startAge, endAge));
+  };
 
   return (
     <div className="space-y-6">
@@ -866,6 +886,112 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
               </tbody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>健康寿命期の追加支出シミュレーター</CardTitle>
+          <CardDescription>
+            保存データは変更せず、仮の月次追加支出を一時シナリオに入れて再計算します。特別支出に登録する前の粗い検討用です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_1fr]">
+            <Field label="開始年齢">
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={trialStartAge}
+                onChange={(event) => {
+                  const nextStartAge = Math.trunc(numberOrZero(event.target.value));
+                  setTrialStartAge(nextStartAge);
+                  setTrialEndAge((current) => Math.max(nextStartAge, current));
+                }}
+              />
+            </Field>
+            <Field label="終了年齢">
+              <Input
+                type="number"
+                min={trialStartAge}
+                step={1}
+                value={trialEndAge}
+                onChange={(event) => setTrialEndAge(Math.max(trialStartAge, Math.trunc(numberOrZero(event.target.value))))}
+              />
+            </Field>
+            <Field label="年額追加支出">
+              <Input
+                type="number"
+                min={0}
+                step={100_000}
+                value={trialAnnualAmount}
+                onChange={(event) => setTrialAnnualAmount(numberOrZero(event.target.value))}
+              />
+            </Field>
+            <Field label="カテゴリ">
+              <Select value={trialCategory} onChange={(event) => setTrialCategory(event.target.value as SpecialExpenseCategory)}>
+                {Object.entries(specialExpenseCategoryLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 69)}>60〜69歳</Button>
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 72)}>60〜72歳</Button>
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(flexibleFreeCashPeriod.startAge, flexibleFreeCashPeriod.endAge)}>
+              現在の集計期間
+            </Button>
+            {[500_000, 1_000_000, 1_500_000, 2_000_000].map((amount) => (
+              <Button key={amount} variant="ghost" size="sm" onClick={() => setTrialAnnualAmount(amount)}>
+                年{compactYen(amount)}
+              </Button>
+            ))}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric
+              title="追加支出総額"
+              value={compactYen(additionalSpendingTrial.totalAddedExpense)}
+              sub={`${additionalSpendingTrial.startYearMonth ?? "-"}〜${additionalSpendingTrial.endYearMonth ?? "-"} に月額 ${compactYen(additionalSpendingTrial.monthlyAmount)}`}
+            />
+            <Metric
+              title={`${scenario.userProfile.targetBalanceAge}歳残高`}
+              value={compactYen(additionalSpendingTrial.targetBalance.actualAmount)}
+              sub={`現状比 ${compactYen(targetBalanceImpact)}`}
+            />
+            <Metric
+              title="目標残高との差額"
+              value={compactYen(additionalSpendingTrial.targetBalance.gap)}
+              sub={`${scenario.userProfile.targetBalanceAge}歳目標 ${compactYen(additionalSpendingTrial.targetBalance.targetAmount)} との差`}
+            />
+            <Metric
+              title="判定"
+              value={targetBalanceStatusLabels[additionalSpendingTrial.targetBalance.status]}
+              sub={additionalSpendingTrial.targetBalance.status === "shortfall" ? "この追加支出では目標割れです" : "目標残高を守る試算です"}
+            />
+            <Metric title="資産寿命" value={additionalSpendingTrial.depletionLabel} sub={additionalSpendingTrial.result.depletionYearMonth ?? "期間内維持"} />
+            <Metric
+              title={`${additionalSpendingTrial.input.endAge}歳時点残高`}
+              value={compactYen(additionalSpendingTrial.flexibleFreeCash.periodEndBalance)}
+              sub="追加支出込みの指定期間末残高"
+            />
+            <Metric
+              title="期間中最低流動資金"
+              value={compactYen(additionalSpendingTrial.flexibleFreeCash.minimumLiquidBuffer)}
+              sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`}
+            />
+            <Metric
+              title="年平均余力"
+              value={compactYen(additionalSpendingTrial.flexibleFreeCash.averageAnnualFreeCash)}
+              sub="追加支出込みの現金収支余力"
+            />
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">
+            この試算は、指定期間に年額追加支出を月割りで置いた場合の影響を見ます。実行する支出が単発旅行や数年おきの支出なら、後で特別支出タブに具体的な年月で登録してください。
+          </p>
         </CardContent>
       </Card>
 
