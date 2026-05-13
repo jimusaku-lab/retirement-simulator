@@ -455,9 +455,8 @@ function App() {
   } = usePlanStore();
 
   const activeScenario = scenarios.find((scenario) => scenario.id === activeScenarioId) ?? scenarios[0];
-  const deferredActiveScenario = useDeferredValue(activeScenario);
   const deferredScenarios = useDeferredValue(scenarios);
-  const result = useMemo(() => simulateScenario(deferredActiveScenario), [deferredActiveScenario]);
+  const result = useMemo(() => simulateScenario(activeScenario), [activeScenario]);
   const allResults = useMemo(
     () => activeTab === "compare"
       ? deferredScenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) }))
