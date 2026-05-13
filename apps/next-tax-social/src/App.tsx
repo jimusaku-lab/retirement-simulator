@@ -979,6 +979,21 @@ function AssetUseWorkspace({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,1.2fr)_minmax(260px,2fr)]">
+            <Field label="このカードの表示シナリオ">
+              <Select value={activeScenarioId} onChange={(event) => setActiveScenario(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6 text-muted-foreground">
+              現在は「{scenario.name}」の {flexibleFreeCashLabel} を表示しています。
+              この期間内の普通口座オプション設定が同じシナリオでは、数値も同じになります。
+            </div>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <div className="text-sm text-muted-foreground">申告対象利益</div>
