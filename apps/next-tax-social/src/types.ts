@@ -33,6 +33,8 @@ export type UserProfile = {
   simulationEndYearMonth?: YearMonth;
   targetBalanceAge: number;
   targetBalanceAmount?: number;
+  flexibleFreeCashStartAge?: number;
+  flexibleFreeCashEndAge?: number;
   plannedDrawdownEnabled?: boolean;
   cashReserve: number;
   municipality?: string;

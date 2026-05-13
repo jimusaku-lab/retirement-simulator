@@ -12,6 +12,8 @@ const baseScenario: ScenarioData = {
     simulationEndAge: 95,
     targetBalanceAge: 90,
     targetBalanceAmount: 5_000_000,
+    flexibleFreeCashStartAge: 60,
+    flexibleFreeCashEndAge: 72,
     plannedDrawdownEnabled: false,
     cashReserve: 500_000,
     municipality: "東京都大田区",
