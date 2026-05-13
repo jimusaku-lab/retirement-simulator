@@ -42,8 +42,10 @@ import {
 } from "@/lib/retirementIncome";
 import { getTaxFilingAdvice, type TaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import {
+  calculateSpecialExpenseCategoryTotals,
   calculateFlexibleFreeCashSummary,
   normalizeFlexibleFreeCashPeriod,
+  type SpecialExpenseCategory,
   type FlexibleFreeCashPeriod,
 } from "@/lib/flexibleFreeCash";
 import {
@@ -152,6 +154,14 @@ const TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY = {
 };
 const TAX_SOCIAL_SENSITIVITY_STEPS = [0, 500_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000];
 const PENSION_PLANNER_COMPARE_AGES = [60, 62, 65, 68, 70, 75];
+const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
+  enjoyment: "楽しみ",
+  lifeMaintenance: "生活維持",
+  housingCar: "住宅・車",
+  medicalCare: "医療・介護",
+  familySupport: "家族支援",
+  contingency: "予備・想定外",
+};
 
 function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
   const taxableGain = Math.max(0, declaredGain);
@@ -688,10 +698,10 @@ function FlexibleFreeCashPeriodFields({ period, updateScenario }: { period: Flex
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <Field label="自由資金 開始年齢">
+      <Field label="資産活用 開始年齢">
         <Input type="number" min={0} step={1} value={period.startAge} onChange={(event) => updateStartAge(event.target.value)} />
       </Field>
-      <Field label="自由資金 終了年齢">
+      <Field label="資産活用 終了年齢">
         <Input type="number" min={period.startAge} step={1} value={period.endAge} onChange={(event) => updateEndAge(event.target.value)} />
       </Field>
     </div>
@@ -707,10 +717,13 @@ function Dashboard({
   result: ReturnType<typeof simulateScenario>;
   updateScenario: SectionProps["updateScenario"];
 }) {
-  const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+  const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
+  const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
+  const assetLifeSub = `${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`;
+  const otherSpecialExpenseTotal = Math.max(0, flexibleFreeCashSummary.specialExpenseTotal - specialExpenseCategoryTotals.enjoyment);
   const chartData = result.annual.map((row) => ({
     year: String(row.year),
     age: `年末${row.ageYears}歳`,
@@ -729,44 +742,33 @@ function Dashboard({
     contribution: -row.assetContributionTotal,
     net: row.netCashFlow,
   }));
-  const averageIncome =
-    result.monthly.length ? result.monthly.reduce((sum, row) => sum + row.incomeTotal, 0) / result.monthly.length : 0;
-  const averageContribution =
-    result.monthly.length ? result.monthly.reduce((sum, row) => sum + row.assetContributionTotal, 0) / result.monthly.length : 0;
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric title="現在総資産" value={compactYen(getTotalAssets(scenario))} sub={`対象資産 ${compactYen(getSimulationTargetAssets(scenario))}`} />
+        <Metric title="現在資産" value={compactYen(getTotalAssets(scenario))} sub={`取り崩し対象 ${compactYen(getSimulationTargetAssets(scenario))}`} />
+        <Metric title={`資産寿命 / ${scenario.userProfile.targetBalanceAge}歳残高`} value={assetLifeValue} sub={assetLifeSub} />
         <Metric
-          title="月平均生活費"
-          value={compactYen(getBaseMonthlyExpense(scenario.monthlyExpenses, excludeTaxExpense))}
-          sub={excludeTaxExpense ? "税・社会保険を除く入力値" : "入力値ベース"}
+          title={`${flexibleFreeCashLabel} 資産活用額`}
+          value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)}
+          sub={flexibleFreeCashSummary.totalFreeCash < 0 ? "現金収入等で足りず資産で補った額" : `現金収支余力 ${compactYen(flexibleFreeCashSummary.totalFreeCash)}`}
         />
-        <Metric title="月平均取り崩し" value={compactYen(result.averageMonthlyWithdrawal)} sub={`累計 ${compactYen(result.totalWithdrawal)}`} />
-        <Metric
-          title="資産寿命"
-          value={result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内は維持"}
-          sub={result.depletionYearMonth ?? "枯渇なし"}
-        />
-        <Metric title={`${scenario.userProfile.targetBalanceAge}歳時点残高`} value={compactYen(result.targetAgeBalance ?? 0)} sub="月末残高" />
-        <Metric title={`${flexibleFreeCashLabel} 自由資金`} value={compactYen(flexibleFreeCashSummary.totalFreeCash)} sub="追加投資は差し引かない" />
-        <Metric title={`${flexibleFreeCashLabel} 年平均`} value={compactYen(flexibleFreeCashSummary.averageAnnualFreeCash)} sub={`${flexibleFreeCashSummary.yearCount}年分で集計`} />
         <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="指定期間末の年末資産" />
-        <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub="年末の現金・普通預金" />
-        <Metric title="流動資金（現金・普通預金）最低保持額" value={compactYen(scenario.userProfile.cashReserve)} sub="現金と普通預金で維持したい額" />
-        <Metric title="月平均現金収入" value={compactYen(averageIncome)} sub="源泉・手数料控除後" />
-        <Metric title="月平均追加投資" value={compactYen(averageContribution)} sub="資産別の積立" />
-        <Metric title="最大赤字月" value={compactYen(Math.abs(result.maxDeficitMonth?.netCashFlow ?? 0))} sub={result.maxDeficitMonth?.yearMonth ?? "-"} />
-        <Metric title="世帯人数" value={`${scenario.householdMembers.length}人`} sub={scenario.householdProfile.municipality} />
-        <Metric title="選択シナリオ" value={scenario.name} sub={scenario.compare ? "比較対象" : "比較対象外"} />
+        <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
+        <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="生活費と税社保の実支出" />
+        <Metric title={`${flexibleFreeCashLabel} その他特別支出`} value={compactYen(otherSpecialExpenseTotal)} sub="住宅・車、医療、家族支援、予備等" />
+        <Metric
+          title="NISA実行額 / 残り枠"
+          value={compactYen(flexibleFreeCashSummary.nisaContributionTotal)}
+          sub={`残り ${compactLimitYen(flexibleFreeCashSummary.nisaRemainingLifetimeLimit)}`}
+        />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>自由資金集計期間</CardTitle>
+          <CardTitle>資産活用集計期間</CardTitle>
           <CardDescription>
-            自由資金 = 現金収入 + 普通口座から現金・普通預金へ戻した額 - 生活費 - 税社保 - 特別支出 - iDeCo手数料。追加投資は別指標として扱います。
+            資産活用額は、現金収入と普通口座から現金・普通預金へ戻した額で、生活費・税社保・特別支出・iDeCo手数料を賄いきれなかった額をプラス表示します。追加投資は別指標として扱います。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -5240,6 +5242,7 @@ function SpecialSection({ scenario, updateScenario }: SectionProps) {
         name: "新しい特別支出",
         yearMonth: s.userProfile.simulationStartYearMonth,
         amount: 0,
+        category: "lifeMaintenance",
         schedule: "once",
         repeatIntervalMonths: 12,
       }),
@@ -5307,6 +5310,18 @@ function SpecialSection({ scenario, updateScenario }: SectionProps) {
                   <option value="semiannual">半年に1回</option>
                   <option value="yearly">毎年発生</option>
                   <option value="customInterval">任意の月数ごと</option>
+                </Select>
+              </Field>
+              <Field label="カテゴリ">
+                <Select
+                  value={event.category ?? "lifeMaintenance"}
+                  onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].category = e.target.value as SpecialExpenseCategory))}
+                >
+                  {Object.entries(specialExpenseCategoryLabels).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
                 </Select>
               </Field>
               <Field label={event.schedule && event.schedule !== "once" ? "開始年月" : "年月"}>
@@ -6455,7 +6470,7 @@ function CompareSection({
             <FlexibleFreeCashPeriodFields period={flexibleFreeCashPeriod} updateScenario={updateScenario} />
           </div>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            比較表の自由資金列は、ここで指定した同じ年齢範囲で全シナリオを集計します。追加投資は自由資金から差し引かず、NISA未実行・追加投資列と分けて確認します。
+            比較表の資産活用額は、ここで指定した同じ年齢範囲で全シナリオを集計します。追加投資は差し引かず、NISA未実行・追加投資列と分けて確認します。
           </p>
         </CardContent>
         <CardContent className="table-scroll overflow-auto">
@@ -6466,8 +6481,8 @@ function CompareSection({
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>指定年齢残高</Th>
-                <Th>{flexibleFreeCashLabel}<br />自由資金</Th>
-                <Th>{flexibleFreeCashLabel}<br />年平均</Th>
+                <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
+                <Th>{flexibleFreeCashLabel}<br />年平均余力</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
                 <Th>{flexibleFreeCashLabel}<br />最低流動資金</Th>
                 <Th>生活資金不足</Th>
@@ -6507,7 +6522,7 @@ function CompareSection({
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
-                  <Td className={flexibleFreeCash.totalFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.totalFreeCash)}</Td>
+                  <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
                   <Td className={flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.averageAnnualFreeCash)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
                   <Td className={flexibleFreeCash.minimumLiquidBuffer < 0 ? "text-red-600" : ""}>{compactYen(flexibleFreeCash.minimumLiquidBuffer)}</Td>

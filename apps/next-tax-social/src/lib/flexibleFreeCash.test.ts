@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateSpecialExpenseCategoryTotals,
   calculateFlexibleFreeCashSummary,
   getAnnualFlexibleFreeCash,
   normalizeFlexibleFreeCashPeriod,
@@ -140,8 +141,39 @@ describe("flexible free cash", () => {
 
     expect(summary.yearCount).toBe(2);
     expect(summary.totalFreeCash).toBe(1_500_000);
+    expect(summary.assetUtilizationAmount).toBe(0);
     expect(summary.averageAnnualFreeCash).toBe(750_000);
     expect(summary.periodEndBalance).toBe(6_000_000);
     expect(summary.minimumLiquidBuffer).toBe(500_000);
+  });
+
+  it("summarizes special expenses by explicit category inside the selected period", () => {
+    const result = {
+      annual: [
+        annualRow({ year: 2026, ageYears: 60 }),
+        annualRow({ year: 2027, ageYears: 61 }),
+        annualRow({ year: 2028, ageYears: 62 }),
+      ],
+      monthly: [
+        { yearMonth: "2026-04", ageYears: 60 },
+        { yearMonth: "2027-04", ageYears: 61 },
+        { yearMonth: "2028-04", ageYears: 62 },
+      ],
+    };
+    const totals = calculateSpecialExpenseCategoryTotals(
+      {
+        specialExpenses: [
+          { id: "trip", name: "旅行", yearMonth: "2026-04", amount: 300_000, category: "enjoyment" },
+          { id: "repair", name: "修繕", yearMonth: "2027-04", amount: 500_000, category: "housingCar" },
+          { id: "legacy", name: "未分類", yearMonth: "2028-04", amount: 100_000 },
+        ],
+      },
+      result as never,
+      { startAge: 60, endAge: 61 },
+    );
+
+    expect(totals.enjoyment).toBe(300_000);
+    expect(totals.housingCar).toBe(500_000);
+    expect(totals.lifeMaintenance).toBe(0);
   });
 });

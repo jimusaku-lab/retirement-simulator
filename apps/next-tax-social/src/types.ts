@@ -226,6 +226,7 @@ export type SpecialExpenseEvent = {
   name: string;
   yearMonth: YearMonth;
   amount: number;
+  category?: "enjoyment" | "lifeMaintenance" | "housingCar" | "medicalCare" | "familySupport" | "contingency";
   schedule?: "once" | "monthly" | "quarterly" | "semiannual" | "yearly" | "customInterval";
   repeatIntervalMonths?: number;
   endYearMonth?: YearMonth;

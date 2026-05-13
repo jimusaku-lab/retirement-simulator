@@ -128,8 +128,8 @@ const baseScenario: ScenarioData = {
   retirementIncomeEvents: [],
   taxDeductionEvents: [],
   specialExpenses: [
-    { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000 },
-    { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000 },
+    { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000, category: "enjoyment" },
+    { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000, category: "housingCar" },
   ],
   assetContributionEvents: [
     {
@@ -330,6 +330,7 @@ export const sampleState: RetirementPlanState = {
         name: "大きめの臨時支出",
         yearMonth: "2030-03",
         amount: 2_500_000,
+        category: "contingency",
       });
     }),
     scenarioWith("growth-zero", "利回り0%", (scenario) => {

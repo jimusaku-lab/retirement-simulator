@@ -377,7 +377,7 @@ export function isContributionActive(
   return yearMonth >= event.startYearMonth && (!event.endYearMonth || yearMonth <= event.endYearMonth);
 }
 
-function isSpecialExpenseActive(
+export function isSpecialExpenseActive(
   event: Pick<SpecialExpenseEvent, "yearMonth" | "endYearMonth" | "schedule" | "repeatIntervalMonths">,
   yearMonth: YearMonth,
 ) {
