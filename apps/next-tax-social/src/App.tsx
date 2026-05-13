@@ -4239,7 +4239,7 @@ function IncomeSection({
   const hasIncomeSyncSelection = Object.values(incomeSyncOptions).some(Boolean);
   const selectedIncomeSyncLabels = [
     incomeSyncOptions.incomeEvents ? "収入イベント" : "",
-    incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents ? "普通口座オプション収入は保護" : "",
+    incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents ? "普通口座オプション収入はコピー対象から除外" : "",
     incomeSyncOptions.pensionPlanner ? "年金プランナー設定" : "",
     incomeSyncOptions.retirementIncomeEvents ? "退職所得イベント" : "",
     incomeSyncOptions.pensionAdjustmentRate ? "年金改定率" : "",
@@ -4262,7 +4262,7 @@ function IncomeSection({
     const confirmed = window.confirm(
       `「${source.name}」の ${selectedIncomeSyncLabels.join("、")} を、コピー元自身を除く ${incomeSyncTargetCount} 件のシナリオへ反映します。` +
         (incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents
-          ? `反映先の普通口座オプション収入 ${protectedOptionIncomeEventCount} 件は保持します。`
+          ? `反映先の普通口座オプション収入 ${protectedOptionIncomeEventCount} 件はコピーせず、そのまま保持します。`
           : "反映先の収入イベントは置き換わります。") +
         "実行しますか？",
     );
@@ -4326,7 +4326,7 @@ function IncomeSection({
           targetSummary={`コピー元自身を除く ${incomeSyncTargetCount} 件に反映します。世帯メンバーIDが違うシナリオでは、世帯主または先頭メンバーへ安全に割り当てます。`}
           options={[
             { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
-            { key: "preserveOptionIncomeEvents", label: "普通口座オプション収入を保護", description: "米国株オプション等の入金シナリオを残す" },
+            { key: "preserveOptionIncomeEvents", label: "除外して守る: 普通口座オプション収入", description: "チェックあり = 米国株オプション等はコピーしない" },
             { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
             { key: "retirementIncomeEvents", label: "退職所得イベント", description: "退職金、iDeCo一時金など" },
             { key: "pensionAdjustmentRate", label: "年金改定率", description: "収入タブの年金改定率のみ" },
@@ -4335,7 +4335,7 @@ function IncomeSection({
           toggleOption={updateIncomeSyncOption}
           warningText={
             incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents
-              ? `普通口座オプション収入は置き換えず保持します。現在の反映先では ${protectedOptionIncomeEventCount} 件を保護します。`
+              ? `反映するのは普通口座オプション収入を除いた収入イベントです。現在の反映先では ${protectedOptionIncomeEventCount} 件をコピーせず保持します。`
               : "反映先の収入イベントを置き換えます。シナリオごとに違う収入イベントを置いている場合は、反映先を確認してください。"
           }
           onApply={applyIncomeSync}
