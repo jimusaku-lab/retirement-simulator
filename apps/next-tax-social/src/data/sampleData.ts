@@ -330,7 +330,7 @@ export const sampleState: RetirementPlanState = {
         name: "大きめの臨時支出",
         yearMonth: "2030-03",
         amount: 2_500_000,
-        category: "contingency",
+        category: "lifeMaintenance",
       });
     }),
     scenarioWith("growth-zero", "利回り0%", (scenario) => {

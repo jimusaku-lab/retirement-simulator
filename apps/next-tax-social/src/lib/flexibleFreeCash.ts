@@ -3,6 +3,20 @@ import type { AnnualResult, ScenarioData, SimulationResult, SpecialExpenseEvent,
 
 export type SpecialExpenseCategory = NonNullable<SpecialExpenseEvent["category"]>;
 
+const specialExpenseCategories: SpecialExpenseCategory[] = [
+  "enjoyment",
+  "lifeMaintenance",
+  "housingCar",
+  "medicalCare",
+  "familySupport",
+];
+
+function normalizeSpecialExpenseCategory(category: unknown): SpecialExpenseCategory {
+  return specialExpenseCategories.includes(category as SpecialExpenseCategory)
+    ? category as SpecialExpenseCategory
+    : "lifeMaintenance";
+}
+
 export type FlexibleFreeCashPeriod = {
   startAge: number;
   endAge: number;
@@ -115,11 +129,10 @@ export function calculateSpecialExpenseCategoryTotals(
     housingCar: 0,
     medicalCare: 0,
     familySupport: 0,
-    contingency: 0,
   };
 
   for (const event of scenario.specialExpenses) {
-    const category = event.category ?? "lifeMaintenance";
+    const category = normalizeSpecialExpenseCategory(event.category);
     for (const yearMonth of periodYearMonths) {
       if (isSpecialExpenseActive(event, yearMonth as YearMonth)) {
         totals[category] += event.amount;

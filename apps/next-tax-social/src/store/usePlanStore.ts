@@ -20,6 +20,7 @@ import type {
   AssetContributionEvent,
   RetirementIncomeEvent,
   TaxDeductionByFiscalYear,
+  SpecialExpenseEvent,
 } from "@/types";
 
 type PlanStore = RetirementPlanState & {
@@ -47,6 +48,7 @@ type LegacyMonthlyExpenses = Partial<ScenarioData["monthlyExpenses"]> & {
 type LegacyIncomeEvent = Partial<ScenarioData["incomeEvents"][number]> & { taxable?: boolean };
 type LegacyRetirementIncomeEvent = Partial<RetirementIncomeEvent> & { alreadyReceived?: boolean };
 type LegacyTaxDeductionEvent = Partial<TaxDeductionByFiscalYear>;
+type LegacySpecialExpenseEvent = Partial<SpecialExpenseEvent> & { category?: unknown };
 type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpenses" | "incomeEvents" | "retirementIncomeEvents" | "growthSettings"> & {
   initialAssets?: LegacyInitialAssets;
   monthlyExpenses?: LegacyMonthlyExpenses;
@@ -62,6 +64,13 @@ type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpe
 const baseScenario = sampleState.scenarios[0];
 const maxBackups = 5;
 const monthlyExpenseKeys = Object.keys(baseScenario.monthlyExpenses) as (keyof MonthlyExpenseProfile)[];
+const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] = [
+  "enjoyment",
+  "lifeMaintenance",
+  "housingCar",
+  "medicalCare",
+  "familySupport",
+];
 
 function normalizeExpenseKeys(source: unknown, fallback: (keyof MonthlyExpenseProfile)[]) {
   if (!Array.isArray(source)) return fallback;
@@ -76,6 +85,22 @@ function normalizeExpenseAdjustmentTargets(source: unknown, fallback: ExpenseAdj
   );
   if (targets.includes("all")) return ["all"];
   return targets.length ? [...new Set(targets)] : fallback;
+}
+
+function normalizeSpecialExpenses(source: LegacySpecialExpenseEvent[] | undefined): SpecialExpenseEvent[] {
+  return (source ?? []).map((event, index) => ({
+    id: event.id ?? `special-${index}`,
+    name: event.name ?? "特別支出",
+    yearMonth: event.yearMonth ?? baseScenario.userProfile.simulationStartYearMonth,
+    amount: Number.isFinite(event.amount) ? Number(event.amount) : 0,
+    category: specialExpenseCategories.includes(event.category as NonNullable<SpecialExpenseEvent["category"]>)
+      ? event.category as NonNullable<SpecialExpenseEvent["category"]>
+      : "lifeMaintenance",
+    schedule: event.schedule,
+    repeatIntervalMonths: event.repeatIntervalMonths,
+    endYearMonth: event.endYearMonth,
+    note: event.note,
+  }));
 }
 
 function nowIso() {
@@ -475,7 +500,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
       source.withdrawalOrder?.length === 6
         ? source.withdrawalOrder
         : structuredClone(baseScenario.withdrawalOrder),
-    specialExpenses: source.specialExpenses ?? [],
+    specialExpenses: normalizeSpecialExpenses(source.specialExpenses),
     taxInsurance: source.taxInsurance ?? [],
     taxDeductionEvents: normalizeTaxDeductionEvents(source),
     assetGrowthSettings: {

@@ -160,7 +160,6 @@ const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
   housingCar: "住宅・車",
   medicalCare: "医療・介護",
   familySupport: "家族支援",
-  contingency: "予備・想定外",
 };
 
 function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
@@ -756,7 +755,7 @@ function Dashboard({
         <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="指定期間末の年末資産" />
         <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
         <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="生活費と税社保の実支出" />
-        <Metric title={`${flexibleFreeCashLabel} その他特別支出`} value={compactYen(otherSpecialExpenseTotal)} sub="住宅・車、医療、家族支援、予備等" />
+        <Metric title={`${flexibleFreeCashLabel} その他特別支出`} value={compactYen(otherSpecialExpenseTotal)} sub="生活維持、住宅・車、医療、家族支援" />
         <Metric
           title="NISA実行額 / 残り枠"
           value={compactYen(flexibleFreeCashSummary.nisaContributionTotal)}
@@ -907,6 +906,7 @@ function ProfileSection({ scenario, updateScenario }: SectionProps) {
               value={scenario.userProfile.cashReserve}
               onChange={(event) => updateScenario((s) => void (s.userProfile.cashReserve = numberOrZero(event.target.value)))}
             />
+            <p className="mt-1 text-xs text-muted-foreground">予備・想定外に備えて保持したい安全資金もここに含めます。</p>
           </Field>
           <Field label="居住自治体">
             <Input value={scenario.userProfile.municipality ?? ""} onChange={(event) => updateScenario((s) => void (s.userProfile.municipality = event.target.value))} />

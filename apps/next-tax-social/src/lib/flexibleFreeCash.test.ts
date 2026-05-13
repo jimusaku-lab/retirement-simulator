@@ -165,15 +165,15 @@ describe("flexible free cash", () => {
         specialExpenses: [
           { id: "trip", name: "旅行", yearMonth: "2026-04", amount: 300_000, category: "enjoyment" },
           { id: "repair", name: "修繕", yearMonth: "2027-04", amount: 500_000, category: "housingCar" },
-          { id: "legacy", name: "未分類", yearMonth: "2028-04", amount: 100_000 },
+          { id: "legacy", name: "旧予備カテゴリ", yearMonth: "2028-04", amount: 100_000, category: "contingency" as never },
         ],
       },
       result as never,
-      { startAge: 60, endAge: 61 },
+      { startAge: 60, endAge: 62 },
     );
 
     expect(totals.enjoyment).toBe(300_000);
     expect(totals.housingCar).toBe(500_000);
-    expect(totals.lifeMaintenance).toBe(0);
+    expect(totals.lifeMaintenance).toBe(100_000);
   });
 });
