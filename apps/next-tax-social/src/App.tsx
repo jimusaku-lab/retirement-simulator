@@ -840,6 +840,30 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
   );
   const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
   const enjoymentShare = calculateEnjoymentShare(categoryBreakdown);
+  const specialExpenseReviewTotal =
+    categoryBreakdown.enjoyment +
+    categoryBreakdown.lifeMaintenance +
+    categoryBreakdown.housingCar +
+    categoryBreakdown.medicalCare +
+    categoryBreakdown.familySupport;
+  const allExpenseReviewTotal = specialExpenseReviewTotal + categoryBreakdown.livingAndTax;
+  const enjoymentAllExpenseShare = allExpenseReviewTotal > 0 ? categoryBreakdown.enjoyment / allExpenseReviewTotal : 0;
+  const enjoymentRatioRows = [
+    {
+      label: "特別支出内",
+      value: enjoymentShare,
+      numerator: categoryBreakdown.enjoyment,
+      denominator: specialExpenseReviewTotal,
+      note: "生活費・税社保を除いた、特別支出だけの中での比率",
+    },
+    {
+      label: "全支出内",
+      value: enjoymentAllExpenseShare,
+      numerator: categoryBreakdown.enjoyment,
+      denominator: allExpenseReviewTotal,
+      note: "生活費・税社保も含めた、期間内支出全体での比率",
+    },
+  ];
   const targetGapSub =
     targetBalanceAnalysis.gap >= 0
       ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
@@ -949,6 +973,39 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
           <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
             {assetUseNextFocus}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>楽しみ支出の比率</CardTitle>
+          <CardDescription>
+            同じ楽しみ支出でも、特別支出内で見る場合と、生活費・税社保を含む全支出で見る場合では比率が変わります。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {enjoymentRatioRows.map((row) => {
+            const percent = Math.max(0, Math.min(100, Math.round(row.value * 100)));
+            return (
+              <div key={row.label} className="space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{row.label}</div>
+                    <div className="text-xs text-muted-foreground">{row.note}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-semibold text-teal-700">{compactPercent(row.value)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {compactYen(row.numerator)} / {compactYen(row.denominator)}
+                    </div>
+                  </div>
+                </div>
+                <div className="h-5 overflow-hidden rounded-full border bg-slate-100">
+                  <div className="h-full bg-teal-700" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
