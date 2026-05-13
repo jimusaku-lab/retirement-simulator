@@ -6475,7 +6475,7 @@ function CompareSection({
           </p>
         </CardContent>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1680px]">
+          <Table className="min-w-[1320px]">
             <thead>
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
@@ -6485,17 +6485,12 @@ function CompareSection({
                 <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
                 <Th>{flexibleFreeCashLabel}<br />年平均余力</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
-                <Th>生活資金不足</Th>
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
                 <Th>計画取り崩し</Th>
                 <Th>普通口座から<br />現金・普通預金へ</Th>
                 <Th>NISA未実行</Th>
                 <Th>追加投資</Th>
-                <Th>年平均税社保負担</Th>
-                <Th>年平均現金収入</Th>
-                <Th>生活費・税社保後余力</Th>
-                <Th>投資込み資金需要</Th>
               </Tr>
             </thead>
             <tbody>
@@ -6503,18 +6498,12 @@ function CompareSection({
                 ({
                   scenario,
                   result,
-                  yearCount,
                   deficitAssetSale,
                   sourceAssetIncome,
                   plannedDrawdown,
                   optionToLiquid,
-                  cashIncome,
                   nisaSkipped,
                   additionalInvestment,
-                  taxSocial,
-                  livingAndTaxNeed,
-                  afterLivingCapacity,
-                  investmentIncludedNeed,
                   flexibleFreeCash,
                 }) => (
                 <Tr key={scenario.id}>
@@ -6525,26 +6514,20 @@ function CompareSection({
                   <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
                   <Td className={flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.averageAnnualFreeCash)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
-                  <Td>{compactYen(livingAndTaxNeed)}</Td>
                   <Td>{compactYen(deficitAssetSale)}</Td>
                   <Td>{compactYen(sourceAssetIncome)}</Td>
                   <Td>{compactYen(plannedDrawdown)}</Td>
                   <Td>{compactYen(optionToLiquid)}</Td>
                   <Td className={nisaSkipped > 0 ? "text-red-600" : ""}>{compactYen(nisaSkipped)}</Td>
                   <Td>{compactYen(additionalInvestment)}</Td>
-                  <Td>{compactYen(taxSocial / yearCount)}</Td>
-                  <Td>{compactYen(cashIncome / yearCount)}</Td>
-                  <Td className={afterLivingCapacity < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(afterLivingCapacity / yearCount)}</Td>
-                  <Td className="text-muted-foreground">{compactYen(investmentIncludedNeed)}</Td>
                 </Tr>
                 ),
               )}
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            生活資金不足は、生活費・税社保・特別支出に対して、現金収入と普通口座から現金・普通預金へ戻した資金だけでは足りなかった額です。追加投資は含めません。
-            税社保負担は現金が出ていく費用なのでプラス表示です。生活費・税社保後余力は、生活費・税社保・特別支出を払った後の年平均余力で、マイナスなら生活費側だけでも現金が不足している状態です。
-            投資込み資金需要は、追加投資予定まで含めた補助指標です。
+            資産活用額、年平均余力、期間末残高は上で指定した年齢範囲で集計します。不足補填売却、収入化した原資、計画取り崩し、NISA未実行、追加投資は全シミュレーション期間の補助指標です。
+            年齢範囲内の収支感は「資産活用額」と「年平均余力」を主に見てください。
           </p>
         </CardContent>
       </Card>
