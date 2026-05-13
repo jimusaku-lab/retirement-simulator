@@ -63,6 +63,7 @@ import {
   getIdecoMonexFirstPayoutYearMonth,
 } from "@/lib/incomeEvents";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
 import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
@@ -903,19 +904,22 @@ function AssetUseWorkspace({
       const monthlyAmount = Math.max(0, event.monthlyAmount ?? 0);
       const configuredAccountName = configuredAccount?.name ?? (event.sourceOptionSubAccountId ? "見つからないサブ口座" : "未指定");
       const resolvedAccountName = resolvedAccount?.name ?? configuredAccountName;
+      const scenarioNameAmount = inferMonthlyOptionIncomeFromScenarioName(scenario.name, event.name, resolvedAccount?.name);
       return {
         id: event.id,
         name: event.name || "普通口座オプション収入",
         monthlyAmount,
+        scenarioNameAmount,
         activeMonthsInPeriod,
         periodTotal: monthlyAmount * activeMonthsInPeriod,
         payoutMode: event.sourceAssetPayoutMode ?? "cash",
         configuredAccountName,
         resolvedAccountName,
         isCorrected: Boolean(
-          resolvedAccountId &&
-          event.sourceOptionSubAccountId &&
-          resolvedAccountId !== event.sourceOptionSubAccountId,
+          (resolvedAccountId &&
+            event.sourceOptionSubAccountId &&
+            resolvedAccountId !== event.sourceOptionSubAccountId) ||
+          (scenarioNameAmount !== undefined && scenarioNameAmount !== monthlyAmount),
         ),
       };
     });
@@ -1077,11 +1081,12 @@ function AssetUseWorkspace({
             </p>
             {optionIncomeAuditRows.length > 0 ? (
               <div className="table-scroll mt-3 overflow-auto">
-                <Table className="min-w-[980px]">
+                <Table className="min-w-[1080px]">
                   <thead>
                     <Tr>
                       <Th>収入名</Th>
                       <Th>月額</Th>
+                      <Th>シナリオ名の入金力</Th>
                       <Th>{flexibleFreeCashLabel}<br />対象月数</Th>
                       <Th>{flexibleFreeCashLabel}<br />入金合計</Th>
                       <Th>反映先</Th>
@@ -1094,6 +1099,7 @@ function AssetUseWorkspace({
                       <Tr key={row.id}>
                         <Td>{row.name}</Td>
                         <Td>{compactYen(row.monthlyAmount)}</Td>
+                        <Td>{row.scenarioNameAmount === undefined ? "-" : compactYen(row.scenarioNameAmount)}</Td>
                         <Td>{row.activeMonthsInPeriod}か月</Td>
                         <Td>{compactYen(row.periodTotal)}</Td>
                         <Td>{row.payoutMode === "retainInSourceAsset" ? "原資口座内で積み上げる" : "現金収入にする"}</Td>
@@ -1104,7 +1110,7 @@ function AssetUseWorkspace({
                           )}
                         </Td>
                         <Td className={row.isCorrected ? "text-amber-700" : "text-muted-foreground"}>
-                          {row.isCorrected ? "名称から補正" : "補正なし"}
+                          {row.isCorrected ? "名称から補正" : row.scenarioNameAmount === undefined ? "補正なし" : "一致"}
                         </Td>
                       </Tr>
                     ))}

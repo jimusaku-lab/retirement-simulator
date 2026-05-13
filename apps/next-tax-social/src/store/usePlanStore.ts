@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { sampleState } from "@/data/sampleData";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import { applyScenarioNameOptionIncomeHint } from "@/lib/optionIncomeHints";
 import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getPensionPlannerMembers, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
 import { cloneScenario } from "@/lib/simulation";
@@ -535,13 +536,15 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
   };
 
   delete (scenario.initialAssets as ScenarioData["initialAssets"] & { securities?: number }).securities;
-  for (const event of scenario.incomeEvents) {
-    if (event.sourceAssetKey !== "ordinaryAccountForOptions") continue;
+  scenario.incomeEvents = scenario.incomeEvents.map((event) => {
+    if (event.sourceAssetKey !== "ordinaryAccountForOptions") return event;
     const resolvedId =
       resolveOptionSubAccountId(scenario.optionSubAccounts, event.sourceOptionSubAccountId, event.name) ??
       (scenario.optionSubAccounts.length === 1 ? scenario.optionSubAccounts[0]?.id : undefined);
-    if (resolvedId) event.sourceOptionSubAccountId = resolvedId;
-  }
+    const normalizedEvent = resolvedId ? { ...event, sourceOptionSubAccountId: resolvedId } : event;
+    const resolvedAccount = scenario.optionSubAccounts.find((account) => account.id === normalizedEvent.sourceOptionSubAccountId);
+    return applyScenarioNameOptionIncomeHint(scenario.name, normalizedEvent, resolvedAccount);
+  });
   syncLinkedIncomeEndYearMonths(scenario);
   if (scenario.pensionPlannerSettings) {
     const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);
