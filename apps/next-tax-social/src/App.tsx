@@ -52,6 +52,7 @@ import {
   calculateAdditionalSpendingTrial,
   calculateAssetUseCategoryBreakdown,
   calculateEnjoymentShare,
+  calculateOptionLiquidityAnalysis,
   calculateTargetBalanceAnalysis,
   findSpecialExpenseCategoryWarnings,
   type TargetBalanceStatus,
@@ -846,6 +847,7 @@ function AssetUseWorkspace({
   const [trialAnnualAmount, setTrialAnnualAmount] = useState(1_000_000);
   const [trialCategory, setTrialCategory] = useState<SpecialExpenseCategory>("enjoyment");
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+  const optionLiquidityAnalysis = calculateOptionLiquidityAnalysis(result, flexibleFreeCashPeriod);
   const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
   const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
   const categoryBreakdown = calculateAssetUseCategoryBreakdown(scenario, result, flexibleFreeCashPeriod);
@@ -868,6 +870,18 @@ function AssetUseWorkspace({
   const allExpenseReviewTotal = specialExpenseReviewTotal + categoryBreakdown.livingAndTax;
   const enjoymentAllExpenseShare = allExpenseReviewTotal > 0 ? categoryBreakdown.enjoyment / allExpenseReviewTotal : 0;
   const enjoymentSpecialExpensePercent = Math.max(0, Math.min(100, Math.round(enjoymentShare * 100)));
+  const optionLiquidityShareOfAssetUse =
+    flexibleFreeCashSummary.assetUtilizationAmount > 0
+      ? optionLiquidityAnalysis.optionToLiquidTotal / flexibleFreeCashSummary.assetUtilizationAmount
+      : null;
+  const optionLiquidityReading =
+    optionLiquidityAnalysis.optionToLiquidTotal <= 0 && optionLiquidityAnalysis.declaredOptionProfitTotal > 0
+      ? "期間内に申告対象利益はありますが、現金・普通預金へ回った額はありません。楽しみ支出に使える資金としては増えていません。"
+      : optionLiquidityAnalysis.optionToLiquidTotal <= 0
+        ? "期間内に普通口座オプションから現金・普通預金へ回った資金はありません。"
+        : optionLiquidityAnalysis.suspendedIncomeTotal > 0
+          ? "普通口座から流動資金へ回った額はありますが、最低維持額不足で停止された予定利益もあります。"
+          : "普通口座オプションから流動資金へ回った額を、健康寿命期の使える資金として確認できます。";
   const targetGapSub =
     targetBalanceAnalysis.gap >= 0
       ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
@@ -954,6 +968,56 @@ function AssetUseWorkspace({
           <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub={`特別支出内の楽しみ比率 ${compactPercent(enjoymentShare)}`} />
           <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="健康寿命期の終点で残る年末資産" />
           <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>普通口座オプションの流動資金化</CardTitle>
+          <CardDescription>
+            {flexibleFreeCashLabel} に、オプション利益や運用終了後の普通口座資金がどれだけ現金・普通預金へ回ったかを確認します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">申告対象利益</div>
+              <div className="mt-1 text-xl font-semibold">{compactYen(optionLiquidityAnalysis.declaredOptionProfitTotal)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">普通口座オプション等の申告対象損益</div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">利益の現金化</div>
+              <div className="mt-1 text-xl font-semibold">{compactYen(optionLiquidityAnalysis.profitSweptToLiquidTotal)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">目標残高超過分を現金・普通預金へ</div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">終了後の戻し</div>
+              <div className="mt-1 text-xl font-semibold">{compactYen(optionLiquidityAnalysis.accountReleasedToLiquidTotal)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">運用終了後に普通口座から戻した額</div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">使える資金へ回った額</div>
+              <div className="mt-1 text-xl font-semibold text-teal-700">{compactYen(optionLiquidityAnalysis.optionToLiquidTotal)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                資産活用額比 {optionLiquidityShareOfAssetUse === null ? "-" : compactPercent(optionLiquidityShareOfAssetUse)}
+              </div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">停止された予定利益</div>
+              <div className={`mt-1 text-xl font-semibold ${optionLiquidityAnalysis.suspendedIncomeTotal > 0 ? "text-red-600" : ""}`}>
+                {compactYen(optionLiquidityAnalysis.suspendedIncomeTotal)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">最低維持額不足で入らなかった額</div>
+            </div>
+          </div>
+          <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+            {optionLiquidityReading}
+            {optionLiquidityAnalysis.optionToLiquidShareOfDeclaredProfit !== null && (
+              <span>
+                {" "}申告対象利益に対する流動資金化の目安は {compactPercent(optionLiquidityAnalysis.optionToLiquidShareOfDeclaredProfit)} です。
+              </span>
+            )}
+          </div>
         </CardContent>
       </Card>
 

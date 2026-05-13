@@ -3,6 +3,7 @@ import {
   calculateAdditionalSpendingTrial,
   calculateAssetUseCategoryBreakdown,
   calculateEnjoymentShare,
+  calculateOptionLiquidityAnalysis,
   calculateTargetBalanceAnalysis,
   findSpecialExpenseCategoryWarnings,
 } from "@/lib/assetUseAnalysis";
@@ -170,6 +171,43 @@ describe("asset use analysis", () => {
         reason: "名称から楽しみ支出の可能性があります。生活維持のままでよいか確認してください。",
       },
     ]);
+  });
+
+  it("summarizes option profit converted to liquid funds in the selected period", () => {
+    const analysis = calculateOptionLiquidityAnalysis(
+      {
+        annual: [
+          annualRow({
+            year: 2026,
+            ageYears: 60,
+            declaredCapitalGainsIncomeTotal: 1_000_000,
+            optionProfitSweepTotal: 300_000,
+            optionAccountReleaseTotal: 200_000,
+            optionIncomeSuspendedTotal: 50_000,
+          }),
+          annualRow({
+            year: 2027,
+            ageYears: 61,
+            declaredCapitalGainsIncomeTotal: 500_000,
+            optionProfitSweepTotal: 100_000,
+          }),
+          annualRow({
+            year: 2028,
+            ageYears: 62,
+            declaredCapitalGainsIncomeTotal: 9_000_000,
+            optionProfitSweepTotal: 9_000_000,
+          }),
+        ],
+      },
+      { startAge: 60, endAge: 61 },
+    );
+
+    expect(analysis.declaredOptionProfitTotal).toBe(1_500_000);
+    expect(analysis.profitSweptToLiquidTotal).toBe(400_000);
+    expect(analysis.accountReleasedToLiquidTotal).toBe(200_000);
+    expect(analysis.optionToLiquidTotal).toBe(600_000);
+    expect(analysis.suspendedIncomeTotal).toBe(50_000);
+    expect(analysis.optionToLiquidShareOfDeclaredProfit).toBeCloseTo(0.4);
   });
 
   it("runs an additional spending trial without mutating the source scenario", () => {

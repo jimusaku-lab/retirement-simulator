@@ -1,6 +1,7 @@
 import {
   calculateFlexibleFreeCashSummary,
   calculateSpecialExpenseCategoryTotals,
+  getRowsInFlexibleFreeCashPeriod,
   type FlexibleFreeCashPeriod,
   type SpecialExpenseCategory,
 } from "@/lib/flexibleFreeCash";
@@ -43,6 +44,17 @@ export type AdditionalSpendingTrial = {
   targetBalance: TargetBalanceAnalysis;
   flexibleFreeCash: ReturnType<typeof calculateFlexibleFreeCashSummary>;
   depletionLabel: string;
+};
+
+export type OptionLiquidityAnalysis = {
+  period: FlexibleFreeCashPeriod;
+  yearCount: number;
+  declaredOptionProfitTotal: number;
+  profitSweptToLiquidTotal: number;
+  accountReleasedToLiquidTotal: number;
+  optionToLiquidTotal: number;
+  suspendedIncomeTotal: number;
+  optionToLiquidShareOfDeclaredProfit: number | null;
 };
 
 const enjoymentNamePattern = /旅行|旅|趣味|レジャー|温泉|外食|観光|帰省|家族旅行|イベント|記念|娯楽|遊び|ベトナム|海外|国内/i;
@@ -91,6 +103,29 @@ export function calculateEnjoymentShare(breakdown: Pick<AssetUseCategoryBreakdow
     breakdown.medicalCare +
     breakdown.familySupport;
   return specialExpenseTotal > 0 ? breakdown.enjoyment / specialExpenseTotal : 0;
+}
+
+export function calculateOptionLiquidityAnalysis(
+  result: Pick<SimulationResult, "annual">,
+  periodInput?: Partial<FlexibleFreeCashPeriod>,
+): OptionLiquidityAnalysis {
+  const { period, rows } = getRowsInFlexibleFreeCashPeriod(result, periodInput);
+  const declaredOptionProfitTotal = rows.reduce((sum, row) => sum + row.declaredCapitalGainsIncomeTotal, 0);
+  const profitSweptToLiquidTotal = rows.reduce((sum, row) => sum + row.optionProfitSweepTotal, 0);
+  const accountReleasedToLiquidTotal = rows.reduce((sum, row) => sum + row.optionAccountReleaseTotal, 0);
+  const suspendedIncomeTotal = rows.reduce((sum, row) => sum + row.optionIncomeSuspendedTotal, 0);
+  const optionToLiquidTotal = profitSweptToLiquidTotal + accountReleasedToLiquidTotal;
+
+  return {
+    period,
+    yearCount: rows.length,
+    declaredOptionProfitTotal,
+    profitSweptToLiquidTotal,
+    accountReleasedToLiquidTotal,
+    optionToLiquidTotal,
+    suspendedIncomeTotal,
+    optionToLiquidShareOfDeclaredProfit: declaredOptionProfitTotal > 0 ? optionToLiquidTotal / declaredOptionProfitTotal : null,
+  };
 }
 
 export function findSpecialExpenseCategoryWarnings(
