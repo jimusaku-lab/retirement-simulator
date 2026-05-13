@@ -84,6 +84,7 @@ import {
   getBaseMonthlyExpense,
   getSimulationTargetAssets,
   getTotalAssets,
+  isSpecialExpenseActive,
   simulateScenario,
 } from "@/lib/simulation";
 import { usePlanStore } from "@/store/usePlanStore";
@@ -101,6 +102,7 @@ import type {
   ScenarioData,
   SpecialExpenseEvent,
   TaxInsuranceByFiscalYear,
+  YearMonth,
   GrowthAssetKey,
   PlanBackup,
   ExpenseAdjustmentTarget,
@@ -800,6 +802,24 @@ function FlexibleFreeCashPeriodFields({ period, updateScenario }: { period: Flex
   );
 }
 
+function specialExpenseScheduleLabel(event: SpecialExpenseEvent) {
+  const schedule = event.schedule ?? "once";
+  if (schedule === "once") return event.yearMonth;
+  const start = event.yearMonth;
+  const end = event.endYearMonth ?? "終了未設定";
+  const interval =
+    schedule === "monthly"
+      ? "毎月"
+      : schedule === "quarterly"
+        ? "四半期"
+        : schedule === "semiannual"
+          ? "半年ごと"
+          : schedule === "yearly"
+            ? "毎年"
+            : `${Math.max(1, Math.round(event.repeatIntervalMonths ?? 1))}か月ごと`;
+  return `${start}〜${end} / ${interval}`;
+}
+
 function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const [trialStartAge, setTrialStartAge] = useState(flexibleFreeCashPeriod.startAge);
@@ -812,6 +832,12 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
   const categoryBreakdown = calculateAssetUseCategoryBreakdown(scenario, result, flexibleFreeCashPeriod);
   const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
+  const flexibleFreeCashPeriodYearMonths = result.monthly
+    .filter((row) => row.ageYears >= flexibleFreeCashSummary.period.startAge && row.ageYears <= flexibleFreeCashSummary.period.endAge)
+    .map((row) => row.yearMonth as YearMonth);
+  const outOfPeriodSpecialExpenses = scenario.specialExpenses.filter(
+    (event) => event.amount > 0 && !flexibleFreeCashPeriodYearMonths.some((yearMonth) => isSpecialExpenseActive(event, yearMonth)),
+  );
   const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
   const enjoymentShare = calculateEnjoymentShare(categoryBreakdown);
   const targetGapSub =
@@ -872,7 +898,7 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
         <CardHeader>
           <CardTitle>健康寿命期の支出内訳</CardTitle>
           <CardDescription>
-            資産を取り崩したかだけでなく、元気な時期の支出が何に向いているかを分けて確認します。
+            {flexibleFreeCashLabel} の期間内だけを集計します。期間外の特別支出は、このグラフと表には含めません。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
@@ -908,6 +934,41 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
             </Table>
           </div>
         </CardContent>
+        {outOfPeriodSpecialExpenses.length > 0 && (
+          <CardContent className="border-t">
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm font-medium">この内訳に含まれていない特別支出</div>
+              <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                下記は {flexibleFreeCashLabel} の集計期間外にあるため、上のカテゴリ別内訳には入りません。住宅修繕などを健康寿命期の支出として見たい場合は、資産活用終了年齢または特別支出の年月を確認してください。
+              </p>
+              <div className="table-scroll mt-3 overflow-auto">
+                <Table className="min-w-[640px]">
+                  <thead>
+                    <Tr>
+                      <Th>名称</Th>
+                      <Th>カテゴリ</Th>
+                      <Th>年月・繰り返し</Th>
+                      <Th>金額</Th>
+                    </Tr>
+                  </thead>
+                  <tbody>
+                    {outOfPeriodSpecialExpenses.slice(0, 8).map((event) => (
+                      <Tr key={event.id}>
+                        <Td>{event.name || "特別支出"}</Td>
+                        <Td>{specialExpenseCategoryLabels[event.category ?? "lifeMaintenance"]}</Td>
+                        <Td className="text-sm text-muted-foreground">{specialExpenseScheduleLabel(event)}</Td>
+                        <Td>{compactYen(event.amount)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+              {outOfPeriodSpecialExpenses.length > 8 && (
+                <p className="mt-2 text-xs text-muted-foreground">ほか {outOfPeriodSpecialExpenses.length - 8} 件あります。</p>
+              )}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       <Card>
