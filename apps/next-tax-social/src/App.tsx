@@ -615,7 +615,7 @@ function App() {
       </header>
 
       <main className="container space-y-6 py-6">
-        {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} updateScenario={updateScenario} />}
+        {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} />}
         {activeTab === "profile" && <ProfileSection scenario={activeScenario} updateScenario={updateScenario} />}
         {activeTab === "assets" && <AssetsSection scenario={activeScenario} updateScenario={updateScenario} />}
         {activeTab === "expenses" && <ExpensesSection scenario={activeScenario} updateScenario={updateScenario} />}
@@ -710,11 +710,9 @@ function FlexibleFreeCashPeriodFields({ period, updateScenario }: { period: Flex
 function Dashboard({
   scenario,
   result,
-  updateScenario,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
-  updateScenario: SectionProps["updateScenario"];
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
@@ -770,8 +768,11 @@ function Dashboard({
             資産活用額は、現金収入と普通口座から現金・普通預金へ戻した額で、生活費・税社保・特別支出・iDeCo手数料を賄いきれなかった額をプラス表示します。追加投資は別指標として扱います。
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <FlexibleFreeCashPeriodFields period={flexibleFreeCashSummary.period} updateScenario={updateScenario} />
+        <CardContent className="space-y-2">
+          <div className="text-2xl font-semibold">{flexibleFreeCashLabel}</div>
+          <p className="text-sm text-muted-foreground">
+            集計期間の変更は比較タブで行います。変更すると、このダッシュボードの資産活用額・期間末残高・NISA指標にも同じ設定が反映されます。
+          </p>
         </CardContent>
       </Card>
 
