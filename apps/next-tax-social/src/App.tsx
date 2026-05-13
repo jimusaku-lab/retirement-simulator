@@ -844,6 +844,41 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
     targetBalanceAnalysis.gap >= 0
       ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
       : `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を下回っています`;
+  const assetUseReviewItems = [
+    {
+      title: "安全余力",
+      value: targetBalanceStatusLabels[targetBalanceAnalysis.status],
+      className: targetBalanceStatusClassNames[targetBalanceAnalysis.status],
+      description:
+        targetBalanceAnalysis.status === "shortfall"
+          ? `${targetBalanceAnalysis.targetAge}歳目標に ${compactYen(Math.abs(targetBalanceAnalysis.gap))} 届いていません。追加支出より先に安全性側の調整が必要です。`
+          : `${targetBalanceAnalysis.targetAge}歳目標を ${compactYen(targetBalanceAnalysis.gap)} 上回っています。追加支出候補を検討できる余地があります。`,
+    },
+    {
+      title: "期間内の使い方",
+      value: flexibleFreeCashSummary.averageAnnualFreeCash < 0 ? "資産活用中" : "現金余力あり",
+      className: flexibleFreeCashSummary.averageAnnualFreeCash < 0 ? "text-amber-700" : "text-teal-700",
+      description:
+        flexibleFreeCashSummary.averageAnnualFreeCash < 0
+          ? `${flexibleFreeCashLabel} は年平均 ${compactYen(Math.abs(flexibleFreeCashSummary.averageAnnualFreeCash))} を資産で補っています。`
+          : `${flexibleFreeCashLabel} は年平均 ${compactYen(flexibleFreeCashSummary.averageAnnualFreeCash)} の現金収支余力があります。`,
+    },
+    {
+      title: "楽しみ比率",
+      value: compactPercent(enjoymentShare),
+      className: enjoymentShare >= 0.3 ? "text-teal-700" : enjoymentShare > 0 ? "text-amber-700" : "text-slate-700",
+      description:
+        specialExpenseCategoryTotals.enjoyment > 0
+          ? `期間内の特別支出のうち、楽しみカテゴリは ${compactYen(specialExpenseCategoryTotals.enjoyment)} です。`
+          : "期間内に楽しみカテゴリの特別支出はありません。使う候補は下の追加支出シミュレーターで試せます。",
+    },
+  ];
+  const assetUseNextFocus =
+    targetBalanceAnalysis.status === "shortfall"
+      ? "まず目標残高割れの原因を安全性シミュレーション側で確認してください。"
+      : flexibleFreeCashSummary.averageAnnualFreeCash > 0 && enjoymentShare < 0.3
+        ? "安全余力と現金余力があるため、健康寿命期の楽しみ支出候補を増やして試す余地があります。"
+        : "現在の支出配分を維持しつつ、追加支出シミュレーターで年額別の影響を確認してください。";
   const categoryRows = [
     { label: "楽しみ", value: categoryBreakdown.enjoyment, note: "旅行・趣味・家族イベントなど" },
     { label: "生活維持", value: categoryBreakdown.lifeMaintenance, note: "特別支出カテゴリ分" },
@@ -891,6 +926,29 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
           <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub={`特別支出内の楽しみ比率 ${compactPercent(enjoymentShare)}`} />
           <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="健康寿命期の終点で残る年末資産" />
           <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>資産活用レビュー</CardTitle>
+          <CardDescription>
+            安全性、期間内の使い方、楽しみ支出の比率を並べて、次に確認するポイントを決めます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            {assetUseReviewItems.map((item) => (
+              <div key={item.title} className="rounded-md border bg-slate-50 px-4 py-3">
+                <div className="text-sm text-muted-foreground">{item.title}</div>
+                <div className={`mt-1 text-xl font-semibold ${item.className}`}>{item.value}</div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+            {assetUseNextFocus}
+          </div>
         </CardContent>
       </Card>
 
