@@ -120,6 +120,7 @@ const tabs = [
 ] as const;
 
 type TabKey = (typeof tabs)[number][0];
+type AppMode = "safety" | "assetUse";
 type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
@@ -161,6 +162,16 @@ const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
   medicalCare: "医療・介護",
   familySupport: "家族支援",
 };
+
+function appModeFromHash(): AppMode {
+  return window.location.hash === "#/asset-use" ? "assetUse" : "safety";
+}
+
+function setAppModeHash(mode: AppMode) {
+  const nextHash = mode === "assetUse" ? "#/asset-use" : "";
+  if (window.location.hash === nextHash) return;
+  window.location.hash = nextHash;
+}
 
 function declaredOptionTaxBreakdownForDisplay(declaredGain: number) {
   const taxableGain = Math.max(0, declaredGain);
@@ -394,6 +405,7 @@ function shouldIgnoreTaxExpenseField(scenario: ScenarioData) {
 }
 
 function App() {
+  const [appMode, setAppMode] = useState<AppMode>(() => appModeFromHash());
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -427,6 +439,12 @@ function App() {
   const isLikelySampleState =
     scenarios.length === sampleState.scenarios.length &&
     scenarios.every((scenario, index) => scenario.name === sampleState.scenarios[index]?.name);
+
+  useEffect(() => {
+    const syncAppMode = () => setAppMode(appModeFromHash());
+    window.addEventListener("hashchange", syncAppMode);
+    return () => window.removeEventListener("hashchange", syncAppMode);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -600,7 +618,23 @@ function App() {
           </div>
         </div>
         <nav className="container flex gap-2 overflow-x-auto pb-3">
-          {tabs.map(([key, label]) => (
+          <Button
+            variant={appMode === "safety" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setAppModeHash("safety")}
+            className="shrink-0"
+          >
+            安全性シミュレーション
+          </Button>
+          <Button
+            variant={appMode === "assetUse" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setAppModeHash("assetUse")}
+            className="shrink-0"
+          >
+            資産活用ビュー
+          </Button>
+          {appMode === "safety" && tabs.map(([key, label]) => (
             <Button
               key={key}
               variant={activeTab === key ? "default" : "ghost"}
@@ -615,41 +649,46 @@ function App() {
       </header>
 
       <main className="container space-y-6 py-6">
-        {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} />}
-        {activeTab === "profile" && <ProfileSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "assets" && <AssetsSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "expenses" && <ExpensesSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "income" && <IncomeSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "special" && <SpecialSection scenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "scenarios" && (
-          <ScenariosSection
-            scenarios={scenarios}
-            activeScenarioId={activeScenarioId}
-            setActiveScenario={setActiveScenario}
-            duplicateScenario={duplicateScenario}
-            deleteScenario={deleteScenario}
-            toggleScenarioCompare={toggleScenarioCompare}
-            updateScenario={updateScenario}
-          />
-        )}
-        {activeTab === "results" && <ResultsSection result={result} />}
-        {activeTab === "compare" && <CompareSection items={allResults} periodSourceScenario={activeScenario} updateScenario={updateScenario} />}
-        {activeTab === "manual" && <ManualSection />}
-        {activeTab === "data" && (
-          <DataSection
-            exportJson={exportJson}
-            createBackupAndExport={createBackupAndExport}
-            exportCsv={exportCsv}
-            importJson={() => fileInputRef.current?.click()}
-            resetToSample={resetToSample}
-            restoreBundledRecovery={restoreBundledRecovery}
-            lastSavedAt={lastSavedAt}
-            backups={backups}
-            createBackup={createBackup}
-            restoreBackup={restoreBackup}
-            deleteBackup={deleteBackup}
-          />
+        {appMode === "assetUse" && <AssetUseWorkspace scenario={activeScenario} result={result} />}
+        {appMode === "safety" && (
+          <>
+            {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} />}
+            {activeTab === "profile" && <ProfileSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "assets" && <AssetsSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "expenses" && <ExpensesSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "income" && <IncomeSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "special" && <SpecialSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "scenarios" && (
+              <ScenariosSection
+                scenarios={scenarios}
+                activeScenarioId={activeScenarioId}
+                setActiveScenario={setActiveScenario}
+                duplicateScenario={duplicateScenario}
+                deleteScenario={deleteScenario}
+                toggleScenarioCompare={toggleScenarioCompare}
+                updateScenario={updateScenario}
+              />
+            )}
+            {activeTab === "results" && <ResultsSection result={result} />}
+            {activeTab === "compare" && <CompareSection items={allResults} periodSourceScenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "manual" && <ManualSection />}
+            {activeTab === "data" && (
+              <DataSection
+                exportJson={exportJson}
+                createBackupAndExport={createBackupAndExport}
+                exportCsv={exportCsv}
+                importJson={() => fileInputRef.current?.click()}
+                resetToSample={resetToSample}
+                restoreBundledRecovery={restoreBundledRecovery}
+                lastSavedAt={lastSavedAt}
+                backups={backups}
+                createBackup={createBackup}
+                restoreBackup={restoreBackup}
+                deleteBackup={deleteBackup}
+              />
+            )}
+          </>
         )}
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={importJson} />
       </main>
@@ -703,6 +742,47 @@ function FlexibleFreeCashPeriodFields({ period, updateScenario }: { period: Flex
       <Field label="資産活用 終了年齢">
         <Input type="number" min={period.startAge} step={1} value={period.endAge} onChange={(event) => updateEndAge(event.target.value)} />
       </Field>
+    </div>
+  );
+}
+
+function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }) {
+  const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
+  const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+  const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
+  const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
+  const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>資産活用ビュー</CardTitle>
+          <CardDescription>
+            安全性シミュレーションと同じ計算結果を使い、資産を元気な時期にどう活用できているかを見るための専用ビューです。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric title="選択シナリオ" value={scenario.name} sub="安全性側と同じシナリオ" />
+          <Metric title="資産寿命" value={assetLifeValue} sub={`${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`} />
+          <Metric title={`${flexibleFreeCashLabel} 資産活用額`} value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)} sub="安全性側と同じ派生計算" />
+          <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>設計待ちエリア</CardTitle>
+          <CardDescription>
+            ここに Die with Zero / 資産活用の評価軸、年齢帯別の使い方、残しすぎ判定、体験支出の見せ方を追加していきます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            URL: http://127.0.0.1:5175/#/asset-use
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
