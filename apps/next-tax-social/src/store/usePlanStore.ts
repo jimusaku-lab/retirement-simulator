@@ -26,6 +26,7 @@ import type {
 type PlanStore = RetirementPlanState & {
   setActiveScenario: (id: string) => void;
   updateActiveScenario: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
   duplicateScenario: (id: string) => void;
   deleteScenario: (id: string) => void;
   toggleScenarioCompare: (id: string) => void;
@@ -575,6 +576,16 @@ export const usePlanStore = create<PlanStore>()(
               : scenario,
           ),
           lastSavedAt: nowIso(),
+        })),
+      updateScenarios: (updater) =>
+        set((state) => ({
+          scenarios: state.scenarios.map((scenario) => {
+            const nextScenario = updater(structuredClone(scenario));
+            syncLinkedIncomeEndYearMonths(nextScenario);
+            return nextScenario;
+          }),
+          lastSavedAt: nowIso(),
+          backups: rotateBackups(state.backups, createBackupEntry(state, "シナリオ一括反映前")),
         })),
       duplicateScenario: (id) =>
         set((state) => {

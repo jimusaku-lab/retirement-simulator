@@ -89,6 +89,7 @@ import { usePlanStore } from "@/store/usePlanStore";
 import type {
   AnnualResult,
   IncomeEvent,
+  InitialAssetCostBasis,
   InitialAssets,
   MonthlyResult,
   MonthlyExpenseProfile,
@@ -347,6 +348,10 @@ const assetLabels: Record<AssetKey, string> = {
   debt: "負債残高",
 };
 
+const liquidAssetKeys = ["cash", "bankDeposit", "timeDeposit", "excludedAssets", "debt"] as const satisfies AssetKey[];
+const marketAssetKeys = ["nisa", "specificAccount", "ideco"] as const satisfies AssetKey[];
+const costBasisKeys = ["nisa", "specificAccount", "ordinaryAccountForOptions", "ideco"] as const satisfies (keyof InitialAssetCostBasis)[];
+
 const gainTrackedAssets = [
   { key: "nisa", label: "NISA非課税口座" },
   { key: "specificAccount", label: "特定口座" },
@@ -433,6 +438,7 @@ function App() {
     activeScenarioId,
     setActiveScenario,
     updateActiveScenario,
+    updateScenarios,
     duplicateScenario,
     deleteScenario,
     toggleScenarioCompare,
@@ -673,7 +679,14 @@ function App() {
           <>
             {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} />}
             {activeTab === "profile" && <ProfileSection scenario={activeScenario} updateScenario={updateScenario} />}
-            {activeTab === "assets" && <AssetsSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "assets" && (
+              <AssetsSection
+                scenario={activeScenario}
+                scenarios={scenarios}
+                updateScenario={updateScenario}
+                updateScenarios={updateScenarios}
+              />
+            )}
             {activeTab === "expenses" && <ExpensesSection scenario={activeScenario} updateScenario={updateScenario} />}
             {activeTab === "income" && <IncomeSection scenario={activeScenario} updateScenario={updateScenario} />}
             {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} />}
@@ -1737,7 +1750,89 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
-function AssetsSection({ scenario, updateScenario }: SectionProps) {
+type AssetSyncTargetMode = "compare" | "all";
+
+type AssetSyncOptions = {
+  liquidAssets: boolean;
+  marketAssets: boolean;
+  costBasis: boolean;
+  optionSubAccounts: boolean;
+};
+
+function countAssetSyncTargets(scenarios: ScenarioData[], sourceScenarioId: string, targetMode: AssetSyncTargetMode) {
+  return scenarios.filter((target) => target.id !== sourceScenarioId && (targetMode === "all" || target.compare)).length;
+}
+
+function applyAssetSyncFromSource(target: ScenarioData, source: ScenarioData, options: AssetSyncOptions) {
+  if (options.liquidAssets) {
+    for (const key of liquidAssetKeys) {
+      target.initialAssets[key] = source.initialAssets[key];
+    }
+  }
+
+  if (options.marketAssets) {
+    for (const key of marketAssetKeys) {
+      target.initialAssets[key] = source.initialAssets[key];
+    }
+  }
+
+  if (options.costBasis) {
+    for (const key of costBasisKeys) {
+      target.initialAssetCostBasis[key] = source.initialAssetCostBasis[key];
+    }
+  }
+
+  if (options.optionSubAccounts) {
+    target.optionSubAccounts = structuredClone(source.optionSubAccounts);
+    target.optionAccountRules = structuredClone(source.optionAccountRules);
+    target.initialAssets.ordinaryAccountForOptions = source.initialAssets.ordinaryAccountForOptions;
+    target.initialAssetCostBasis.ordinaryAccountForOptions = source.initialAssetCostBasis.ordinaryAccountForOptions;
+  }
+}
+
+function AssetsSection({
+  scenario,
+  scenarios,
+  updateScenario,
+  updateScenarios,
+}: SectionProps & {
+  scenarios: ScenarioData[];
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+}) {
+  const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [assetSyncOptions, setAssetSyncOptions] = useState<AssetSyncOptions>({
+    liquidAssets: true,
+    marketAssets: true,
+    costBasis: true,
+    optionSubAccounts: false,
+  });
+  const [assetSyncMessage, setAssetSyncMessage] = useState<string | null>(null);
+  const assetSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, assetSyncTargetMode);
+  const hasAssetSyncSelection = Object.values(assetSyncOptions).some(Boolean);
+  const updateAssetSyncOption = (key: keyof AssetSyncOptions) => {
+    setAssetSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const selectedAssetSyncLabels = [
+    assetSyncOptions.liquidAssets ? "現金・預金・対象外資産" : "",
+    assetSyncOptions.marketAssets ? "証券・iDeCo評価額" : "",
+    assetSyncOptions.costBasis ? "取得原価" : "",
+    assetSyncOptions.optionSubAccounts ? "普通口座サブ口座" : "",
+  ].filter(Boolean);
+  const applyAssetSync = () => {
+    if (assetSyncTargetCount === 0 || !hasAssetSyncSelection) return;
+    const source = structuredClone(scenario);
+    const confirmed = window.confirm(
+      `「${source.name}」の ${selectedAssetSyncLabels.join("、")} を、コピー元自身を除く ${assetSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+    );
+    if (!confirmed) return;
+    updateScenarios((target) => {
+      if (target.id === source.id) return target;
+      if (assetSyncTargetMode === "compare" && !target.compare) return target;
+      applyAssetSyncFromSource(target, source, assetSyncOptions);
+      return target;
+    });
+    setAssetSyncMessage(`${assetSyncTargetCount} 件のシナリオへ反映しました。実行前の状態は履歴に保存されています。`);
+  };
   const addOptionSubAccount = () =>
     updateScenario((s) => {
       s.optionSubAccounts.push({
@@ -1859,8 +1954,88 @@ function AssetsSection({ scenario, updateScenario }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>このシナリオの現在資産を他シナリオへ反映</CardTitle>
+            <CardDescription>
+              現在選択中の「{scenario.name}」をコピー元にして、初期資産の前提だけを他シナリオへ反映します。計算ロジックや生活費・収入・特別支出は変更しません。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+              <Field label="反映先">
+                <Select value={assetSyncTargetMode} onChange={(event) => setAssetSyncTargetMode(event.target.value as AssetSyncTargetMode)}>
+                  <option value="compare">比較対象シナリオ</option>
+                  <option value="all">全シナリオ</option>
+                </Select>
+              </Field>
+              <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+                コピー元自身を除く {assetSyncTargetCount} 件に反映します。ゆくゆくは、どのシナリオを選んでもそのシナリオを起点に反映できる運用にします。
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assetSyncOptions.liquidAssets}
+                  onChange={() => updateAssetSyncOption("liquidAssets")}
+                />
+                <span>
+                  <span className="block font-medium">現金・預金・対象外資産</span>
+                  <span className="text-xs text-muted-foreground">現金、普通預金、定期預金、対象外資産、負債</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assetSyncOptions.marketAssets}
+                  onChange={() => updateAssetSyncOption("marketAssets")}
+                />
+                <span>
+                  <span className="block font-medium">証券・iDeCo評価額</span>
+                  <span className="text-xs text-muted-foreground">NISA、特定口座、iDeCoの評価額</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assetSyncOptions.costBasis}
+                  onChange={() => updateAssetSyncOption("costBasis")}
+                />
+                <span>
+                  <span className="block font-medium">取得原価</span>
+                  <span className="text-xs text-muted-foreground">譲渡益税の前提。評価額更新時は通常一緒に反映</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assetSyncOptions.optionSubAccounts}
+                  onChange={() => updateAssetSyncOption("optionSubAccounts")}
+                />
+                <span>
+                  <span className="block font-medium">普通口座サブ口座</span>
+                  <span className="text-xs text-muted-foreground">口座構成、評価額、取得原価、運用ルールも反映</span>
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <span>
+                反映は明示実行時だけです。シナリオ別に意図して変えた資産前提がある場合は、反映先を確認してください。
+              </span>
+              <Button onClick={applyAssetSync} disabled={assetSyncTargetCount === 0 || !hasAssetSyncSelection}>
+                他シナリオへ反映
+              </Button>
+            </div>
+            {assetSyncMessage && (
+              <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                {assetSyncMessage}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <FormGrid>
-          {(["cash", "bankDeposit", "timeDeposit", "excludedAssets", "debt"] as AssetKey[]).map((key) => (
+          {liquidAssetKeys.map((key) => (
             <Field key={key} label={assetLabels[key]}>
               <Input type="number" value={scenario.initialAssets[key]} onChange={(event) => updateScenario((s) => void (s.initialAssets[key] = numberOrZero(event.target.value)))} />
             </Field>
