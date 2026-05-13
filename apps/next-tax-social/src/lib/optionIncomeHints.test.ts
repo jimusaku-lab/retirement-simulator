@@ -27,6 +27,14 @@ describe("option income hints", () => {
     expect(inferMonthlyOptionIncomeFromScenarioName("年金６０才（夫婦） IDECO10年 米国株オプション20", "CFD")).toBeUndefined();
   });
 
+  it("単一の普通口座オプション収入なら汎用名イベントにもシナリオ名の入金力を使える", () => {
+    expect(
+      inferMonthlyOptionIncomeFromScenarioName("年金６０才（夫婦） IDECO10年 米国株オプション20", "オプション収入", undefined, {
+        allowGenericEvent: true,
+      }),
+    ).toBe(200_000);
+  });
+
   it("既存シナリオ名と収入イベントがずれている場合は収入イベント月額を補正する", () => {
     const fixed = applyScenarioNameOptionIncomeHint(
       "年金６０才（夫婦） IDECO10年 米国株オプション30",

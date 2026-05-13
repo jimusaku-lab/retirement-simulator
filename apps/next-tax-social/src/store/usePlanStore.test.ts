@@ -11,7 +11,7 @@ describe("normalizePlanState", () => {
       {
         id: "us-option-income",
         memberId: scenario.householdProfile.headMemberId,
-        name: "米国株オプション",
+        name: "オプション収入",
         type: "investmentIncome",
         startYearMonth: scenario.userProfile.simulationStartYearMonth,
         monthlyAmount: 100_000,

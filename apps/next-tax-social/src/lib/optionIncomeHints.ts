@@ -24,9 +24,10 @@ export function inferMonthlyOptionIncomeFromScenarioName(
   scenarioName: string,
   eventName?: OptionIncomeHintName,
   accountName?: OptionIncomeHintName,
+  options?: { allowGenericEvent?: boolean },
 ) {
   if (!hasUsStockOptionLabel(scenarioName)) return undefined;
-  if (!hasUsStockOptionLabel(eventName) && !hasUsStockOptionLabel(accountName)) return undefined;
+  if (!options?.allowGenericEvent && !hasUsStockOptionLabel(eventName) && !hasUsStockOptionLabel(accountName)) return undefined;
 
   const normalized = normalizeDigits(scenarioName);
   const match = normalized.match(/米国株(?:式)?オプション(?:利益|入金力|月額)?\s*([0-9]+)\s*万?/);
@@ -45,9 +46,10 @@ export function applyScenarioNameOptionIncomeHint(
   scenarioName: string,
   event: IncomeEvent,
   account?: Pick<OptionSubAccount, "name">,
+  options?: { allowGenericEvent?: boolean },
 ) {
   if (!isOrdinaryOptionIncomeEvent(event)) return event;
-  const hintedMonthlyAmount = inferMonthlyOptionIncomeFromScenarioName(scenarioName, event.name, account?.name);
+  const hintedMonthlyAmount = inferMonthlyOptionIncomeFromScenarioName(scenarioName, event.name, account?.name, options);
   if (hintedMonthlyAmount === undefined || hintedMonthlyAmount === event.monthlyAmount) return event;
   return {
     ...event,

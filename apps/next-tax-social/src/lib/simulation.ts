@@ -16,6 +16,7 @@ import {
   isPensionPlannerReplacingEvent,
   shouldApplyPensionPlannerToSimulation,
 } from "@/lib/pensionPlanner";
+import { applyScenarioNameOptionIncomeHint, inferMonthlyOptionIncomeFromScenarioName, isOrdinaryOptionIncomeEvent } from "@/lib/optionIncomeHints";
 import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
@@ -674,8 +675,16 @@ function applyOptionSubAccountStartFunding(
   return { amount: fundedTotal, details };
 }
 
-function getOptionAccount(accountId: string | undefined, optionSubAccounts: OptionSubAccountState[], fallbackName?: string) {
-  const resolvedId = resolveOptionSubAccountId(optionSubAccounts, accountId, fallbackName);
+function getOptionAccount(
+  accountId: string | undefined,
+  optionSubAccounts: OptionSubAccountState[],
+  fallbackName?: string,
+  scenarioName?: string,
+) {
+  const scenarioNameResolvedId = scenarioName
+    ? resolveOptionSubAccountId(optionSubAccounts, undefined, scenarioName)
+    : undefined;
+  const resolvedId = scenarioNameResolvedId ?? resolveOptionSubAccountId(optionSubAccounts, accountId, fallbackName);
   return optionSubAccounts.find((account) => account.id === resolvedId) ?? optionSubAccounts[0];
 }
 
@@ -1186,6 +1195,7 @@ function simulateScenarioCore(
   const taxableBasis = createTaxableBasisMap(scenario);
   const optionSubAccounts = createOptionSubAccountStates(scenario);
   syncOptionAggregate(balances, taxableBasis, optionSubAccounts);
+  const ordinaryOptionIncomeEventCount = scenario.incomeEvents.filter(isOrdinaryOptionIncomeEvent).length;
   const cashReserve = Math.max(0, scenario.userProfile.cashReserve ?? 0);
   const excludeTaxExpense = effectiveTaxRows.length > 0;
   const reservedWithdrawalAssets = getReservedWithdrawalAssets(scenario);
@@ -1255,15 +1265,22 @@ function simulateScenarioCore(
       } else if (!isEventActive(event, yearMonth)) {
         continue;
       }
-      const desiredAmount = isIdecoMonexPensionEvent(event)
-        ? (isIdecoMonexPayoutMonth(event, yearMonth) ? getDynamicIdecoMonexPayoutAmount(balances, event, yearMonth) : 0)
-        : getIncomeEventAmountForMonth(event, yearMonth, scenario, pensionAdjustmentRate);
       const isOptionIncome =
         event.sourceAssetKey === "ordinaryAccountForOptions" &&
         (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other");
       const optionSourceAccount = event.sourceAssetKey === "ordinaryAccountForOptions"
-        ? getOptionAccount(event.sourceOptionSubAccountId, optionSubAccounts, event.name)
+        ? getOptionAccount(event.sourceOptionSubAccountId, optionSubAccounts, event.name, isOptionIncome ? scenario.name : undefined)
         : undefined;
+      const effectiveIncomeEvent = isOptionIncome
+        ? applyScenarioNameOptionIncomeHint(scenario.name, event, optionSourceAccount, {
+            allowGenericEvent:
+              ordinaryOptionIncomeEventCount === 1 &&
+              inferMonthlyOptionIncomeFromScenarioName(scenario.name, event.name, undefined, { allowGenericEvent: true }) !== undefined,
+          })
+        : event;
+      const desiredAmount = isIdecoMonexPensionEvent(effectiveIncomeEvent)
+        ? (isIdecoMonexPayoutMonth(effectiveIncomeEvent, yearMonth) ? getDynamicIdecoMonexPayoutAmount(balances, effectiveIncomeEvent, yearMonth) : 0)
+        : getIncomeEventAmountForMonth(effectiveIncomeEvent, yearMonth, scenario, pensionAdjustmentRate);
       if (
         isOptionIncome &&
         optionSourceAccount &&

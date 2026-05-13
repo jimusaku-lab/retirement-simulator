@@ -64,7 +64,7 @@ import {
 } from "@/lib/incomeEvents";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
-import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
+import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
   PENSION_STANDARD_CLAIM_AGE,
@@ -885,7 +885,12 @@ function AssetUseWorkspace({
         : optionLiquidityAnalysis.suspendedIncomeTotal > 0
           ? "普通口座から流動資金へ回った額はありますが、最低維持額不足で停止された予定利益もあります。"
           : "普通口座オプションから流動資金へ回った額を、健康寿命期の使える資金として確認できます。";
-  const optionIncomeAuditRows = scenario.incomeEvents
+  const ordinaryOptionIncomeEvents = scenario.incomeEvents.filter(
+    (event) =>
+      event.sourceAssetKey === "ordinaryAccountForOptions" &&
+      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
+  );
+  const optionIncomeAuditRows = ordinaryOptionIncomeEvents
     .filter(
       (event) =>
         event.sourceAssetKey === "ordinaryAccountForOptions" &&
@@ -893,7 +898,15 @@ function AssetUseWorkspace({
     )
     .map((event) => {
       const configuredAccount = scenario.optionSubAccounts.find((account) => account.id === event.sourceOptionSubAccountId);
-      const resolvedAccountId = resolveOptionSubAccountId(scenario.optionSubAccounts, event.sourceOptionSubAccountId, event.name);
+      const scenarioNameAmount = inferMonthlyOptionIncomeFromScenarioName(scenario.name, event.name, configuredAccount?.name, {
+        allowGenericEvent: ordinaryOptionIncomeEvents.length === 1,
+      });
+      const scenarioResolvedAccountId = scenarioNameAmount === undefined
+        ? undefined
+        : inferOptionSubAccountIdFromName(scenario.optionSubAccounts, scenario.name);
+      const resolvedAccountId =
+        scenarioResolvedAccountId ??
+        resolveOptionSubAccountId(scenario.optionSubAccounts, event.sourceOptionSubAccountId, event.name);
       const resolvedAccount = scenario.optionSubAccounts.find((account) => account.id === resolvedAccountId);
       const activeMonthsInPeriod = result.monthly.filter(
         (row) =>
@@ -904,7 +917,6 @@ function AssetUseWorkspace({
       const monthlyAmount = Math.max(0, event.monthlyAmount ?? 0);
       const configuredAccountName = configuredAccount?.name ?? (event.sourceOptionSubAccountId ? "見つからないサブ口座" : "未指定");
       const resolvedAccountName = resolvedAccount?.name ?? configuredAccountName;
-      const scenarioNameAmount = inferMonthlyOptionIncomeFromScenarioName(scenario.name, event.name, resolvedAccount?.name);
       return {
         id: event.id,
         name: event.name || "普通口座オプション収入",
