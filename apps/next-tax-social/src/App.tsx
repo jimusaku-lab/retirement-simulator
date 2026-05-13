@@ -848,22 +848,7 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
     categoryBreakdown.familySupport;
   const allExpenseReviewTotal = specialExpenseReviewTotal + categoryBreakdown.livingAndTax;
   const enjoymentAllExpenseShare = allExpenseReviewTotal > 0 ? categoryBreakdown.enjoyment / allExpenseReviewTotal : 0;
-  const enjoymentRatioRows = [
-    {
-      label: "特別支出内",
-      value: enjoymentShare,
-      numerator: categoryBreakdown.enjoyment,
-      denominator: specialExpenseReviewTotal,
-      note: "生活費・税社保を除いた、特別支出だけの中での比率",
-    },
-    {
-      label: "全支出内",
-      value: enjoymentAllExpenseShare,
-      numerator: categoryBreakdown.enjoyment,
-      denominator: allExpenseReviewTotal,
-      note: "生活費・税社保も含めた、期間内支出全体での比率",
-    },
-  ];
+  const enjoymentSpecialExpensePercent = Math.max(0, Math.min(100, Math.round(enjoymentShare * 100)));
   const targetGapSub =
     targetBalanceAnalysis.gap >= 0
       ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
@@ -978,34 +963,30 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
 
       <Card>
         <CardHeader>
-          <CardTitle>楽しみ支出の比率</CardTitle>
+          <CardTitle>特別支出内の楽しみ比率</CardTitle>
           <CardDescription>
-            同じ楽しみ支出でも、特別支出内で見る場合と、生活費・税社保を含む全支出で見る場合では比率が変わります。
+            生活費・税社保を除き、旅行・趣味などの楽しみ支出が特別支出の中でどれくらいあるかを見ます。
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {enjoymentRatioRows.map((row) => {
-            const percent = Math.max(0, Math.min(100, Math.round(row.value * 100)));
-            return (
-              <div key={row.label} className="space-y-2">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div>
-                    <div className="font-medium">{row.label}</div>
-                    <div className="text-xs text-muted-foreground">{row.note}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xl font-semibold text-teal-700">{compactPercent(row.value)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {compactYen(row.numerator)} / {compactYen(row.denominator)}
-                    </div>
-                  </div>
-                </div>
-                <div className="h-5 overflow-hidden rounded-full border bg-slate-100">
-                  <div className="h-full bg-teal-700" style={{ width: `${percent}%` }} />
-                </div>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <div className="font-medium">特別支出内</div>
+              <div className="text-xs text-muted-foreground">楽しみカテゴリ / 特別支出カテゴリ合計</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xl font-semibold text-teal-700">{compactPercent(enjoymentShare)}</div>
+              <div className="text-xs text-muted-foreground">
+                {compactYen(categoryBreakdown.enjoyment)} / {compactYen(specialExpenseReviewTotal)}
               </div>
-            );
-          })}
+            </div>
+          </div>
+          <div className="h-5 overflow-hidden rounded-full border bg-slate-100">
+            <div className="h-full bg-teal-700" style={{ width: `${enjoymentSpecialExpensePercent}%` }} />
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">
+            生活費・税社保も含めた全支出内では {compactPercent(enjoymentAllExpenseShare)} です。全体の金額感は下の支出内訳で確認してください。
+          </p>
         </CardContent>
       </Card>
 
