@@ -16,6 +16,7 @@ import {
   isPensionPlannerReplacingEvent,
   shouldApplyPensionPlannerToSimulation,
 } from "@/lib/pensionPlanner";
+import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
 import type {
@@ -673,8 +674,9 @@ function applyOptionSubAccountStartFunding(
   return { amount: fundedTotal, details };
 }
 
-function getOptionAccount(accountId: string | undefined, optionSubAccounts: OptionSubAccountState[]) {
-  return optionSubAccounts.find((account) => account.id === accountId) ?? optionSubAccounts[0];
+function getOptionAccount(accountId: string | undefined, optionSubAccounts: OptionSubAccountState[], fallbackName?: string) {
+  const resolvedId = resolveOptionSubAccountId(optionSubAccounts, accountId, fallbackName);
+  return optionSubAccounts.find((account) => account.id === resolvedId) ?? optionSubAccounts[0];
 }
 
 function createBalanceMap(scenario: ScenarioData) {
@@ -1260,7 +1262,7 @@ function simulateScenarioCore(
         event.sourceAssetKey === "ordinaryAccountForOptions" &&
         (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other");
       const optionSourceAccount = event.sourceAssetKey === "ordinaryAccountForOptions"
-        ? getOptionAccount(event.sourceOptionSubAccountId, optionSubAccounts)
+        ? getOptionAccount(event.sourceOptionSubAccountId, optionSubAccounts, event.name)
         : undefined;
       if (
         isOptionIncome &&

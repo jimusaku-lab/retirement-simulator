@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { sampleState } from "@/data/sampleData";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getPensionPlannerMembers, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
 import { cloneScenario } from "@/lib/simulation";
 import type {
@@ -534,6 +535,13 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
   };
 
   delete (scenario.initialAssets as ScenarioData["initialAssets"] & { securities?: number }).securities;
+  for (const event of scenario.incomeEvents) {
+    if (event.sourceAssetKey !== "ordinaryAccountForOptions") continue;
+    const resolvedId =
+      resolveOptionSubAccountId(scenario.optionSubAccounts, event.sourceOptionSubAccountId, event.name) ??
+      (scenario.optionSubAccounts.length === 1 ? scenario.optionSubAccounts[0]?.id : undefined);
+    if (resolvedId) event.sourceOptionSubAccountId = resolvedId;
+  }
   syncLinkedIncomeEndYearMonths(scenario);
   if (scenario.pensionPlannerSettings) {
     const { selfMember, spouseMember } = getPensionPlannerMembers(scenario);

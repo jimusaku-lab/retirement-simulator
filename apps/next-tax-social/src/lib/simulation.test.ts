@@ -6184,6 +6184,85 @@ describe("simulation", () => {
     expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(3_000_000);
   });
 
+  it("原資サブ口座未指定のオプション収入は名称から対象サブ口座へ紐づける", () => {
+    const base = simpleScenario();
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          ...base.userProfile,
+          simulationStartYearMonth: "2026-04",
+          simulationEndYearMonth: "2026-04",
+        },
+        initialAssets: {
+          ...base.initialAssets,
+          cash: 0,
+          ordinaryAccountForOptions: 0,
+        },
+        monthlyExpenses: {
+          ...base.monthlyExpenses,
+          housing: 0,
+        },
+        optionSubAccounts: [
+          {
+            id: "cfd",
+            name: "CFD",
+            initialValue: 1_000_000,
+            initialCostBasis: 1_000_000,
+            enabled: true,
+            minimumBalance: 0,
+            targetBalance: 1_000_000,
+            withdrawalPriority: 1,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: true,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+          {
+            id: "us-option",
+            name: "米国株式オプション",
+            initialValue: 0,
+            initialCostBasis: 0,
+            enabled: true,
+            minimumBalance: 0,
+            targetBalance: 0,
+            withdrawalPriority: 2,
+            protectFromWithdrawal: true,
+            releaseProtectionAfterEnd: true,
+            suspendIncomeWhenBelowMinimum: true,
+            profitSweepEnabled: true,
+            profitSweepDestination: "bankDeposit",
+            profitSweepTiming: "monthly",
+            profitSweepMethod: "excessOverTarget",
+            fixedSweepAmount: 0,
+          },
+        ],
+        incomeEvents: [
+          {
+            id: "us-option-income",
+            memberId: "member-self",
+            name: "米国株オプション",
+            type: "investmentIncome",
+            startYearMonth: "2026-04",
+            endYearMonth: "2026-04",
+            monthlyAmount: 100_000,
+            sourceAssetKey: "ordinaryAccountForOptions",
+            sourceAssetPayoutMode: "retainInSourceAsset",
+            taxTreatment: "taxable",
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly[0].optionProfitSweepTotal).toBe(100_000);
+    expect(result.monthly[0].optionProfitSweepDetails).toEqual([
+      "米国株式オプション -> 普通預金 10万円",
+    ]);
+  });
+
   it("終了翌月に普通口座サブ口座残高を普通預金へ戻す", () => {
     const base = simpleScenario();
     const result = simulateScenario(
