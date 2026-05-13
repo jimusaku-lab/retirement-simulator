@@ -705,7 +705,14 @@ function App() {
               />
             )}
             {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} />}
-            {activeTab === "special" && <SpecialSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "special" && (
+              <SpecialSection
+                scenario={activeScenario}
+                scenarios={scenarios}
+                updateScenario={updateScenario}
+                updateScenarios={updateScenarios}
+              />
+            )}
             {activeTab === "scenarios" && (
               <ScenariosSection
                 scenarios={scenarios}
@@ -1912,6 +1919,10 @@ type IncomeSyncOptions = {
   pensionAdjustmentRate: boolean;
 };
 
+type SpecialSyncOptions = {
+  specialExpenses: boolean;
+};
+
 function countAssetSyncTargets(scenarios: ScenarioData[], sourceScenarioId: string, targetMode: AssetSyncTargetMode) {
   return scenarios.filter((target) => target.id !== sourceScenarioId && (targetMode === "all" || target.compare)).length;
 }
@@ -2007,6 +2018,12 @@ function applyIncomeSyncFromSource(target: ScenarioData, source: ScenarioData, o
       ...target.inflationSettings,
       pensionAnnualAdjustmentRate: source.inflationSettings.pensionAnnualAdjustmentRate,
     };
+  }
+}
+
+function applySpecialSyncFromSource(target: ScenarioData, source: ScenarioData, options: SpecialSyncOptions) {
+  if (options.specialExpenses) {
+    target.specialExpenses = structuredClone(source.specialExpenses);
   }
 }
 
@@ -6041,7 +6058,41 @@ const taxFields: [TaxNumberKey, string][] = [
   ["otherPublicCostAnnual", "その他公的負担年額"],
 ];
 
-function SpecialSection({ scenario, updateScenario }: SectionProps) {
+function SpecialSection({
+  scenario,
+  scenarios,
+  updateScenario,
+  updateScenarios,
+}: SectionProps & {
+  scenarios: ScenarioData[];
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+}) {
+  const [specialSyncTargetMode, setSpecialSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [specialSyncOptions, setSpecialSyncOptions] = useState<SpecialSyncOptions>({
+    specialExpenses: true,
+  });
+  const [specialSyncMessage, setSpecialSyncMessage] = useState<string | null>(null);
+  const specialSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, specialSyncTargetMode);
+  const hasSpecialSyncSelection = Object.values(specialSyncOptions).some(Boolean);
+  const selectedSpecialSyncLabels = [specialSyncOptions.specialExpenses ? "特別支出リスト" : ""].filter(Boolean);
+  const updateSpecialSyncOption = (key: keyof SpecialSyncOptions) => {
+    setSpecialSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const applySpecialSync = () => {
+    if (specialSyncTargetCount === 0 || !hasSpecialSyncSelection) return;
+    const source = structuredClone(scenario);
+    const confirmed = window.confirm(
+      `「${source.name}」の ${selectedSpecialSyncLabels.join("、")} を、コピー元自身を除く ${specialSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+    );
+    if (!confirmed) return;
+    updateScenarios((target) => {
+      if (target.id === source.id) return target;
+      if (specialSyncTargetMode === "compare" && !target.compare) return target;
+      applySpecialSyncFromSource(target, source, specialSyncOptions);
+      return target;
+    });
+    setSpecialSyncMessage(`${specialSyncTargetCount} 件のシナリオへ特別支出前提を反映しました。実行前の状態は履歴に保存されています。`);
+  };
   const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
   const add = () =>
     updateScenario((s) =>
@@ -6080,6 +6131,51 @@ function SpecialSection({ scenario, updateScenario }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>このシナリオの特別支出前提を他シナリオへ反映</CardTitle>
+            <CardDescription>
+              現在選択中の「{scenario.name}」をコピー元にして、旅行・修繕・家電買替などの特別支出リストを他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+              <Field label="反映先">
+                <Select value={specialSyncTargetMode} onChange={(event) => setSpecialSyncTargetMode(event.target.value as AssetSyncTargetMode)}>
+                  <option value="compare">比較対象シナリオ</option>
+                  <option value="all">全シナリオ</option>
+                </Select>
+              </Field>
+              <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+                コピー元自身を除く {specialSyncTargetCount} 件に反映します。反映先の既存の特別支出リストは、コピー元のリストで置き換わります。
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={specialSyncOptions.specialExpenses}
+                  onChange={() => updateSpecialSyncOption("specialExpenses")}
+                />
+                <span>
+                  <span className="block font-medium">特別支出リスト</span>
+                  <span className="text-xs text-muted-foreground">名称、年月、金額、カテゴリ、繰り返し設定</span>
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <span>反映は明示実行時だけです。シナリオごとに違う旅行・修繕などを置いている場合は、反映先を確認してください。</span>
+              <Button onClick={applySpecialSync} disabled={specialSyncTargetCount === 0 || !hasSpecialSyncSelection}>
+                他シナリオへ反映
+              </Button>
+            </div>
+            {specialSyncMessage && (
+              <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                {specialSyncMessage}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         {categoryWarnings.length > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="font-medium">楽しみ支出として扱う可能性がある項目があります</div>
