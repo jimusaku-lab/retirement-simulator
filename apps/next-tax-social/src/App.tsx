@@ -2324,6 +2324,7 @@ type ExpenseSyncOptions = {
 
 type IncomeSyncOptions = {
   incomeEvents: boolean;
+  preserveOptionIncomeEvents: boolean;
   pensionPlanner: boolean;
   retirementIncomeEvents: boolean;
   pensionAdjustmentRate: boolean;
@@ -2402,14 +2403,28 @@ function mapLivingArrangementEventIdForTarget(target: ScenarioData, sourceEventI
   return undefined;
 }
 
+function isOrdinaryOptionIncomeSyncEvent(event: ScenarioData["incomeEvents"][number]) {
+  return (
+    event.sourceAssetKey === "ordinaryAccountForOptions" &&
+    (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other")
+  );
+}
+
 function applyIncomeSyncFromSource(target: ScenarioData, source: ScenarioData, options: IncomeSyncOptions) {
   if (options.incomeEvents) {
-    target.incomeEvents = source.incomeEvents.map((event) => ({
+    const preservedOptionIncomeEvents = options.preserveOptionIncomeEvents
+      ? target.incomeEvents.filter(isOrdinaryOptionIncomeSyncEvent).map((event) => structuredClone(event))
+      : [];
+    const sourceIncomeEvents = source.incomeEvents.filter(
+      (event) => !(options.preserveOptionIncomeEvents && isOrdinaryOptionIncomeSyncEvent(event)),
+    );
+    const syncedIncomeEvents: IncomeEvent[] = sourceIncomeEvents.map((event) => ({
       ...structuredClone(event),
       memberId: mapMemberIdForTarget(target, event.memberId),
       sourceOptionSubAccountId: mapOptionSubAccountIdForTarget(target, event.sourceOptionSubAccountId),
       linkedHouseholdLivingArrangementEventId: mapLivingArrangementEventIdForTarget(target, event.linkedHouseholdLivingArrangementEventId),
     }));
+    target.incomeEvents = [...syncedIncomeEvents, ...preservedOptionIncomeEvents];
   }
 
   if (options.pensionPlanner) {
@@ -2430,6 +2445,10 @@ function applyIncomeSyncFromSource(target: ScenarioData, source: ScenarioData, o
     };
   }
 }
+
+export const __testHooks = {
+  applyIncomeSyncFromSource,
+};
 
 function applySpecialSyncFromSource(target: ScenarioData, source: ScenarioData, options: SpecialSyncOptions) {
   if (options.specialExpenses) {
@@ -4210,6 +4229,7 @@ function IncomeSection({
   const [incomeSyncTargetMode, setIncomeSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [incomeSyncOptions, setIncomeSyncOptions] = useState<IncomeSyncOptions>({
     incomeEvents: true,
+    preserveOptionIncomeEvents: true,
     pensionPlanner: true,
     retirementIncomeEvents: true,
     pensionAdjustmentRate: true,
@@ -4219,18 +4239,32 @@ function IncomeSection({
   const hasIncomeSyncSelection = Object.values(incomeSyncOptions).some(Boolean);
   const selectedIncomeSyncLabels = [
     incomeSyncOptions.incomeEvents ? "収入イベント" : "",
+    incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents ? "普通口座オプション収入は保護" : "",
     incomeSyncOptions.pensionPlanner ? "年金プランナー設定" : "",
     incomeSyncOptions.retirementIncomeEvents ? "退職所得イベント" : "",
     incomeSyncOptions.pensionAdjustmentRate ? "年金改定率" : "",
   ].filter(Boolean);
+  const protectedOptionIncomeEventCount = scenarios
+    .filter((target) => target.id !== scenario.id && (incomeSyncTargetMode === "all" || target.compare))
+    .reduce((count, target) => count + target.incomeEvents.filter(isOrdinaryOptionIncomeSyncEvent).length, 0);
   const updateIncomeSyncOption = (key: keyof IncomeSyncOptions) => {
-    setIncomeSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+    setIncomeSyncOptions((current) => {
+      const next = { ...current, [key]: !current[key] };
+      if (key === "incomeEvents" && !next.incomeEvents) next.preserveOptionIncomeEvents = false;
+      if (key === "incomeEvents" && next.incomeEvents) next.preserveOptionIncomeEvents = true;
+      if (key === "preserveOptionIncomeEvents" && next.preserveOptionIncomeEvents) next.incomeEvents = true;
+      return next;
+    });
   };
   const applyIncomeSync = () => {
     if (incomeSyncTargetCount === 0 || !hasIncomeSyncSelection) return;
     const source = structuredClone(scenario);
     const confirmed = window.confirm(
-      `「${source.name}」の ${selectedIncomeSyncLabels.join("、")} を、コピー元自身を除く ${incomeSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+      `「${source.name}」の ${selectedIncomeSyncLabels.join("、")} を、コピー元自身を除く ${incomeSyncTargetCount} 件のシナリオへ反映します。` +
+        (incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents
+          ? `反映先の普通口座オプション収入 ${protectedOptionIncomeEventCount} 件は保持します。`
+          : "反映先の収入イベントは置き換わります。") +
+        "実行しますか？",
     );
     if (!confirmed) return;
     updateScenarios((target) => {
@@ -4292,15 +4326,21 @@ function IncomeSection({
           targetSummary={`コピー元自身を除く ${incomeSyncTargetCount} 件に反映します。世帯メンバーIDが違うシナリオでは、世帯主または先頭メンバーへ安全に割り当てます。`}
           options={[
             { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
+            { key: "preserveOptionIncomeEvents", label: "普通口座オプション収入を保護", description: "米国株オプション等の入金シナリオを残す" },
             { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
             { key: "retirementIncomeEvents", label: "退職所得イベント", description: "退職金、iDeCo一時金など" },
             { key: "pensionAdjustmentRate", label: "年金改定率", description: "収入タブの年金改定率のみ" },
           ]}
           selectedOptions={incomeSyncOptions}
           toggleOption={updateIncomeSyncOption}
-          warningText="反映は明示実行時だけです。シナリオごとに違う収入イベントを置いている場合は、反映先を確認してください。"
+          warningText={
+            incomeSyncOptions.incomeEvents && incomeSyncOptions.preserveOptionIncomeEvents
+              ? `普通口座オプション収入は置き換えず保持します。現在の反映先では ${protectedOptionIncomeEventCount} 件を保護します。`
+              : "反映先の収入イベントを置き換えます。シナリオごとに違う収入イベントを置いている場合は、反映先を確認してください。"
+          }
           onApply={applyIncomeSync}
           message={incomeSyncMessage}
+          optionGridClassName="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"
         />
         <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
         {scenario.incomeEvents.map((event, index) => {
