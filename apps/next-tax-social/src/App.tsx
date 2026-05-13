@@ -6475,7 +6475,7 @@ function CompareSection({
           </p>
         </CardContent>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1800px]">
+          <Table className="min-w-[1680px]">
             <thead>
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
@@ -6485,7 +6485,6 @@ function CompareSection({
                 <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
                 <Th>{flexibleFreeCashLabel}<br />年平均余力</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
-                <Th>{flexibleFreeCashLabel}<br />最低流動資金</Th>
                 <Th>生活資金不足</Th>
                 <Th>不足補填売却</Th>
                 <Th>収入化した原資</Th>
@@ -6526,7 +6525,6 @@ function CompareSection({
                   <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
                   <Td className={flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.averageAnnualFreeCash)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
-                  <Td className={flexibleFreeCash.minimumLiquidBuffer < 0 ? "text-red-600" : ""}>{compactYen(flexibleFreeCash.minimumLiquidBuffer)}</Td>
                   <Td>{compactYen(livingAndTaxNeed)}</Td>
                   <Td>{compactYen(deficitAssetSale)}</Td>
                   <Td>{compactYen(sourceAssetIncome)}</Td>
