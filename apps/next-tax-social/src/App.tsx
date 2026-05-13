@@ -49,6 +49,13 @@ import {
   type FlexibleFreeCashPeriod,
 } from "@/lib/flexibleFreeCash";
 import {
+  calculateAssetUseCategoryBreakdown,
+  calculateEnjoymentShare,
+  calculateTargetBalanceAnalysis,
+  findSpecialExpenseCategoryWarnings,
+  type TargetBalanceStatus,
+} from "@/lib/assetUseAnalysis";
+import {
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
   getIdecoMonexFirstPayoutYearMonth,
@@ -161,6 +168,18 @@ const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
   housingCar: "住宅・車",
   medicalCare: "医療・介護",
   familySupport: "家族支援",
+};
+
+const targetBalanceStatusLabels: Record<TargetBalanceStatus, string> = {
+  surplus: "達成",
+  onTarget: "目標一致",
+  shortfall: "目標割れ",
+};
+
+const targetBalanceStatusClassNames: Record<TargetBalanceStatus, string> = {
+  surplus: "text-teal-700",
+  onTarget: "text-slate-700",
+  shortfall: "text-destructive",
 };
 
 function appModeFromHash(): AppMode {
@@ -750,8 +769,25 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
   const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
+  const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
+  const categoryBreakdown = calculateAssetUseCategoryBreakdown(scenario, result, flexibleFreeCashPeriod);
+  const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
   const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
+  const enjoymentShare = calculateEnjoymentShare(categoryBreakdown);
+  const targetGapSub =
+    targetBalanceAnalysis.gap >= 0
+      ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
+      : `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を下回っています`;
+  const categoryRows = [
+    { label: "楽しみ", value: categoryBreakdown.enjoyment, note: "旅行・趣味・家族イベントなど" },
+    { label: "生活維持", value: categoryBreakdown.lifeMaintenance, note: "特別支出カテゴリ分" },
+    { label: "住宅・車", value: categoryBreakdown.housingCar, note: "修繕・買替など" },
+    { label: "医療・介護", value: categoryBreakdown.medicalCare, note: "医療・介護関連" },
+    { label: "家族支援", value: categoryBreakdown.familySupport, note: "家族への支援" },
+    { label: "生活費・税社保", value: categoryBreakdown.livingAndTax, note: "通常生活費と税・社会保険" },
+  ];
+  const categoryChartData = categoryRows.map((row) => ({ name: row.label, amount: row.value }));
 
   return (
     <div className="space-y-6">
@@ -759,28 +795,96 @@ function AssetUseWorkspace({ scenario, result }: { scenario: ScenarioData; resul
         <CardHeader>
           <CardTitle>資産活用ビュー</CardTitle>
           <CardDescription>
-            安全性シミュレーションと同じ計算結果を使い、資産を元気な時期にどう活用できているかを見るための専用ビューです。
+            安全性シミュレーションと同じ計算結果を使い、目標残高を守ったうえで健康寿命期にどれだけ使えているかを確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Metric title="選択シナリオ" value={scenario.name} sub="安全性側と同じシナリオ" />
           <Metric title="資産寿命" value={assetLifeValue} sub={`${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`} />
-          <Metric title={`${flexibleFreeCashLabel} 資産活用額`} value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)} sub="安全性側と同じ派生計算" />
-          <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
+          <Metric title={`${scenario.userProfile.targetBalanceAge}歳目標との差額`} value={compactYen(targetBalanceAnalysis.gap)} sub={targetGapSub} />
+          <Metric
+            title="目標達成判定"
+            value={targetBalanceStatusLabels[targetBalanceAnalysis.status]}
+            sub={targetBalanceAnalysis.status === "shortfall" ? "追加支出より先に安全性の調整が必要です" : "追加支出候補を検討できる状態です"}
+          />
+          <Metric title={`${flexibleFreeCashLabel} 資産活用額`} value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)} sub="現金収入等で賄いきれず資産で補った額" />
+          <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub={`特別支出内の楽しみ比率 ${compactPercent(enjoymentShare)}`} />
+          <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="健康寿命期の終点で残る年末資産" />
+          <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`} />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>設計待ちエリア</CardTitle>
+          <CardTitle>健康寿命期の支出内訳</CardTitle>
           <CardDescription>
-            ここに Die with Zero / 資産活用の評価軸、年齢帯別の使い方、残しすぎ判定、体験支出の見せ方を追加していきます。
+            資産を取り崩したかだけでなく、元気な時期の支出が何に向いているかを分けて確認します。
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            URL: http://127.0.0.1:5175/#/asset-use
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+          <div className="h-80 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryChartData} layout="vertical" margin={{ top: 8, right: 28, bottom: 8, left: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} />
+                <YAxis dataKey="name" type="category" width={88} />
+                <Tooltip formatter={(value) => yen(Number(value))} />
+                <Bar dataKey="amount" name="支出額" fill="#0f766e" maxBarSize={24} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="table-scroll overflow-auto">
+            <Table className="min-w-[520px]">
+              <thead>
+                <Tr>
+                  <Th>区分</Th>
+                  <Th>金額</Th>
+                  <Th>読み方</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {categoryRows.map((row) => (
+                  <Tr key={row.label}>
+                    <Td>{row.label}</Td>
+                    <Td>{compactYen(row.value)}</Td>
+                    <Td className="text-sm text-muted-foreground">{row.note}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>判定の前提</CardTitle>
+          <CardDescription>
+            目標残高は自動で使い切る設定ではなく、Die with Zero視点の判定基準として扱います。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          <p>
+            現在の「目標残高に向けた計画取り崩し」は{scenario.userProfile.plannedDrawdownEnabled ? "ON" : "OFF"}です。
+            {scenario.userProfile.plannedDrawdownEnabled
+              ? "シミュレーション内で目標残高に向けた計画取り崩しも反映されています。"
+              : "目標残高は判定用であり、アプリが自動で目標残高まで使い切るわけではありません。"}
           </p>
+          <p>
+            予備・想定外の安全資金は特別支出ではなく、流動資金最低保持額に含めて扱います。
+          </p>
+          {categoryWarnings.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+              <div className="font-medium">カテゴリ確認が必要な特別支出があります</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {categoryWarnings.map((warning) => (
+                  <li key={warning.eventId}>
+                    {warning.eventName}: {warning.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -5316,6 +5420,7 @@ const taxFields: [TaxNumberKey, string][] = [
 ];
 
 function SpecialSection({ scenario, updateScenario }: SectionProps) {
+  const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
   const add = () =>
     updateScenario((s) =>
       s.specialExpenses.push({
@@ -5353,6 +5458,18 @@ function SpecialSection({ scenario, updateScenario }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        {categoryWarnings.length > 0 && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="font-medium">楽しみ支出として扱う可能性がある項目があります</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {categoryWarnings.map((warning) => (
+                <li key={warning.eventId}>
+                  {warning.eventName}: {warning.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {scenario.specialExpenses.map((event, index) => (
           <EventEditor
             key={event.id}
@@ -6416,6 +6533,7 @@ function CompareSection({
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashPeriod);
   const compareRows = items.map(({ scenario, result }) => {
     const flexibleFreeCash = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+    const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
     const yearCount = Math.max(1, result.annual.length);
     const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
     const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
@@ -6482,6 +6600,7 @@ function CompareSection({
       afterLivingCapacity,
       investmentIncludedNeed,
       flexibleFreeCash,
+      targetBalanceAnalysis,
     };
   });
   const longevityChartData = compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown, livingAndTaxNeed }) => ({
@@ -6562,6 +6681,9 @@ function CompareSection({
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>指定年齢残高</Th>
+                <Th>指定年齢<br />目標残高</Th>
+                <Th>目標残高<br />との差額</Th>
+                <Th>判定</Th>
                 <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
                 <Th>{flexibleFreeCashLabel}<br />年平均余力</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
@@ -6585,12 +6707,16 @@ function CompareSection({
                   nisaSkipped,
                   additionalInvestment,
                   flexibleFreeCash,
+                  targetBalanceAnalysis,
                 }) => (
                 <Tr key={scenario.id}>
                   <Td className="sticky-col left-0 z-20 bg-white font-medium">{scenario.name}</Td>
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
+                  <Td>{compactYen(targetBalanceAnalysis.targetAmount)}</Td>
+                  <Td className={targetBalanceStatusClassNames[targetBalanceAnalysis.status]}>{compactYen(targetBalanceAnalysis.gap)}</Td>
+                  <Td className={targetBalanceStatusClassNames[targetBalanceAnalysis.status]}>{targetBalanceStatusLabels[targetBalanceAnalysis.status]}</Td>
                   <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
                   <Td className={flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.averageAnnualFreeCash)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
@@ -7040,6 +7166,10 @@ function formatDetailsForPeriod(details: string[], period: "month" | "year") {
 
 function compactLimitYen(value: number) {
   return Number.isFinite(value) ? compactYen(value) : "制限なし";
+}
+
+function compactPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
 }
 
 function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows: AnnualResult[]; period: "year" }) {
