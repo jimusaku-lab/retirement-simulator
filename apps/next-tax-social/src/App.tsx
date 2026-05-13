@@ -63,6 +63,7 @@ import {
   getIdecoMonexFirstPayoutYearMonth,
 } from "@/lib/incomeEvents";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
+import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
   PENSION_STANDARD_CLAIM_AGE,
@@ -85,6 +86,7 @@ import {
   getBaseMonthlyExpense,
   getSimulationTargetAssets,
   getTotalAssets,
+  isEventActive,
   isSpecialExpenseActive,
   simulateScenario,
 } from "@/lib/simulation";
@@ -882,6 +884,41 @@ function AssetUseWorkspace({
         : optionLiquidityAnalysis.suspendedIncomeTotal > 0
           ? "普通口座から流動資金へ回った額はありますが、最低維持額不足で停止された予定利益もあります。"
           : "普通口座オプションから流動資金へ回った額を、健康寿命期の使える資金として確認できます。";
+  const optionIncomeAuditRows = scenario.incomeEvents
+    .filter(
+      (event) =>
+        event.sourceAssetKey === "ordinaryAccountForOptions" &&
+        (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
+    )
+    .map((event) => {
+      const configuredAccount = scenario.optionSubAccounts.find((account) => account.id === event.sourceOptionSubAccountId);
+      const resolvedAccountId = resolveOptionSubAccountId(scenario.optionSubAccounts, event.sourceOptionSubAccountId, event.name);
+      const resolvedAccount = scenario.optionSubAccounts.find((account) => account.id === resolvedAccountId);
+      const activeMonthsInPeriod = result.monthly.filter(
+        (row) =>
+          row.ageYears >= flexibleFreeCashSummary.period.startAge &&
+          row.ageYears <= flexibleFreeCashSummary.period.endAge &&
+          isEventActive(event, row.yearMonth),
+      ).length;
+      const monthlyAmount = Math.max(0, event.monthlyAmount ?? 0);
+      const configuredAccountName = configuredAccount?.name ?? (event.sourceOptionSubAccountId ? "見つからないサブ口座" : "未指定");
+      const resolvedAccountName = resolvedAccount?.name ?? configuredAccountName;
+      return {
+        id: event.id,
+        name: event.name || "普通口座オプション収入",
+        monthlyAmount,
+        activeMonthsInPeriod,
+        periodTotal: monthlyAmount * activeMonthsInPeriod,
+        payoutMode: event.sourceAssetPayoutMode ?? "cash",
+        configuredAccountName,
+        resolvedAccountName,
+        isCorrected: Boolean(
+          resolvedAccountId &&
+          event.sourceOptionSubAccountId &&
+          resolvedAccountId !== event.sourceOptionSubAccountId,
+        ),
+      };
+    });
   const targetGapSub =
     targetBalanceAnalysis.gap >= 0
       ? `${targetBalanceAnalysis.targetAge}歳目標 ${compactYen(targetBalanceAnalysis.targetAmount)} を上回る余力目安`
@@ -1031,6 +1068,53 @@ function AssetUseWorkspace({
               <span>
                 {" "}申告対象利益に対する流動資金化の目安は {compactPercent(optionLiquidityAnalysis.optionToLiquidShareOfDeclaredProfit)} です。
               </span>
+            )}
+          </div>
+          <div className="rounded-md border bg-white px-4 py-3">
+            <div className="text-sm font-medium">入金力の計算入力チェック</div>
+            <p className="mt-1 text-xs leading-6 text-muted-foreground">
+              このシナリオで計算に使っている普通口座オプション収入です。10万・20万・30万シナリオを切り替えた時、ここが変わらなければ入力差分が計算に入っていません。
+            </p>
+            {optionIncomeAuditRows.length > 0 ? (
+              <div className="table-scroll mt-3 overflow-auto">
+                <Table className="min-w-[980px]">
+                  <thead>
+                    <Tr>
+                      <Th>収入名</Th>
+                      <Th>月額</Th>
+                      <Th>{flexibleFreeCashLabel}<br />対象月数</Th>
+                      <Th>{flexibleFreeCashLabel}<br />入金合計</Th>
+                      <Th>反映先</Th>
+                      <Th>サブ口座</Th>
+                      <Th>補正</Th>
+                    </Tr>
+                  </thead>
+                  <tbody>
+                    {optionIncomeAuditRows.map((row) => (
+                      <Tr key={row.id}>
+                        <Td>{row.name}</Td>
+                        <Td>{compactYen(row.monthlyAmount)}</Td>
+                        <Td>{row.activeMonthsInPeriod}か月</Td>
+                        <Td>{compactYen(row.periodTotal)}</Td>
+                        <Td>{row.payoutMode === "retainInSourceAsset" ? "原資口座内で積み上げる" : "現金収入にする"}</Td>
+                        <Td>
+                          {row.resolvedAccountName}
+                          {row.configuredAccountName !== row.resolvedAccountName && (
+                            <span className="ml-2 text-xs text-amber-700">元: {row.configuredAccountName}</span>
+                          )}
+                        </Td>
+                        <Td className={row.isCorrected ? "text-amber-700" : "text-muted-foreground"}>
+                          {row.isCorrected ? "名称から補正" : "補正なし"}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">
+                このシナリオには普通口座オプションを原資にした定期入金がありません。
+              </p>
             )}
           </div>
         </CardContent>

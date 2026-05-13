@@ -10,20 +10,26 @@ function normalizeOptionAccountName(value: string) {
     .replace(/[\s\u3000（）()・_-]/g, "");
 }
 
+function optionAccountNameMatches(accountName: string, name?: string) {
+  if (!name) return false;
+  const normalizedName = normalizeOptionAccountName(name);
+  const normalizedAccountName = normalizeOptionAccountName(accountName);
+  return Boolean(
+    normalizedName &&
+    normalizedAccountName &&
+    (
+      normalizedAccountName.includes(normalizedName) ||
+      normalizedName.includes(normalizedAccountName)
+    ),
+  );
+}
+
 export function inferOptionSubAccountIdFromName(
   accounts: OptionAccountNameSource[],
   name?: string,
 ) {
   if (!name || accounts.length <= 1) return undefined;
-  const normalizedName = normalizeOptionAccountName(name);
-  if (!normalizedName) return undefined;
-  return accounts.find((account) => {
-    const normalizedAccountName = normalizeOptionAccountName(account.name);
-    return normalizedAccountName && (
-      normalizedAccountName.includes(normalizedName) ||
-      normalizedName.includes(normalizedAccountName)
-    );
-  })?.id;
+  return accounts.find((account) => optionAccountNameMatches(account.name, name))?.id;
 }
 
 export function resolveOptionSubAccountId(
@@ -31,6 +37,18 @@ export function resolveOptionSubAccountId(
   accountId?: string,
   fallbackName?: string,
 ) {
-  if (accountId && accounts.some((account) => account.id === accountId)) return accountId;
-  return inferOptionSubAccountIdFromName(accounts, fallbackName);
+  const nameMatchedId = inferOptionSubAccountIdFromName(accounts, fallbackName);
+  if (!accountId) return nameMatchedId;
+
+  const selectedAccount = accounts.find((account) => account.id === accountId);
+  if (!selectedAccount) return nameMatchedId;
+  if (
+    nameMatchedId &&
+    nameMatchedId !== accountId &&
+    !optionAccountNameMatches(selectedAccount.name, fallbackName)
+  ) {
+    return nameMatchedId;
+  }
+
+  return accountId;
 }

@@ -6250,6 +6250,7 @@ describe("simulation", () => {
             endYearMonth: "2026-04",
             monthlyAmount: 100_000,
             sourceAssetKey: "ordinaryAccountForOptions",
+            sourceOptionSubAccountId: "cfd",
             sourceAssetPayoutMode: "retainInSourceAsset",
             taxTreatment: "taxable",
           },
