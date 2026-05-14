@@ -2742,25 +2742,6 @@ function AssetsSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ScenarioSyncCard<keyof AssetSyncOptions>
-          title="このシナリオの現在資産を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、初期資産の前提だけを他シナリオへ反映します。計算ロジックや生活費・収入・特別支出は変更しません。`}
-          targetMode={assetSyncTargetMode}
-          setTargetMode={setAssetSyncTargetMode}
-          targetCount={assetSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${assetSyncTargetCount} 件に反映します。ゆくゆくは、どのシナリオを選んでもそのシナリオを起点に反映できる運用にします。`}
-          options={[
-            { key: "liquidAssets", label: "現金・預金・対象外資産", description: "現金、普通預金、定期預金、対象外資産、負債" },
-            { key: "marketAssets", label: "証券・iDeCo評価額", description: "NISA、特定口座、iDeCoの評価額" },
-            { key: "costBasis", label: "取得原価", description: "譲渡益税の前提。評価額更新時は通常一緒に反映" },
-            { key: "optionSubAccounts", label: "普通口座サブ口座", description: "口座構成、評価額、取得原価、運用ルールも反映" },
-          ]}
-          selectedOptions={assetSyncOptions}
-          toggleOption={updateAssetSyncOption}
-          warningText="反映は明示実行時だけです。シナリオ別に意図して変えた資産前提がある場合は、反映先を確認してください。"
-          onApply={applyAssetSync}
-          message={assetSyncMessage}
-        />
         <FormGrid>
           {liquidAssetKeys.map((key) => (
             <Field key={key} label={assetLabels[key]}>
@@ -3454,6 +3435,25 @@ function AssetsSection({
             ))}
           </CardContent>
         </Card>
+        <ScenarioSyncCard<keyof AssetSyncOptions>
+          title="このシナリオの現在資産を他シナリオへ反映"
+          description={`現在選択中の「${scenario.name}」をコピー元にして、初期資産の前提だけを他シナリオへ反映します。計算ロジックや生活費・収入・特別支出は変更しません。`}
+          targetMode={assetSyncTargetMode}
+          setTargetMode={setAssetSyncTargetMode}
+          targetCount={assetSyncTargetCount}
+          targetSummary={`コピー元自身を除く ${assetSyncTargetCount} 件に反映します。ゆくゆくは、どのシナリオを選んでもそのシナリオを起点に反映できる運用にします。`}
+          options={[
+            { key: "liquidAssets", label: "現金・預金・対象外資産", description: "現金、普通預金、定期預金、対象外資産、負債" },
+            { key: "marketAssets", label: "証券・iDeCo評価額", description: "NISA、特定口座、iDeCoの評価額" },
+            { key: "costBasis", label: "取得原価", description: "譲渡益税の前提。評価額更新時は通常一緒に反映" },
+            { key: "optionSubAccounts", label: "普通口座サブ口座", description: "口座構成、評価額、取得原価、運用ルールも反映" },
+          ]}
+          selectedOptions={assetSyncOptions}
+          toggleOption={updateAssetSyncOption}
+          warningText="反映は明示実行時だけです。シナリオ別に意図して変えた資産前提がある場合は、反映先を確認してください。"
+          onApply={applyAssetSync}
+          message={assetSyncMessage}
+        />
       </CardContent>
     </Card>
   );
@@ -3554,25 +3554,6 @@ function ExpensesSection({
         <CardDescription>月平均額を費目別に入力します。インフレON時は月次複利で反映します。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <ScenarioSyncCard<keyof ExpenseSyncOptions>
-          title="このシナリオの生活費前提を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、生活費まわりの前提を他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
-          targetMode={expenseSyncTargetMode}
-          setTargetMode={setExpenseSyncTargetMode}
-          targetCount={expenseSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${expenseSyncTargetCount} 件に反映します。生活費だけをそろえたい場合は、必要な項目だけを選んで実行してください。`}
-          options={[
-            { key: "monthlyExpenses", label: "月額生活費", description: "費目別の月額入力" },
-            { key: "ageAdjustments", label: "年齢別変更", description: "60歳以降などの変更ルール" },
-            { key: "expenseInflation", label: "インフレ設定", description: "生活費・医療費の上昇率と対象費目" },
-          ]}
-          selectedOptions={expenseSyncOptions}
-          toggleOption={updateExpenseSyncOption}
-          warningText="反映は明示実行時だけです。シナリオごとに違う生活費を置いている場合は、反映先を確認してください。"
-          onApply={applyExpenseSync}
-          message={expenseSyncMessage}
-          optionGridClassName="grid gap-2 sm:grid-cols-3"
-        />
         {excludeTaxExpense && (
           <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
             税・社会保険は `税・社会保険` タブで計算するため、このタブの `税・社会保険` はシミュレーションでは使いません。
@@ -3808,6 +3789,25 @@ function ExpensesSection({
             </Table>
           </div>
         )}
+        <ScenarioSyncCard<keyof ExpenseSyncOptions>
+          title="このシナリオの生活費前提を他シナリオへ反映"
+          description={`現在選択中の「${scenario.name}」をコピー元にして、生活費まわりの前提を他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
+          targetMode={expenseSyncTargetMode}
+          setTargetMode={setExpenseSyncTargetMode}
+          targetCount={expenseSyncTargetCount}
+          targetSummary={`コピー元自身を除く ${expenseSyncTargetCount} 件に反映します。生活費だけをそろえたい場合は、必要な項目だけを選んで実行してください。`}
+          options={[
+            { key: "monthlyExpenses", label: "月額生活費", description: "費目別の月額入力" },
+            { key: "ageAdjustments", label: "年齢別変更", description: "60歳以降などの変更ルール" },
+            { key: "expenseInflation", label: "インフレ設定", description: "生活費・医療費の上昇率と対象費目" },
+          ]}
+          selectedOptions={expenseSyncOptions}
+          toggleOption={updateExpenseSyncOption}
+          warningText="反映は明示実行時だけです。シナリオごとに違う生活費を置いている場合は、反映先を確認してください。"
+          onApply={applyExpenseSync}
+          message={expenseSyncMessage}
+          optionGridClassName="grid gap-2 sm:grid-cols-3"
+        />
       </CardContent>
     </Card>
   );
@@ -4402,98 +4402,6 @@ function IncomeSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="rounded-lg border bg-white px-4 py-3">
-          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
-            <Field label="コピー元シナリオ">
-              <Select
-                value={incomeSyncSourceScenario.id}
-                onChange={(event) => setIncomeSyncSourceScenarioId(event.target.value)}
-              >
-                {scenarios.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
-              現在のコピー元は「{incomeSyncSourceScenario.name}」です。下の収入イベント選択メニューも、このコピー元シナリオの内容に切り替わります。
-            </div>
-          </div>
-          {!sourceIsCurrentScenario && (
-            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              <input
-                type="checkbox"
-                checked={excludeCurrentScenarioFromIncomeSync}
-                onChange={(event) => setExcludeCurrentScenarioFromIncomeSync(event.target.checked)}
-              />
-              <span>
-                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
-                <span className="text-xs">
-                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
-                </span>
-              </span>
-            </label>
-          )}
-        </div>
-        <ScenarioSyncCard<keyof IncomeSyncOptions>
-          title="収入前提を他シナリオへ反映"
-          description={`コピー元シナリオを選び、収入・年金まわりの前提を他シナリオへ反映します。コピー元自身は反映先から外します。`}
-          targetMode={incomeSyncTargetMode}
-          setTargetMode={setIncomeSyncTargetMode}
-          targetCount={incomeSyncTargetCount}
-          targetSummary={incomeSyncTargetSummary}
-          options={[
-            { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
-            { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
-            { key: "retirementIncomeEvents", label: "退職所得イベント", description: "退職金、iDeCo一時金など" },
-            { key: "pensionAdjustmentRate", label: "年金改定率", description: "収入タブの年金改定率のみ" },
-          ]}
-          selectedOptions={incomeSyncOptions}
-          toggleOption={updateIncomeSyncOption}
-          warningText={
-            incomeSyncOptions.incomeEvents
-              ? `下のメニューで選んだ収入イベント ${selectedIncomeEventCount} 件だけをコピーします。未選択または反映先にだけある収入イベントは残します。`
-              : "収入イベントは反映しません。年金プランナーや退職所得など、チェックした前提だけを反映します。"
-          }
-          onApply={applyIncomeSync}
-          message={incomeSyncMessage}
-          applyDisabled={!hasIncomeSyncSelection}
-        />
-        {incomeSyncOptions.incomeEvents && (
-          <div className="rounded-lg border bg-white px-4 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium">コピーする収入イベントを選択</div>
-                <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                  チェックしたイベントだけを他シナリオへ反映します。チェックを外したイベントと、反映先にだけある収入イベントは残します。
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={selectAllIncomeEventsForSync}>全選択</Button>
-                <Button variant="outline" size="sm" onClick={clearIncomeEventsForSync}>全解除</Button>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {incomeSyncSourceScenario.incomeEvents.map((event) => (
-                <label key={event.id} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selectedIncomeEventIdSet.has(event.id)}
-                    onChange={() => toggleIncomeEventSyncTarget(event.id)}
-                  />
-                  <span>
-                    <span className="block font-medium">{event.name || "名称未設定"}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {incomeTypeLabels[event.type]} / 月額 {compactYen(event.monthlyAmount)}
-                      {event.sourceAssetKey ? ` / ${growthAssetLabels[event.sourceAssetKey]}から受取` : " / 外部収入"}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
         <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
         {scenario.incomeEvents.map((event, index) => {
           const replacedByPensionPlanner = isPensionPlannerReplacingEvent(scenario, event);
@@ -4817,6 +4725,98 @@ function IncomeSection({
         <div className="grid gap-4 md:grid-cols-2">
           <RateField label="年金改定率" value={scenario.inflationSettings.pensionAnnualAdjustmentRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.pensionAnnualAdjustmentRate = value))} />
         </div>
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select
+                value={incomeSyncSourceScenario.id}
+                onChange={(event) => setIncomeSyncSourceScenarioId(event.target.value)}
+              >
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+              現在のコピー元は「{incomeSyncSourceScenario.name}」です。下の収入イベント選択メニューも、このコピー元シナリオの内容に切り替わります。
+            </div>
+          </div>
+          {!sourceIsCurrentScenario && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={excludeCurrentScenarioFromIncomeSync}
+                onChange={(event) => setExcludeCurrentScenarioFromIncomeSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
+                <span className="text-xs">
+                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
+        <ScenarioSyncCard<keyof IncomeSyncOptions>
+          title="収入前提を他シナリオへ反映"
+          description={`コピー元シナリオを選び、収入・年金まわりの前提を他シナリオへ反映します。コピー元自身は反映先から外します。`}
+          targetMode={incomeSyncTargetMode}
+          setTargetMode={setIncomeSyncTargetMode}
+          targetCount={incomeSyncTargetCount}
+          targetSummary={incomeSyncTargetSummary}
+          options={[
+            { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
+            { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
+            { key: "retirementIncomeEvents", label: "退職所得イベント", description: "退職金、iDeCo一時金など" },
+            { key: "pensionAdjustmentRate", label: "年金改定率", description: "収入タブの年金改定率のみ" },
+          ]}
+          selectedOptions={incomeSyncOptions}
+          toggleOption={updateIncomeSyncOption}
+          warningText={
+            incomeSyncOptions.incomeEvents
+              ? `下のメニューで選んだ収入イベント ${selectedIncomeEventCount} 件だけをコピーします。未選択または反映先にだけある収入イベントは残します。`
+              : "収入イベントは反映しません。年金プランナーや退職所得など、チェックした前提だけを反映します。"
+          }
+          onApply={applyIncomeSync}
+          message={incomeSyncMessage}
+          applyDisabled={!hasIncomeSyncSelection}
+        />
+        {incomeSyncOptions.incomeEvents && (
+          <div className="rounded-lg border bg-white px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">コピーする収入イベントを選択</div>
+                <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                  チェックしたイベントだけを他シナリオへ反映します。チェックを外したイベントと、反映先にだけある収入イベントは残します。
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={selectAllIncomeEventsForSync}>全選択</Button>
+                <Button variant="outline" size="sm" onClick={clearIncomeEventsForSync}>全解除</Button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {incomeSyncSourceScenario.incomeEvents.map((event) => (
+                <label key={event.id} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedIncomeEventIdSet.has(event.id)}
+                    onChange={() => toggleIncomeEventSyncTarget(event.id)}
+                  />
+                  <span>
+                    <span className="block font-medium">{event.name || "名称未設定"}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {incomeTypeLabels[event.type]} / 月額 {compactYen(event.monthlyAmount)}
+                      {event.sourceAssetKey ? ` / ${growthAssetLabels[event.sourceAssetKey]}から受取` : " / 外部収入"}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -6651,23 +6651,6 @@ function SpecialSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <ScenarioSyncCard<keyof SpecialSyncOptions>
-          title="このシナリオの特別支出前提を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、旅行・修繕・家電買替などの特別支出リストを他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
-          targetMode={specialSyncTargetMode}
-          setTargetMode={setSpecialSyncTargetMode}
-          targetCount={specialSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${specialSyncTargetCount} 件に反映します。反映先の既存の特別支出リストは、コピー元のリストで置き換わります。`}
-          options={[
-            { key: "specialExpenses", label: "特別支出リスト", description: "名称、年月、金額、カテゴリ、繰り返し設定" },
-          ]}
-          selectedOptions={specialSyncOptions}
-          toggleOption={updateSpecialSyncOption}
-          warningText="反映は明示実行時だけです。シナリオごとに違う旅行・修繕などを置いている場合は、反映先を確認してください。"
-          onApply={applySpecialSync}
-          message={specialSyncMessage}
-          optionGridClassName="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
-        />
         {categoryWarnings.length > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="font-medium">楽しみ支出として扱う可能性がある項目があります</div>
@@ -6764,6 +6747,23 @@ function SpecialSection({
             </FormGrid>
           </EventEditor>
         ))}
+        <ScenarioSyncCard<keyof SpecialSyncOptions>
+          title="このシナリオの特別支出前提を他シナリオへ反映"
+          description={`現在選択中の「${scenario.name}」をコピー元にして、旅行・修繕・家電買替などの特別支出リストを他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
+          targetMode={specialSyncTargetMode}
+          setTargetMode={setSpecialSyncTargetMode}
+          targetCount={specialSyncTargetCount}
+          targetSummary={`コピー元自身を除く ${specialSyncTargetCount} 件に反映します。反映先の既存の特別支出リストは、コピー元のリストで置き換わります。`}
+          options={[
+            { key: "specialExpenses", label: "特別支出リスト", description: "名称、年月、金額、カテゴリ、繰り返し設定" },
+          ]}
+          selectedOptions={specialSyncOptions}
+          toggleOption={updateSpecialSyncOption}
+          warningText="反映は明示実行時だけです。シナリオごとに違う旅行・修繕などを置いている場合は、反映先を確認してください。"
+          onApply={applySpecialSync}
+          message={specialSyncMessage}
+          optionGridClassName="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
+        />
       </CardContent>
     </Card>
   );
