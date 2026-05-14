@@ -2875,14 +2875,18 @@ function ScenarioSyncDetails({
   description: string;
   children: React.ReactNode;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+
   return (
-    <details className="rounded-lg border bg-white px-4 py-3">
+    <details className="rounded-lg border bg-white px-4 py-3" onToggle={(event) => setIsOpen(event.currentTarget.open)}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
         <span>
           <span className="block font-medium">{title}</span>
           <span className="text-sm text-muted-foreground">{description}</span>
         </span>
-        <span className="rounded-md border bg-slate-50 px-3 py-1 text-sm text-muted-foreground">開く</span>
+        <span className="rounded-md border bg-slate-50 px-3 py-1 text-sm text-muted-foreground">
+          {isOpen ? "閉じる" : "開く"}
+        </span>
       </summary>
       <div className="mt-4 space-y-4">{children}</div>
     </details>
