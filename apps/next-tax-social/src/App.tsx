@@ -1037,6 +1037,113 @@ function AssetUseWorkspace({
 
       <Card>
         <CardHeader>
+          <CardTitle>楽しみに使える額を探すクイック試算</CardTitle>
+          <CardDescription>
+            このカード内の年額と期間だけを変えて、健康寿命期にどこまで追加で使えるかを試します。保存データは変更しません。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,1.4fr)_repeat(4,minmax(130px,1fr))]">
+            <Field label="試算するシナリオ">
+              <Select value={activeScenarioId} onChange={(event) => setActiveScenario(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="開始年齢">
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={trialStartAge}
+                onChange={(event) => {
+                  const nextStartAge = Math.trunc(numberOrZero(event.target.value));
+                  setTrialStartAge(nextStartAge);
+                  setTrialEndAge((current) => Math.max(nextStartAge, current));
+                }}
+              />
+            </Field>
+            <Field label="終了年齢">
+              <Input
+                type="number"
+                min={trialStartAge}
+                step={1}
+                value={trialEndAge}
+                onChange={(event) => setTrialEndAge(Math.max(trialStartAge, Math.trunc(numberOrZero(event.target.value))))}
+              />
+            </Field>
+            <Field label="年額追加支出">
+              <Input
+                type="number"
+                min={0}
+                step={100_000}
+                value={trialAnnualAmount}
+                onChange={(event) => setTrialAnnualAmount(numberOrZero(event.target.value))}
+              />
+            </Field>
+            <Field label="カテゴリ">
+              <Select value={trialCategory} onChange={(event) => setTrialCategory(event.target.value as SpecialExpenseCategory)}>
+                {Object.entries(specialExpenseCategoryLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 69)}>60〜69歳</Button>
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 72)}>60〜72歳</Button>
+            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(flexibleFreeCashPeriod.startAge, flexibleFreeCashPeriod.endAge)}>
+              現在の集計期間
+            </Button>
+            {[500_000, 1_000_000, 1_500_000, 2_000_000].map((amount) => (
+              <Button key={amount} variant="ghost" size="sm" onClick={() => setTrialAnnualAmount(amount)}>
+                年{compactYen(amount)}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+            年額ボタンや任意金額を変えるたびに、このカード内だけで試算結果が変わります。具体的に実行する支出は、後で特別支出タブに年月つきで登録してください。
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">追加支出総額</div>
+              <div className="mt-1 text-xl font-semibold">{compactYen(additionalSpendingTrial.totalAddedExpense)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {additionalSpendingTrial.startYearMonth ?? "-"}〜{additionalSpendingTrial.endYearMonth ?? "-"}
+              </div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">{scenario.userProfile.targetBalanceAge}歳目標との差額</div>
+              <div className={`mt-1 text-xl font-semibold ${targetBalanceStatusClassNames[additionalSpendingTrial.targetBalance.status]}`}>
+                {compactYen(additionalSpendingTrial.targetBalance.gap)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {targetBalanceStatusLabels[additionalSpendingTrial.targetBalance.status]}
+              </div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">資産寿命</div>
+              <div className="mt-1 text-xl font-semibold">{additionalSpendingTrial.depletionLabel}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{additionalSpendingTrial.result.depletionYearMonth ?? "期間内維持"}</div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">年平均余力</div>
+              <div className={`mt-1 text-xl font-semibold ${additionalSpendingTrial.flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-amber-700" : "text-teal-700"}`}>
+                {compactYen(additionalSpendingTrial.flexibleFreeCash.averageAnnualFreeCash)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">追加支出込み</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>普通口座オプションの流動資金化</CardTitle>
           <CardDescription>
             {flexibleFreeCashLabel} に、オプション利益や運用終了後の普通口座資金がどれだけ現金・普通預金へ回ったかを確認します。
@@ -1145,110 +1252,6 @@ function AssetUseWorkspace({
                 このシナリオには普通口座オプションを原資にした定期入金がありません。
               </p>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>追加支出クイック試算</CardTitle>
-          <CardDescription>
-            シナリオを切り替えながら、健康寿命期に追加で使う年額と期間をすぐ試せます。保存データは変更しません。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 lg:grid-cols-[minmax(260px,1.4fr)_repeat(4,minmax(130px,1fr))]">
-            <Field label="試算するシナリオ">
-              <Select value={activeScenarioId} onChange={(event) => setActiveScenario(event.target.value)}>
-                {scenarios.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="開始年齢">
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={trialStartAge}
-                onChange={(event) => {
-                  const nextStartAge = Math.trunc(numberOrZero(event.target.value));
-                  setTrialStartAge(nextStartAge);
-                  setTrialEndAge((current) => Math.max(nextStartAge, current));
-                }}
-              />
-            </Field>
-            <Field label="終了年齢">
-              <Input
-                type="number"
-                min={trialStartAge}
-                step={1}
-                value={trialEndAge}
-                onChange={(event) => setTrialEndAge(Math.max(trialStartAge, Math.trunc(numberOrZero(event.target.value))))}
-              />
-            </Field>
-            <Field label="年額追加支出">
-              <Input
-                type="number"
-                min={0}
-                step={100_000}
-                value={trialAnnualAmount}
-                onChange={(event) => setTrialAnnualAmount(numberOrZero(event.target.value))}
-              />
-            </Field>
-            <Field label="カテゴリ">
-              <Select value={trialCategory} onChange={(event) => setTrialCategory(event.target.value as SpecialExpenseCategory)}>
-                {Object.entries(specialExpenseCategoryLabels).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 69)}>60〜69歳</Button>
-            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(60, 72)}>60〜72歳</Button>
-            <Button variant="outline" size="sm" onClick={() => setTrialPeriod(flexibleFreeCashPeriod.startAge, flexibleFreeCashPeriod.endAge)}>
-              現在の集計期間
-            </Button>
-            {[500_000, 1_000_000, 1_500_000, 2_000_000].map((amount) => (
-              <Button key={amount} variant="ghost" size="sm" onClick={() => setTrialAnnualAmount(amount)}>
-                年{compactYen(amount)}
-              </Button>
-            ))}
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-md border bg-slate-50 px-4 py-3">
-              <div className="text-sm text-muted-foreground">追加支出総額</div>
-              <div className="mt-1 text-xl font-semibold">{compactYen(additionalSpendingTrial.totalAddedExpense)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {additionalSpendingTrial.startYearMonth ?? "-"}〜{additionalSpendingTrial.endYearMonth ?? "-"}
-              </div>
-            </div>
-            <div className="rounded-md border bg-slate-50 px-4 py-3">
-              <div className="text-sm text-muted-foreground">{scenario.userProfile.targetBalanceAge}歳目標との差額</div>
-              <div className={`mt-1 text-xl font-semibold ${targetBalanceStatusClassNames[additionalSpendingTrial.targetBalance.status]}`}>
-                {compactYen(additionalSpendingTrial.targetBalance.gap)}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {targetBalanceStatusLabels[additionalSpendingTrial.targetBalance.status]}
-              </div>
-            </div>
-            <div className="rounded-md border bg-slate-50 px-4 py-3">
-              <div className="text-sm text-muted-foreground">資産寿命</div>
-              <div className="mt-1 text-xl font-semibold">{additionalSpendingTrial.depletionLabel}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{additionalSpendingTrial.result.depletionYearMonth ?? "期間内維持"}</div>
-            </div>
-            <div className="rounded-md border bg-slate-50 px-4 py-3">
-              <div className="text-sm text-muted-foreground">年平均余力</div>
-              <div className={`mt-1 text-xl font-semibold ${additionalSpendingTrial.flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-amber-700" : "text-teal-700"}`}>
-                {compactYen(additionalSpendingTrial.flexibleFreeCash.averageAnnualFreeCash)}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">追加支出込み</div>
-            </div>
           </div>
         </CardContent>
       </Card>
