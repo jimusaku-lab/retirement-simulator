@@ -3860,7 +3860,7 @@ function AssetsSection({
           </CardContent>
         </Card>
         <ScenarioSyncDetails
-          title="他シナリオへ反映"
+          title="他シナリオへ反映（必要時のみ）"
           description="初期資産前提をまとめてコピーする時だけ開きます。"
         >
         <div className="rounded-lg border bg-white px-4 py-3">
@@ -4279,7 +4279,7 @@ function ExpensesSection({
           </div>
         )}
         <ScenarioSyncDetails
-          title="他シナリオへ反映"
+          title="他シナリオへ反映（必要時のみ）"
           description="生活費前提をまとめてコピーする時だけ開きます。"
         >
         <div className="rounded-lg border bg-white px-4 py-3">
@@ -5257,7 +5257,7 @@ function IncomeSection({
           <RateField label="年金改定率" value={scenario.inflationSettings.pensionAnnualAdjustmentRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.pensionAnnualAdjustmentRate = value))} />
         </div>
         <ScenarioSyncDetails
-          title="他シナリオへ反映"
+          title="他シナリオへ反映（必要時のみ）"
           description="収入・年金前提をまとめてコピーする時だけ開きます。"
         >
         <div className="rounded-lg border bg-white px-4 py-3">
@@ -5710,6 +5710,20 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">このタブで見ること</div>
+            <p className="mt-1 text-muted-foreground">税・社会保険の入力、補正、自動計算の根拠を確認します。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">通常見るところ</div>
+            <p className="mt-1 text-muted-foreground">モード説明、自動計算結果、反映後の税・社会保険を確認します。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">詳細確認</div>
+            <p className="mt-1 text-muted-foreground">控除、退職所得、負担率、計算式の分解は必要な時だけ開きます。</p>
+          </div>
+        </div>
         <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
           {mode === "manual" && (
             <p>このモードでは、ここで入力した年度金額だけを使います。生活費タブの `税・社会保険` は 0 円にしてください。</p>
@@ -5863,9 +5877,14 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
             <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
-            <LateElderlyBurdenRatioTable details={autoDetails} />
-            <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
-            <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
+            <ScenarioSyncDetails
+              title="税・社会保険の詳細根拠"
+              description="後期高齢者の負担率、計算式の分解、所得水準別の負担率を確認します。"
+            >
+              <LateElderlyBurdenRatioTable details={autoDetails} />
+              <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
+              <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
+            </ScenarioSyncDetails>
           </div>
         )}
 
@@ -5900,9 +5919,14 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <TaxRowsSummary rows={effectiveRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="反映後の年度データはまだありません。" />
             <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
-            <LateElderlyBurdenRatioTable details={autoDetails} />
-            <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
-            <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
+            <ScenarioSyncDetails
+              title="税・社会保険の詳細根拠"
+              description="後期高齢者の負担率、計算式の分解、所得水準別の負担率を確認します。"
+            >
+              <LateElderlyBurdenRatioTable details={autoDetails} />
+              <TaxCalculationDetails details={autoDetails} retirementOverlapAdjustments={retirementOverlapAdjustments} />
+              <TaxSocialSensitivityTable scenario={scenario} details={autoDetails} />
+            </ScenarioSyncDetails>
           </div>
         )}
 
@@ -7308,7 +7332,7 @@ function SpecialSection({
           </EventEditor>
         ))}
         <ScenarioSyncDetails
-          title="他シナリオへ反映"
+          title="他シナリオへ反映（必要時のみ）"
           description="特別支出リストをまとめてコピーする時だけ開きます。"
         >
         <div className="rounded-lg border bg-white px-4 py-3">
@@ -7621,6 +7645,24 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">このタブで見ること</div>
+          <p className="mt-1 text-muted-foreground">年次・月次の資産推移と、現金が詰まる原因を確認します。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">先に見る表</div>
+          <p className="mt-1 text-muted-foreground">年別収支表と月別収支表です。累計サマリーは必要な時だけ開きます。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">原因を深掘りする時</div>
+          <p className="mt-1 text-muted-foreground">投資計画、税支払タイミング、普通口座損益、月次診断を順に確認します。</p>
+        </div>
+      </div>
+      <ScenarioSyncDetails
+        title="累計サマリー"
+        description="収入、支出、投資、税社保、資産移動の累計をまとめて確認します。"
+      >
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Metric title="累計現金収入" value={compactYen(annualIncome)} sub="源泉・手数料控除後" />
         <Metric title="累計口座内積上" value={compactYen(annualRetainedSourceIncome)} sub="現金化せず原資口座に残した利益" />
@@ -7646,6 +7688,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="累計収支" value={compactYen(annualNet)} sub={annualNet >= 0 ? "黒字" : "赤字"} />
         <Metric title="期末評価損益" value={compactYen(latestTrackedGainTotal)} sub={latestAnnual ? `${latestAnnual.year}年末の合計` : "年末時点"} />
       </div>
+      </ScenarioSyncDetails>
 
       <Card>
         <CardHeader>
@@ -8489,6 +8532,20 @@ function CompareSection({
   };
   return (
     <div className="space-y-6">
+      <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">このタブで見ること</div>
+          <p className="mt-1 text-muted-foreground">シナリオごとの差です。個別シナリオの詳細原因は、結果タブや税・社会保険タブで確認します。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">最初に見る列</div>
+          <p className="mt-1 text-muted-foreground">資産寿命、目標残高との差額、資産活用額、年平均余力を先に見ます。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="font-medium">原因を見る時</div>
+          <p className="mt-1 text-muted-foreground">普通口座利益、税社保増分、NISA未実行は下の詳細比較で確認します。</p>
+        </div>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
@@ -8568,6 +8625,10 @@ function CompareSection({
           </p>
         </CardContent>
       </Card>
+      <ScenarioSyncDetails
+        title="普通口座オプション・税社保・NISAの詳細比較"
+        description="基準シナリオとの差分原因を確認する時だけ開きます。"
+      >
       <Card>
         <CardHeader>
           <CardTitle>普通口座オプション利益と税社保増分</CardTitle>
@@ -8628,6 +8689,11 @@ function CompareSection({
           </p>
         </CardContent>
       </Card>
+      </ScenarioSyncDetails>
+      <ScenarioSyncDetails
+        title="比較チャート"
+        description="表で気になる差が出た時に、棒グラフで傾向を確認します。"
+      >
       <Card>
         <CardHeader>
           <CardTitle>資産寿命と生活資金不足</CardTitle>
@@ -8670,6 +8736,7 @@ function CompareSection({
           </ResponsiveContainer>
         </CardContent>
       </Card>
+      </ScenarioSyncDetails>
     </div>
   );
 }
