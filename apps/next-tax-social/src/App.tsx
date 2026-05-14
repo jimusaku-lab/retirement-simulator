@@ -8375,7 +8375,41 @@ function ManualSection() {
             <li>収入で、給与、年金、iDeCo受取などのイベントと、対象メンバーを入れます。</li>
             <li>税・社会保険は、変化する年度だけ入力し、他年度は直近値を引き継ぎます。</li>
             <li>必要なら特別支出、シナリオ複製、比較を使います。</li>
+            <li>資産を有効に使う余地は、資産活用ビューで安全余力、クイック試算、入金力別診断の順に確認します。</li>
           </ol>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>資産活用ビューの読み方</CardTitle>
+          <CardDescription>健康寿命期にどれだけ楽しみに使えるかを見るための順番です。</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm leading-7 md:grid-cols-2">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">1. 資産活用レビュー</p>
+            <p className="mt-1 text-muted-foreground">
+              90歳目標との差額、資産活用中かどうか、楽しみ比率を先に見ます。ここで安全余力が不足している場合は、追加支出より先に安全性側を直します。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">2. 追加支出クイック試算</p>
+            <p className="mt-1 text-muted-foreground">
+              保存データを変えずに、60〜72歳などの期間へ年50万円、年100万円と追加した場合の90歳残高と資産寿命を確認します。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">3. 入金力別診断</p>
+            <p className="mt-1 text-muted-foreground">
+              普通口座オプション収入を仮に月0〜50万円へ置き換え、税・社会保険を引いた実質手残りと、楽しみに増やせる年額の分岐点を見ます。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">4. 支出内訳</p>
+            <p className="mt-1 text-muted-foreground">
+              健康寿命期の支出が、生活維持だけでなく旅行・趣味・家族イベントなどの楽しみに向いているかを確認します。
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -8448,10 +8482,14 @@ function ManualSection() {
         <CardHeader>
           <CardTitle>よく使う確認先</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm leading-7 md:grid-cols-3">
+        <CardContent className="grid gap-3 text-sm leading-7 md:grid-cols-4">
           <div>
             <p className="font-medium">ダッシュボード</p>
             <p className="text-muted-foreground">資産寿命、指定年齢時点残高、チャートを確認します。</p>
+          </div>
+          <div>
+            <p className="font-medium">資産活用ビュー</p>
+            <p className="text-muted-foreground">健康寿命期に使える楽しみ支出、入金力別の手残り、分岐点を確認します。</p>
           </div>
           <div>
             <p className="font-medium">比較</p>
