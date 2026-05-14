@@ -1375,46 +1375,51 @@ function AssetUseWorkspace({
                       </div>
                     ))}
                   </div>
-                  <div className="table-scroll overflow-auto">
-                    <Table className="min-w-[1100px]">
-                      <thead>
-                        <Tr>
-                          <Th>仮の入金力</Th>
-                          <Th>楽しみに増やせる年額</Th>
-                          <Th>入金総額</Th>
-                          <Th>税・社保増</Th>
-                          <Th>実質手残り</Th>
-                          <Th>有効率</Th>
-                          <Th>90歳目標差額</Th>
-                          <Th>資産寿命</Th>
-                        </Tr>
-                      </thead>
-                      <tbody>
-                        {incomePowerDiagnostics.rows.map((row) => (
-                          <Tr key={row.monthlyIncomePower}>
-                            <Td className={row.monthlyIncomePower === incomePowerDiagnostics.baselineMonthlyIncomePower ? "font-semibold text-teal-700" : ""}>
-                              月{compactYen(row.monthlyIncomePower)}
-                            </Td>
-                            <Td className="font-medium">{compactYen(row.maxAdditionalEnjoymentAnnual)} / 年</Td>
-                            <Td>
-                              {compactYen(row.grossIncomeIncrease)}
-                              <div className="text-xs text-muted-foreground">イベント延べ{row.activeMonths}か月対象</div>
-                            </Td>
-                            <Td className={row.taxAndSocialIncrease > 0 ? "text-amber-700" : ""}>{compactYen(row.taxAndSocialIncrease)}</Td>
-                            <Td className={row.netIncomeIncrease < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(row.netIncomeIncrease)}</Td>
-                            <Td>{row.effectiveRate === null ? "-" : compactPercent(row.effectiveRate)}</Td>
-                            <Td className={targetBalanceStatusClassNames[row.targetBalanceStatusAfterMax]}>{compactYen(row.targetBalanceGapAfterMax)}</Td>
-                            <Td>{row.depletionLabelAfterMax}</Td>
+                  <ScenarioSyncDetails
+                    title="診断表の詳細"
+                    description="入金総額、税・社会保険増、有効率、90歳目標差額を行ごとに確認します。"
+                  >
+                    <div className="table-scroll overflow-auto">
+                      <Table className="min-w-[1100px]">
+                        <thead>
+                          <Tr>
+                            <Th>仮の入金力</Th>
+                            <Th>楽しみに増やせる年額</Th>
+                            <Th>入金総額</Th>
+                            <Th>税・社保増</Th>
+                            <Th>実質手残り</Th>
+                            <Th>有効率</Th>
+                            <Th>90歳目標差額</Th>
+                            <Th>資産寿命</Th>
                           </Tr>
-                        ))}
-                      </tbody>
-                    </Table>
-                  </div>
-                  <p className="text-xs leading-6 text-muted-foreground">
-                    「仮の入金力」は普通口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
-                    イベントごとに有効期間が違う場合、入金総額は単純な「月額×延べ月数」ではなく、配分後の各イベント月額×対象月数の合計です。
-                    税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
-                  </p>
+                        </thead>
+                        <tbody>
+                          {incomePowerDiagnostics.rows.map((row) => (
+                            <Tr key={row.monthlyIncomePower}>
+                              <Td className={row.monthlyIncomePower === incomePowerDiagnostics.baselineMonthlyIncomePower ? "font-semibold text-teal-700" : ""}>
+                                月{compactYen(row.monthlyIncomePower)}
+                              </Td>
+                              <Td className="font-medium">{compactYen(row.maxAdditionalEnjoymentAnnual)} / 年</Td>
+                              <Td>
+                                {compactYen(row.grossIncomeIncrease)}
+                                <div className="text-xs text-muted-foreground">イベント延べ{row.activeMonths}か月対象</div>
+                              </Td>
+                              <Td className={row.taxAndSocialIncrease > 0 ? "text-amber-700" : ""}>{compactYen(row.taxAndSocialIncrease)}</Td>
+                              <Td className={row.netIncomeIncrease < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(row.netIncomeIncrease)}</Td>
+                              <Td>{row.effectiveRate === null ? "-" : compactPercent(row.effectiveRate)}</Td>
+                              <Td className={targetBalanceStatusClassNames[row.targetBalanceStatusAfterMax]}>{compactYen(row.targetBalanceGapAfterMax)}</Td>
+                              <Td>{row.depletionLabelAfterMax}</Td>
+                            </Tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </div>
+                    <p className="text-xs leading-6 text-muted-foreground">
+                      「仮の入金力」は普通口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
+                      イベントごとに有効期間が違う場合、入金総額は単純な「月額×延べ月数」ではなく、配分後の各イベント月額×対象月数の合計です。
+                      税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
+                    </p>
+                  </ScenarioSyncDetails>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -1430,6 +1435,10 @@ function AssetUseWorkspace({
         </CardContent>
       </Card>
 
+      <ScenarioSyncDetails
+        title="普通口座オプションの流動資金化"
+        description="オプション利益や運用終了後の資金が、使える現金へどれだけ回ったかを確認します。"
+      >
       <Card>
         <CardHeader>
           <CardTitle>普通口座オプションの流動資金化</CardTitle>
@@ -1543,6 +1552,7 @@ function AssetUseWorkspace({
           </div>
         </CardContent>
       </Card>
+      </ScenarioSyncDetails>
 
       <Card>
         <CardHeader>
@@ -1650,6 +1660,10 @@ function AssetUseWorkspace({
         )}
       </Card>
 
+      <ScenarioSyncDetails
+        title="追加支出シミュレーター詳細"
+        description="クイック試算の条件で、目標残高・期間末残高・最低流動資金を詳しく確認します。"
+      >
       <Card>
         <CardHeader>
           <CardTitle>健康寿命期の追加支出シミュレーター詳細</CardTitle>
@@ -1704,7 +1718,12 @@ function AssetUseWorkspace({
           </p>
         </CardContent>
       </Card>
+      </ScenarioSyncDetails>
 
+      <ScenarioSyncDetails
+        title="判定の前提"
+        description="目標残高、計画取り崩し、安全資金、カテゴリ警告の前提を確認します。"
+      >
       <Card>
         <CardHeader>
           <CardTitle>判定の前提</CardTitle>
@@ -1736,6 +1755,7 @@ function AssetUseWorkspace({
           )}
         </CardContent>
       </Card>
+      </ScenarioSyncDetails>
     </div>
   );
 }
