@@ -8840,6 +8840,39 @@ function ManualSection() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>画面マップ</CardTitle>
+          <CardDescription>目的ごとに見るタブを分けます。迷った時は、先に目的を決めてからタブを開いてください。</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm leading-7 md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">入力する</p>
+            <p className="mt-1 text-muted-foreground">
+              基本情報、初期資産、生活費、収入、税・社会保険、特別支出で前提を入れます。シナリオ間コピーは、各入力欄の折りたたみから使います。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">結論を見る</p>
+            <p className="mt-1 text-muted-foreground">
+              ダッシュボードで現在資産、資産寿命、指定年齢時点残高を見ます。細かい年次推移は結果タブで確認します。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">使い方を探す</p>
+            <p className="mt-1 text-muted-foreground">
+              資産活用ビューで、健康寿命期に楽しみに使える余地、追加支出クイック試算、入金力別診断を確認します。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">差と原因を見る</p>
+            <p className="mt-1 text-muted-foreground">
+              比較タブでシナリオ差を横並びにし、税・社会保険タブや結果タブで負担増、資産推移、月次の詰まりを確認します。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
