@@ -261,4 +261,32 @@ describe("asset use analysis", () => {
     expect(diagnostics.rows[2].grossIncomeIncrease).toBe(diagnostics.rows[2].activeMonths * 200_000);
     expect(diagnostics.rows[1].maxAdditionalEnjoymentAnnual).toBeGreaterThanOrEqual(0);
   });
+
+  it("treats zero-base option income diagnostics as new taxable income", () => {
+    const scenario = structuredClone(sampleState.scenarios[0]);
+    scenario.incomeEvents.push({
+      id: "zero-option-income",
+      memberId: scenario.householdProfile.headMemberId,
+      name: "米国株オプション",
+      type: "investmentIncome",
+      startYearMonth: scenario.userProfile.simulationStartYearMonth,
+      monthlyAmount: 0,
+      taxTreatment: "taxable",
+      sourceAssetKey: "ordinaryAccountForOptions",
+      sourceOptionSubAccountId: scenario.optionSubAccounts[0]?.id,
+      sourceAssetPayoutMode: "cash",
+    });
+
+    const diagnostics = calculateIncomePowerDiagnostics(
+      scenario,
+      { startAge: 60, endAge: 61 },
+      [0, 100_000],
+    );
+    const [zeroRow, incomeRow] = diagnostics.rows;
+
+    expect(diagnostics.baselineMonthlyIncomePower).toBe(0);
+    expect(incomeRow.grossIncomeIncrease).toBeGreaterThan(0);
+    expect(incomeRow.taxAndSocialIncrease).toBeGreaterThan(0);
+    expect(incomeRow.targetBalanceGapAfterMax).toBeGreaterThan(zeroRow.targetBalanceGapAfterMax);
+  });
 });

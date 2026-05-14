@@ -250,6 +250,8 @@ function setOrdinaryOptionIncomePower(scenario: ScenarioData, monthlyIncomePower
             ...event,
             monthlyAmount: remainingWeight === 0 ? remainingAmount + allocatedAmount : allocatedAmount,
             amountInputMode: "monthly" as const,
+            taxTreatment: "taxable" as const,
+            sourceAssetPayoutMode: "retainInSourceAsset" as const,
           };
         })()
       : event,
