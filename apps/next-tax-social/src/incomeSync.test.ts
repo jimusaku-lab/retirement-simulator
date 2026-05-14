@@ -91,4 +91,16 @@ describe("income scenario sync", () => {
     expect(target.incomeEvents).toHaveLength(1);
     expect(target.incomeEvents[0].monthlyAmount).toBe(180_000);
   });
+
+  it("任意コピー元の反映先数からコピー元と現在表示中シナリオを除外できる", () => {
+    const scenarios = sampleState.scenarios.slice(0, 4).map((scenario, index) => ({
+      ...structuredClone(scenario),
+      id: `scenario-${index}`,
+      compare: index !== 3,
+    }));
+
+    expect(__testHooks.countAssetSyncTargets(scenarios, "scenario-1", "compare")).toBe(2);
+    expect(__testHooks.countAssetSyncTargets(scenarios, "scenario-1", "compare", new Set(["scenario-0"]))).toBe(1);
+    expect(__testHooks.countAssetSyncTargets(scenarios, "scenario-1", "all", new Set(["scenario-0"]))).toBe(2);
+  });
 });

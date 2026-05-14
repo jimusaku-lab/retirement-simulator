@@ -2344,8 +2344,18 @@ type SpecialSyncOptions = {
   specialExpenses: boolean;
 };
 
-function countAssetSyncTargets(scenarios: ScenarioData[], sourceScenarioId: string, targetMode: AssetSyncTargetMode) {
-  return scenarios.filter((target) => target.id !== sourceScenarioId && (targetMode === "all" || target.compare)).length;
+function countAssetSyncTargets(
+  scenarios: ScenarioData[],
+  sourceScenarioId: string,
+  targetMode: AssetSyncTargetMode,
+  excludedScenarioIds: Set<string> = new Set(),
+) {
+  return scenarios.filter(
+    (target) =>
+      target.id !== sourceScenarioId &&
+      !excludedScenarioIds.has(target.id) &&
+      (targetMode === "all" || target.compare),
+  ).length;
 }
 
 function applyAssetSyncFromSource(target: ScenarioData, source: ScenarioData, options: AssetSyncOptions) {
@@ -2471,6 +2481,7 @@ function applyIncomeSyncFromSource(
 
 export const __testHooks = {
   applyIncomeSyncFromSource,
+  countAssetSyncTargets,
 };
 
 function applySpecialSyncFromSource(target: ScenarioData, source: ScenarioData, options: SpecialSyncOptions) {
@@ -2498,6 +2509,7 @@ function ScenarioSyncCard<T extends string>({
   warningText,
   onApply,
   message,
+  applyDisabled = false,
   optionGridClassName = "grid gap-2 sm:grid-cols-2 lg:grid-cols-4",
 }: {
   title: string;
@@ -2512,6 +2524,7 @@ function ScenarioSyncCard<T extends string>({
   warningText: string;
   onApply: () => void;
   message: string | null;
+  applyDisabled?: boolean;
   optionGridClassName?: string;
 }) {
   const hasSelection = Object.values(selectedOptions).some(Boolean);
@@ -2551,7 +2564,7 @@ function ScenarioSyncCard<T extends string>({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <span>{warningText}</span>
-          <Button onClick={onApply} disabled={targetCount === 0 || !hasSelection}>
+          <Button onClick={onApply} disabled={targetCount === 0 || !hasSelection || applyDisabled}>
             他シナリオへ反映
           </Button>
         </div>
@@ -4250,16 +4263,32 @@ function IncomeSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [incomeSyncTargetMode, setIncomeSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [incomeSyncSourceScenarioId, setIncomeSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromIncomeSync, setExcludeCurrentScenarioFromIncomeSync] = useState(true);
   const [incomeSyncOptions, setIncomeSyncOptions] = useState<IncomeSyncOptions>({
     incomeEvents: true,
     pensionPlanner: true,
     retirementIncomeEvents: true,
     pensionAdjustmentRate: true,
   });
-  const incomeEventIds = useMemo(() => scenario.incomeEvents.map((event) => event.id), [scenario.incomeEvents]);
+  const incomeSyncSourceScenario = scenarios.find((item) => item.id === incomeSyncSourceScenarioId) ?? scenario;
+  const incomeSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromIncomeSync && scenario.id !== incomeSyncSourceScenario.id) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [excludeCurrentScenarioFromIncomeSync, incomeSyncSourceScenario.id, scenario.id]);
+  const incomeEventIds = useMemo(
+    () => incomeSyncSourceScenario.incomeEvents.map((event) => event.id),
+    [incomeSyncSourceScenario.incomeEvents],
+  );
   const incomeEventIdsKey = incomeEventIds.join("|");
   const [selectedIncomeEventIds, setSelectedIncomeEventIds] = useState<string[]>(() => incomeEventIds);
   const [incomeSyncMessage, setIncomeSyncMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === incomeSyncSourceScenarioId)) {
+      setIncomeSyncSourceScenarioId(scenario.id);
+    }
+  }, [incomeSyncSourceScenarioId, scenario.id, scenarios]);
   useEffect(() => {
     setSelectedIncomeEventIds((current) => {
       const availableIds = new Set(incomeEventIds);
@@ -4268,9 +4297,15 @@ function IncomeSection({
       return [...retainedIds, ...addedIds];
     });
   }, [incomeEventIdsKey]);
-  const incomeSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, incomeSyncTargetMode);
+  const incomeSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    incomeSyncSourceScenario.id,
+    incomeSyncTargetMode,
+    incomeSyncExcludedScenarioIds,
+  );
   const selectedIncomeEventIdSet = useMemo(() => new Set(selectedIncomeEventIds), [selectedIncomeEventIds]);
-  const selectedIncomeEventCount = scenario.incomeEvents.filter((event) => selectedIncomeEventIdSet.has(event.id)).length;
+  const selectedIncomeEventCount = incomeSyncSourceScenario.incomeEvents.filter((event) => selectedIncomeEventIdSet.has(event.id)).length;
+  const sourceIsCurrentScenario = incomeSyncSourceScenario.id === scenario.id;
   const hasIncomeSyncSelection =
     (incomeSyncOptions.incomeEvents && selectedIncomeEventCount > 0) ||
     incomeSyncOptions.pensionPlanner ||
@@ -4282,6 +4317,12 @@ function IncomeSection({
     incomeSyncOptions.retirementIncomeEvents ? "退職所得イベント" : "",
     incomeSyncOptions.pensionAdjustmentRate ? "年金改定率" : "",
   ].filter(Boolean);
+  const incomeSyncTargetSummary =
+    `コピー元自身を除く ${incomeSyncTargetCount} 件に反映します。` +
+    (!sourceIsCurrentScenario && excludeCurrentScenarioFromIncomeSync
+      ? `現在開いている「${scenario.name}」も誤操作防止のため反映先から外します。`
+      : "") +
+    "世帯メンバーIDが違うシナリオでは、世帯主または先頭メンバーへ安全に割り当てます。";
   const updateIncomeSyncOption = (key: keyof IncomeSyncOptions) => {
     setIncomeSyncOptions((current) => ({ ...current, [key]: !current[key] }));
   };
@@ -4298,9 +4339,12 @@ function IncomeSection({
   };
   const applyIncomeSync = () => {
     if (incomeSyncTargetCount === 0 || !hasIncomeSyncSelection) return;
-    const source = structuredClone(scenario);
+    const source = structuredClone(incomeSyncSourceScenario);
     const confirmed = window.confirm(
       `「${source.name}」の ${selectedIncomeSyncLabels.join("、")} を、コピー元自身を除く ${incomeSyncTargetCount} 件のシナリオへ反映します。` +
+        (!sourceIsCurrentScenario && excludeCurrentScenarioFromIncomeSync
+          ? `現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
         (incomeSyncOptions.incomeEvents
           ? "チェックした収入イベントだけをコピーし、未選択または反映先にだけある収入イベントは残します。"
           : "") +
@@ -4309,6 +4353,7 @@ function IncomeSection({
     if (!confirmed) return;
     updateScenarios((target) => {
       if (target.id === source.id) return target;
+      if (incomeSyncExcludedScenarioIds.has(target.id)) return target;
       if (incomeSyncTargetMode === "compare" && !target.compare) return target;
       applyIncomeSyncFromSource(target, source, incomeSyncOptions, selectedIncomeEventIds);
       return target;
@@ -4357,13 +4402,47 @@ function IncomeSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select
+                value={incomeSyncSourceScenario.id}
+                onChange={(event) => setIncomeSyncSourceScenarioId(event.target.value)}
+              >
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+              現在のコピー元は「{incomeSyncSourceScenario.name}」です。下の収入イベント選択メニューも、このコピー元シナリオの内容に切り替わります。
+            </div>
+          </div>
+          {!sourceIsCurrentScenario && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={excludeCurrentScenarioFromIncomeSync}
+                onChange={(event) => setExcludeCurrentScenarioFromIncomeSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
+                <span className="text-xs">
+                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
         <ScenarioSyncCard<keyof IncomeSyncOptions>
-          title="このシナリオの収入前提を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、収入・年金まわりの前提を他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
+          title="収入前提を他シナリオへ反映"
+          description={`コピー元シナリオを選び、収入・年金まわりの前提を他シナリオへ反映します。コピー元自身は反映先から外します。`}
           targetMode={incomeSyncTargetMode}
           setTargetMode={setIncomeSyncTargetMode}
           targetCount={incomeSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${incomeSyncTargetCount} 件に反映します。世帯メンバーIDが違うシナリオでは、世帯主または先頭メンバーへ安全に割り当てます。`}
+          targetSummary={incomeSyncTargetSummary}
           options={[
             { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
             { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
@@ -4379,6 +4458,7 @@ function IncomeSection({
           }
           onApply={applyIncomeSync}
           message={incomeSyncMessage}
+          applyDisabled={!hasIncomeSyncSelection}
         />
         {incomeSyncOptions.incomeEvents && (
           <div className="rounded-lg border bg-white px-4 py-3">
@@ -4395,7 +4475,7 @@ function IncomeSection({
               </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {scenario.incomeEvents.map((event) => (
+              {incomeSyncSourceScenario.incomeEvents.map((event) => (
                 <label key={event.id} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
                   <input
                     type="checkbox"
