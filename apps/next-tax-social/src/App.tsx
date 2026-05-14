@@ -984,12 +984,56 @@ function AssetUseWorkspace({
           : "期間内に楽しみカテゴリの特別支出はありません。使う候補は下の追加支出シミュレーターで試せます。",
     },
   ];
+  const hasOrdinaryOptionIncomeEvents = scenario.incomeEvents.some(
+    (event) =>
+      event.sourceAssetKey === "ordinaryAccountForOptions" &&
+      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
+  );
   const assetUseNextFocus =
     targetBalanceAnalysis.status === "shortfall"
       ? "まず目標残高割れの原因を安全性シミュレーション側で確認してください。"
+      : specialExpenseCategoryTotals.enjoyment <= 0
+        ? "楽しみカテゴリが未設定です。特別支出タブで旅行・趣味・家族イベントを楽しみに分類するか、クイック試算で候補額を確認してください。"
       : flexibleFreeCashSummary.averageAnnualFreeCash > 0 && enjoymentShare < 0.3
         ? "安全余力と現金余力があるため、健康寿命期の楽しみ支出候補を増やして試す余地があります。"
-        : "現在の支出配分を維持しつつ、追加支出シミュレーターで年額別の影響を確認してください。";
+        : hasOrdinaryOptionIncomeEvents
+          ? "追加支出クイック試算で使える年額を確認し、入金力別診断で入金を増やした場合の実質手残りと分岐点を確認してください。"
+          : "現在の支出配分を維持しつつ、追加支出クイック試算で年額別の影響を確認してください。";
+  const assetUseDecision =
+    targetBalanceAnalysis.status === "shortfall"
+      ? {
+          title: "追加支出は保留",
+          className: "text-red-700",
+          description: `${targetBalanceAnalysis.targetAge}歳目標に ${compactYen(Math.abs(targetBalanceAnalysis.gap))} 届いていません。安全性側の前提を先に直す状態です。`,
+          next: "結果タブ・比較タブで資産寿命と90歳残高を確認",
+        }
+      : specialExpenseCategoryTotals.enjoyment <= 0
+        ? {
+            title: "楽しみ支出の登録余地あり",
+            className: "text-amber-700",
+            description: `${flexibleFreeCashLabel} に楽しみカテゴリの特別支出がありません。安全余力はあるため、旅行・趣味などの候補を入れる段階です。`,
+            next: "特別支出タブでカテゴリを楽しみに変更、またはクイック試算",
+          }
+        : flexibleFreeCashSummary.averageAnnualFreeCash > 0
+          ? {
+              title: "追加支出を試せる",
+              className: "text-teal-700",
+              description: `${targetBalanceAnalysis.targetAge}歳目標を守りつつ、期間内に年平均 ${compactYen(flexibleFreeCashSummary.averageAnnualFreeCash)} の現金余力があります。`,
+              next: "クイック試算で年額別の上限を確認",
+            }
+          : hasOrdinaryOptionIncomeEvents
+            ? {
+                title: "入金力とのバランス確認",
+                className: "text-teal-700",
+                description: `${flexibleFreeCashLabel} は年平均 ${compactYen(Math.abs(flexibleFreeCashSummary.averageAnnualFreeCash))} を資産で補っています。入金力別診断で効率を確認する状態です。`,
+                next: "入金力別診断で分岐点と有効率を確認",
+              }
+            : {
+                title: "年額別に影響確認",
+                className: "text-teal-700",
+                description: `${targetBalanceAnalysis.targetAge}歳目標は達成しています。追加する楽しみ支出の年額で資産寿命がどう変わるかを確認します。`,
+                next: "クイック試算で追加支出額を調整",
+              };
   const categoryRows = [
     { label: "楽しみ", value: categoryBreakdown.enjoyment, note: "旅行・趣味・家族イベントなど" },
     { label: "生活維持", value: categoryBreakdown.lifeMaintenance, note: "特別支出カテゴリ分" },
@@ -1010,11 +1054,6 @@ function AssetUseWorkspace({
     [scenario, result, trialAnnualAmount, trialCategory, trialEndAge, trialStartAge],
   );
   const targetBalanceImpact = additionalSpendingTrial.targetBalance.actualAmount - targetBalanceAnalysis.actualAmount;
-  const hasOrdinaryOptionIncomeEvents = scenario.incomeEvents.some(
-    (event) =>
-      event.sourceAssetKey === "ordinaryAccountForOptions" &&
-      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
-  );
   const incomePowerFocusText =
     !hasOrdinaryOptionIncomeEvents
       ? "普通口座オプション収入イベントがないため、入金力別診断はまだ使えません。収入タブで普通口座オプション由来の収入イベントを登録してください。"
@@ -1077,6 +1116,38 @@ function AssetUseWorkspace({
           <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub={`特別支出内の楽しみ比率 ${compactPercent(enjoymentShare)}`} />
           <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="健康寿命期の終点で残る年末資産" />
           <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>資産活用レビュー</CardTitle>
+          <CardDescription>
+            まず安全性と使える余地を確認し、次にクイック試算か入金力別診断へ進みます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.9fr)_minmax(260px,1.4fr)]">
+            <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
+              <div className="text-sm text-teal-950">今回の判定</div>
+              <div className={`mt-1 text-xl font-semibold ${assetUseDecision.className}`}>{assetUseDecision.title}</div>
+              <p className="mt-2 text-sm leading-6 text-teal-950">{assetUseDecision.description}</p>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <div className="text-sm text-muted-foreground">次に見るポイント</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">{assetUseDecision.next}</div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{assetUseNextFocus}</p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {assetUseReviewItems.map((item) => (
+              <div key={item.title} className="rounded-md border bg-slate-50 px-4 py-3">
+                <div className="text-sm text-muted-foreground">{item.title}</div>
+                <div className={`mt-1 text-xl font-semibold ${item.className}`}>{item.value}</div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -1469,29 +1540,6 @@ function AssetUseWorkspace({
                 このシナリオには普通口座オプションを原資にした定期入金がありません。
               </p>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>資産活用レビュー</CardTitle>
-          <CardDescription>
-            安全性、期間内の使い方、楽しみ支出の比率を並べて、次に確認するポイントを決めます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            {assetUseReviewItems.map((item) => (
-              <div key={item.title} className="rounded-md border bg-slate-50 px-4 py-3">
-                <div className="text-sm text-muted-foreground">{item.title}</div>
-                <div className={`mt-1 text-xl font-semibold ${item.className}`}>{item.value}</div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
-            {assetUseNextFocus}
           </div>
         </CardContent>
       </Card>
