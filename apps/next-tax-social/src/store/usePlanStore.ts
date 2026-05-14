@@ -31,6 +31,7 @@ type PlanStore = RetirementPlanState & {
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
   duplicateScenario: (id: string) => void;
   deleteScenario: (id: string) => void;
+  moveScenario: (id: string, direction: "up" | "down") => void;
   toggleScenarioCompare: (id: string) => void;
   replaceState: (state: RetirementPlanState) => void;
   resetToSample: () => void;
@@ -629,6 +630,20 @@ export const usePlanStore = create<PlanStore>()(
             activeScenarioId: state.activeScenarioId === id ? scenarios[0].id : state.activeScenarioId,
             lastSavedAt: nowIso(),
             backups: rotateBackups(state.backups, createBackupEntry(state, "シナリオ削除前")),
+          };
+        }),
+      moveScenario: (id, direction) =>
+        set((state) => {
+          const index = state.scenarios.findIndex((scenario) => scenario.id === id);
+          if (index < 0) return state;
+          const targetIndex = direction === "up" ? index - 1 : index + 1;
+          if (targetIndex < 0 || targetIndex >= state.scenarios.length) return state;
+          const scenarios = [...state.scenarios];
+          const [scenario] = scenarios.splice(index, 1);
+          scenarios.splice(targetIndex, 0, scenario);
+          return {
+            scenarios,
+            lastSavedAt: nowIso(),
           };
         }),
       toggleScenarioCompare: (id) =>

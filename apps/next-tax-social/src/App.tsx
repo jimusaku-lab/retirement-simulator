@@ -461,6 +461,7 @@ function App() {
     updateScenarios,
     duplicateScenario,
     deleteScenario,
+    moveScenario,
     toggleScenarioCompare,
     replaceState,
     resetToSample,
@@ -746,6 +747,7 @@ function App() {
                 setActiveScenario={setActiveScenario}
                 duplicateScenario={duplicateScenario}
                 deleteScenario={deleteScenario}
+                moveScenario={moveScenario}
                 toggleScenarioCompare={toggleScenarioCompare}
                 updateScenario={updateScenario}
               />
@@ -6993,6 +6995,7 @@ function ScenariosSection(props: {
   setActiveScenario: (id: string) => void;
   duplicateScenario: (id: string) => void;
   deleteScenario: (id: string) => void;
+  moveScenario: (id: string, direction: "up" | "down") => void;
   toggleScenarioCompare: (id: string) => void;
   updateScenario: (updater: (scenario: ScenarioData) => void) => void;
 }) {
@@ -7014,7 +7017,7 @@ function ScenariosSection(props: {
             </Tr>
           </thead>
           <tbody>
-            {props.scenarios.map((scenario) => (
+            {props.scenarios.map((scenario, index) => (
               <Tr key={scenario.id}>
                 <Td>
                   <button className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => props.setActiveScenario(scenario.id)}>
@@ -7027,7 +7030,25 @@ function ScenariosSection(props: {
                 </Td>
                 <Td>{compactYen(getSimulationTargetAssets(scenario))}</Td>
                 <Td>{compactYen(getBaseMonthlyExpense(scenario.monthlyExpenses, shouldIgnoreTaxExpenseField(scenario)))}</Td>
-                <Td className="space-x-2">
+                <Td className="space-x-2 whitespace-nowrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => props.moveScenario(scenario.id, "up")}
+                    disabled={index === 0}
+                    title="上へ移動"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => props.moveScenario(scenario.id, "down")}
+                    disabled={index === props.scenarios.length - 1}
+                    title="下へ移動"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => props.duplicateScenario(scenario.id)}>
                     <Copy className="h-4 w-4" />
                     複製
