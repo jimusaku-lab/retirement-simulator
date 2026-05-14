@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { getIncomeEventAmountForMonth, isIdecoMonexPensionEvent } from "@/lib/incomeEvents";
+import { isOrdinaryOptionIncomeEvent } from "@/lib/optionIncomeHints";
 import { getPensionPlannerIncomeForMonth, isPensionPlannerReplacingEvent } from "@/lib/pensionPlanner";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import type {
@@ -367,6 +368,7 @@ function getMemberIncomeBreakdown(
     );
     for (const event of events) {
       if (isPensionPlannerReplacingEvent(scenario, event)) continue;
+      if (isOrdinaryOptionIncomeEvent(event)) continue;
       if (event.taxTreatment === "nonTaxable") continue;
       const amount = getMonthlyIncomeAmount(event, month, scenario);
       if (amount <= 0) continue;

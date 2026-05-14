@@ -6478,6 +6478,41 @@ describe("simulation", () => {
     );
   });
 
+  it("普通口座オプション収入は申告対象損益と収入イベントで二重計上しない", () => {
+    const declaredIncome = new Map([[2026, new Map([["member-self", 900_000]])]]);
+    const withOptionIncomeEvent = simpleScenario({
+      householdProfile: {
+        ...simpleScenario().householdProfile,
+        taxCalculationMode: "auto",
+      },
+      incomeEvents: [
+        {
+          id: "ordinary-option-income",
+          memberId: "member-self",
+          name: "米国株オプション",
+          type: "investmentIncome",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-12",
+          monthlyAmount: 100_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ordinaryAccountForOptions",
+          sourceAssetPayoutMode: "retainInSourceAsset",
+        },
+      ],
+    });
+    const withoutOptionIncomeEvent = simpleScenario({
+      ...withOptionIncomeEvent,
+      incomeEvents: [],
+    });
+
+    const withEventTax = calculateAutoTaxRows(withOptionIncomeEvent, declaredIncome).find((row) => row.fiscalYear === 2026);
+    const withoutEventTax = calculateAutoTaxRows(withoutOptionIncomeEvent, declaredIncome).find((row) => row.fiscalYear === 2026);
+
+    expect(withEventTax?.incomeTaxAnnual).toBe(withoutEventTax?.incomeTaxAnnual);
+    expect(withEventTax?.residentTaxAnnual).toBe(withoutEventTax?.residentTaxAnnual);
+    expect(withEventTax?.nationalHealthInsuranceAnnual).toBe(withoutEventTax?.nationalHealthInsuranceAnnual);
+  });
+
   it("普通口座オプションの実現益は申告所得として翌年の税社保に反映する", () => {
     const base = simpleScenario({
       userProfile: {
