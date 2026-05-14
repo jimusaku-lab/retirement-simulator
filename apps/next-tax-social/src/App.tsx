@@ -1078,6 +1078,22 @@ function AssetUseWorkspace({
   const incomePowerMaxNetIncome = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.netIncomeIncrease) ?? [0]));
   const incomePowerMaxTaxIncrease = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.taxAndSocialIncrease) ?? [0]));
   const incomePowerMaxEnjoyment = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.maxAdditionalEnjoymentAnnual) ?? [0]));
+  const incomePowerStepRows =
+    incomePowerDiagnostics?.rows.map((row, index, rows) => {
+      const previous = rows[index - 1];
+      const grossDelta = previous ? row.grossIncomeIncrease - previous.grossIncomeIncrease : 0;
+      const taxDelta = previous ? row.taxAndSocialIncrease - previous.taxAndSocialIncrease : 0;
+      const netDelta = previous ? row.netIncomeIncrease - previous.netIncomeIncrease : 0;
+      const enjoymentDelta = previous ? row.maxAdditionalEnjoymentAnnual - previous.maxAdditionalEnjoymentAnnual : 0;
+      return {
+        ...row,
+        grossDelta,
+        taxDelta,
+        netDelta,
+        enjoymentDelta,
+        marginalEffectiveRate: grossDelta > 0 ? netDelta / grossDelta : null,
+      };
+    }) ?? [];
   useEffect(() => {
     setIncomePowerDiagnostics(null);
   }, [scenario.id, trialStartAge, trialEndAge]);
@@ -1418,6 +1434,40 @@ function AssetUseWorkspace({
                       「仮の入金力」は普通口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
                       イベントごとに有効期間が違う場合、入金総額は単純な「月額×延べ月数」ではなく、配分後の各イベント月額×対象月数の合計です。
                       税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
+                    </p>
+                    <div className="table-scroll overflow-auto">
+                      <Table className="min-w-[980px]">
+                        <thead>
+                          <Tr>
+                            <Th>仮の入金力</Th>
+                            <Th>前段からの入金増</Th>
+                            <Th>前段からの税・社保増</Th>
+                            <Th>前段からの手残り増</Th>
+                            <Th>前段の有効率</Th>
+                            <Th>楽しみ支出の増減</Th>
+                          </Tr>
+                        </thead>
+                        <tbody>
+                          {incomePowerStepRows.map((row) => (
+                            <Tr key={`step-${row.monthlyIncomePower}`}>
+                              <Td>月{compactYen(row.monthlyIncomePower)}</Td>
+                              <Td>{row.grossDelta === 0 ? "-" : compactYen(row.grossDelta)}</Td>
+                              <Td className={row.taxDelta > 0 ? "text-amber-700" : ""}>{row.taxDelta === 0 ? "-" : compactYen(row.taxDelta)}</Td>
+                              <Td className={row.netDelta < 0 ? "text-red-600" : row.netDelta > 0 ? "text-teal-700" : ""}>
+                                {row.netDelta === 0 ? "-" : compactYen(row.netDelta)}
+                              </Td>
+                              <Td>{row.marginalEffectiveRate === null ? "-" : compactPercent(row.marginalEffectiveRate)}</Td>
+                              <Td className={row.enjoymentDelta < 0 ? "text-red-600" : row.enjoymentDelta > 0 ? "text-teal-700" : ""}>
+                                {row.enjoymentDelta === 0 ? "-" : compactYen(row.enjoymentDelta)}
+                              </Td>
+                            </Tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </div>
+                    <p className="text-xs leading-6 text-muted-foreground">
+                      前段からの差分は、月0万から月10万、月10万から月20万のように一段増やした時の変化です。
+                      ここを見ると、入金を増やした分が税・社会保険でどれだけ減り、楽しみ支出の上限にどれだけ反映されたかを確認できます。
                     </p>
                   </ScenarioSyncDetails>
                 </>
