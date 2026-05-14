@@ -2846,6 +2846,29 @@ function ScenarioSyncCard<T extends string>({
   );
 }
 
+function ScenarioSyncDetails({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="rounded-lg border bg-white px-4 py-3">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+        <span>
+          <span className="block font-medium">{title}</span>
+          <span className="text-sm text-muted-foreground">{description}</span>
+        </span>
+        <span className="rounded-md border bg-slate-50 px-3 py-1 text-sm text-muted-foreground">開く</span>
+      </summary>
+      <div className="mt-4 space-y-4">{children}</div>
+    </details>
+  );
+}
+
 function AssetsSection({
   scenario,
   scenarios,
@@ -3727,6 +3750,10 @@ function AssetsSection({
             ))}
           </CardContent>
         </Card>
+        <ScenarioSyncDetails
+          title="他シナリオへ反映"
+          description="初期資産前提をまとめてコピーする時だけ開きます。"
+        >
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
             <Field label="コピー元シナリオ">
@@ -3782,6 +3809,7 @@ function AssetsSection({
           onApply={applyAssetSync}
           message={assetSyncMessage}
         />
+        </ScenarioSyncDetails>
       </CardContent>
     </Card>
   );
@@ -4141,6 +4169,10 @@ function ExpensesSection({
             </Table>
           </div>
         )}
+        <ScenarioSyncDetails
+          title="他シナリオへ反映"
+          description="生活費前提をまとめてコピーする時だけ開きます。"
+        >
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
             <Field label="コピー元シナリオ">
@@ -4197,6 +4229,7 @@ function ExpensesSection({
           message={expenseSyncMessage}
           optionGridClassName="grid gap-2 sm:grid-cols-3"
         />
+        </ScenarioSyncDetails>
       </CardContent>
     </Card>
   );
@@ -5114,6 +5147,10 @@ function IncomeSection({
         <div className="grid gap-4 md:grid-cols-2">
           <RateField label="年金改定率" value={scenario.inflationSettings.pensionAnnualAdjustmentRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.pensionAnnualAdjustmentRate = value))} />
         </div>
+        <ScenarioSyncDetails
+          title="他シナリオへ反映"
+          description="収入・年金前提をまとめてコピーする時だけ開きます。"
+        >
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
             <Field label="コピー元シナリオ">
@@ -5206,6 +5243,7 @@ function IncomeSection({
             </div>
           </div>
         )}
+        </ScenarioSyncDetails>
       </CardContent>
     </Card>
   );
@@ -7160,6 +7198,10 @@ function SpecialSection({
             </FormGrid>
           </EventEditor>
         ))}
+        <ScenarioSyncDetails
+          title="他シナリオへ反映"
+          description="特別支出リストをまとめてコピーする時だけ開きます。"
+        >
         <div className="rounded-lg border bg-white px-4 py-3">
           <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
             <Field label="コピー元シナリオ">
@@ -7214,6 +7256,7 @@ function SpecialSection({
           message={specialSyncMessage}
           optionGridClassName="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
         />
+        </ScenarioSyncDetails>
       </CardContent>
     </Card>
   );
