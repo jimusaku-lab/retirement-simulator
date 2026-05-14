@@ -611,11 +611,14 @@ export const usePlanStore = create<PlanStore>()(
         })),
       duplicateScenario: (id) =>
         set((state) => {
-          const source = state.scenarios.find((scenario) => scenario.id === id);
-          if (!source) return state;
+          const sourceIndex = state.scenarios.findIndex((scenario) => scenario.id === id);
+          const source = state.scenarios[sourceIndex];
+          if (!source || sourceIndex < 0) return state;
           const copy = cloneScenario(source, `${source.name} コピー`);
+          const scenarios = [...state.scenarios];
+          scenarios.splice(sourceIndex + 1, 0, copy);
           return {
-            scenarios: [...state.scenarios, copy],
+            scenarios,
             activeScenarioId: copy.id,
             lastSavedAt: nowIso(),
             backups: rotateBackups(state.backups, createBackupEntry(state, "シナリオ複製前")),

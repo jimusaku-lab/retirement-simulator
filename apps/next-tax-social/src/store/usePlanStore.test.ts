@@ -35,6 +35,19 @@ describe("normalizePlanState", () => {
 });
 
 describe("usePlanStore scenario ordering", () => {
+  it("複製したシナリオをコピー元の直下へ挿入する", () => {
+    usePlanStore.setState(structuredClone(sampleState));
+    const sourceId = usePlanStore.getState().scenarios[1].id;
+    const sourceName = usePlanStore.getState().scenarios[1].name;
+
+    usePlanStore.getState().duplicateScenario(sourceId);
+
+    const scenarios = usePlanStore.getState().scenarios;
+    expect(scenarios[1].id).toBe(sourceId);
+    expect(scenarios[2].name).toBe(`${sourceName} コピー`);
+    expect(usePlanStore.getState().activeScenarioId).toBe(scenarios[2].id);
+  });
+
   it("シナリオの順番を上下に移動できる", () => {
     usePlanStore.setState(structuredClone(sampleState));
     const before = usePlanStore.getState().scenarios.map((scenario) => scenario.id);
