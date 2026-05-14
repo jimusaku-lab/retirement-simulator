@@ -8712,6 +8712,46 @@ function ManualSection() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>入金力別診断の読み方</CardTitle>
+          <CardDescription>入金を増やした時に、税・社会保険を差し引いて楽しみに回せる余地を見る表です。</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm leading-7 md:grid-cols-2">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">診断対象</p>
+            <p className="mt-1 text-muted-foreground">
+              収入タブで原資資産を「普通口座（オプション用）」にしている収入イベント数です。ここが0件なら、入金力別診断は計算できません。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">分岐点</p>
+            <p className="mt-1 text-muted-foreground">
+              月0万、10万、20万のように仮入金力を上げた時、90歳目標残高を守りながら楽しみ支出を増やせる最初の候補です。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">最大候補</p>
+            <p className="mt-1 text-muted-foreground">
+              診断した候補の中で、90歳目標残高を守ったうえで楽しみに増やせる年額が最も大きい候補です。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <p className="font-medium">効率がよい候補</p>
+            <p className="mt-1 text-muted-foreground">
+              入金総額に対して、税・社会保険を引いた実質手残りの割合が高い候補です。これは資産寿命ではなく、入金そのものの手残り効率を見ます。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3 md:col-span-2">
+            <p className="font-medium">診断表の詳細</p>
+            <p className="mt-1 text-muted-foreground">
+              「前段からの差分」は、月0万から月10万、月10万から月20万のように一段増やした時の変化です。
+              入金増、税・社保増、手残り増、楽しみ支出の増減を並べて、どの段階から効率が落ちるかを確認します。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
