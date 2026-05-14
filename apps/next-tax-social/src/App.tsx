@@ -2856,6 +2856,8 @@ function AssetsSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [assetSyncSourceScenarioId, setAssetSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromAssetSync, setExcludeCurrentScenarioFromAssetSync] = useState(true);
   const [assetSyncOptions, setAssetSyncOptions] = useState<AssetSyncOptions>({
     liquidAssets: true,
     marketAssets: true,
@@ -2863,7 +2865,24 @@ function AssetsSection({
     optionSubAccounts: false,
   });
   const [assetSyncMessage, setAssetSyncMessage] = useState<string | null>(null);
-  const assetSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, assetSyncTargetMode);
+  const assetSyncSourceScenario = scenarios.find((item) => item.id === assetSyncSourceScenarioId) ?? scenario;
+  const assetSyncSourceIsCurrentScenario = assetSyncSourceScenario.id === scenario.id;
+  const assetSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromAssetSync && !assetSyncSourceIsCurrentScenario) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [assetSyncSourceIsCurrentScenario, excludeCurrentScenarioFromAssetSync, scenario.id]);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === assetSyncSourceScenarioId)) {
+      setAssetSyncSourceScenarioId(scenario.id);
+    }
+  }, [assetSyncSourceScenarioId, scenario.id, scenarios]);
+  const assetSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    assetSyncSourceScenario.id,
+    assetSyncTargetMode,
+    assetSyncExcludedScenarioIds,
+  );
   const hasAssetSyncSelection = Object.values(assetSyncOptions).some(Boolean);
   const updateAssetSyncOption = (key: keyof AssetSyncOptions) => {
     setAssetSyncOptions((current) => ({ ...current, [key]: !current[key] }));
@@ -2876,13 +2895,18 @@ function AssetsSection({
   ].filter(Boolean);
   const applyAssetSync = () => {
     if (assetSyncTargetCount === 0 || !hasAssetSyncSelection) return;
-    const source = structuredClone(scenario);
+    const source = structuredClone(assetSyncSourceScenario);
     const confirmed = window.confirm(
-      `「${source.name}」の ${selectedAssetSyncLabels.join("、")} を、コピー元自身を除く ${assetSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+      `「${source.name}」の ${selectedAssetSyncLabels.join("、")} を、コピー元自身を除く ${assetSyncTargetCount} 件のシナリオへ反映します。` +
+        (!assetSyncSourceIsCurrentScenario && excludeCurrentScenarioFromAssetSync
+          ? `現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
+        "実行しますか？",
     );
     if (!confirmed) return;
     updateScenarios((target) => {
       if (target.id === source.id) return target;
+      if (assetSyncExcludedScenarioIds.has(target.id)) return target;
       if (assetSyncTargetMode === "compare" && !target.compare) return target;
       applyAssetSyncFromSource(target, source, assetSyncOptions);
       return target;
@@ -3703,13 +3727,49 @@ function AssetsSection({
             ))}
           </CardContent>
         </Card>
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select value={assetSyncSourceScenario.id} onChange={(event) => setAssetSyncSourceScenarioId(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+              現在のコピー元は「{assetSyncSourceScenario.name}」です。初期資産の反映だけに使い、表示中シナリオの入力欄は切り替えません。
+            </div>
+          </div>
+          {!assetSyncSourceIsCurrentScenario && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={excludeCurrentScenarioFromAssetSync}
+                onChange={(event) => setExcludeCurrentScenarioFromAssetSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
+                <span className="text-xs">
+                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
         <ScenarioSyncCard<keyof AssetSyncOptions>
-          title="このシナリオの現在資産を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、初期資産の前提だけを他シナリオへ反映します。計算ロジックや生活費・収入・特別支出は変更しません。`}
+          title="初期資産前提を他シナリオへ反映"
+          description="コピー元シナリオを選び、初期資産の前提だけを他シナリオへ反映します。計算ロジックや生活費・収入・特別支出は変更しません。"
           targetMode={assetSyncTargetMode}
           setTargetMode={setAssetSyncTargetMode}
           targetCount={assetSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${assetSyncTargetCount} 件に反映します。ゆくゆくは、どのシナリオを選んでもそのシナリオを起点に反映できる運用にします。`}
+          targetSummary={
+            `コピー元「${assetSyncSourceScenario.name}」自身を除く ${assetSyncTargetCount} 件に反映します。` +
+            (!assetSyncSourceIsCurrentScenario && excludeCurrentScenarioFromAssetSync
+              ? `現在開いている「${scenario.name}」も誤操作防止のため反映先から外します。`
+              : "")
+          }
           options={[
             { key: "liquidAssets", label: "現金・預金・対象外資産", description: "現金、普通預金、定期預金、対象外資産、負債" },
             { key: "marketAssets", label: "証券・iDeCo評価額", description: "NISA、特定口座、iDeCoの評価額" },
@@ -3737,13 +3797,32 @@ function ExpensesSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [expenseSyncTargetMode, setExpenseSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [expenseSyncSourceScenarioId, setExpenseSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromExpenseSync, setExcludeCurrentScenarioFromExpenseSync] = useState(true);
   const [expenseSyncOptions, setExpenseSyncOptions] = useState<ExpenseSyncOptions>({
     monthlyExpenses: true,
     ageAdjustments: true,
     expenseInflation: true,
   });
   const [expenseSyncMessage, setExpenseSyncMessage] = useState<string | null>(null);
-  const expenseSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, expenseSyncTargetMode);
+  const expenseSyncSourceScenario = scenarios.find((item) => item.id === expenseSyncSourceScenarioId) ?? scenario;
+  const expenseSyncSourceIsCurrentScenario = expenseSyncSourceScenario.id === scenario.id;
+  const expenseSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromExpenseSync && !expenseSyncSourceIsCurrentScenario) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [excludeCurrentScenarioFromExpenseSync, expenseSyncSourceIsCurrentScenario, scenario.id]);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === expenseSyncSourceScenarioId)) {
+      setExpenseSyncSourceScenarioId(scenario.id);
+    }
+  }, [expenseSyncSourceScenarioId, scenario.id, scenarios]);
+  const expenseSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    expenseSyncSourceScenario.id,
+    expenseSyncTargetMode,
+    expenseSyncExcludedScenarioIds,
+  );
   const hasExpenseSyncSelection = Object.values(expenseSyncOptions).some(Boolean);
   const selectedExpenseSyncLabels = [
     expenseSyncOptions.monthlyExpenses ? "月額生活費" : "",
@@ -3755,13 +3834,18 @@ function ExpensesSection({
   };
   const applyExpenseSync = () => {
     if (expenseSyncTargetCount === 0 || !hasExpenseSyncSelection) return;
-    const source = structuredClone(scenario);
+    const source = structuredClone(expenseSyncSourceScenario);
     const confirmed = window.confirm(
-      `「${source.name}」の ${selectedExpenseSyncLabels.join("、")} を、コピー元自身を除く ${expenseSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+      `「${source.name}」の ${selectedExpenseSyncLabels.join("、")} を、コピー元自身を除く ${expenseSyncTargetCount} 件のシナリオへ反映します。` +
+        (!expenseSyncSourceIsCurrentScenario && excludeCurrentScenarioFromExpenseSync
+          ? `現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
+        "実行しますか？",
     );
     if (!confirmed) return;
     updateScenarios((target) => {
       if (target.id === source.id) return target;
+      if (expenseSyncExcludedScenarioIds.has(target.id)) return target;
       if (expenseSyncTargetMode === "compare" && !target.compare) return target;
       applyExpenseSyncFromSource(target, source, expenseSyncOptions);
       return target;
@@ -4057,13 +4141,50 @@ function ExpensesSection({
             </Table>
           </div>
         )}
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select value={expenseSyncSourceScenario.id} onChange={(event) => setExpenseSyncSourceScenarioId(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+              現在のコピー元は「{expenseSyncSourceScenario.name}」です。生活費前提の反映だけに使い、表示中シナリオの入力欄は切り替えません。
+            </div>
+          </div>
+          {!expenseSyncSourceIsCurrentScenario && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={excludeCurrentScenarioFromExpenseSync}
+                onChange={(event) => setExcludeCurrentScenarioFromExpenseSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
+                <span className="text-xs">
+                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
         <ScenarioSyncCard<keyof ExpenseSyncOptions>
-          title="このシナリオの生活費前提を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、生活費まわりの前提を他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
+          title="生活費前提を他シナリオへ反映"
+          description="コピー元シナリオを選び、生活費まわりの前提を他シナリオへ反映します。"
           targetMode={expenseSyncTargetMode}
           setTargetMode={setExpenseSyncTargetMode}
           targetCount={expenseSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${expenseSyncTargetCount} 件に反映します。生活費だけをそろえたい場合は、必要な項目だけを選んで実行してください。`}
+          targetSummary={
+            `コピー元「${expenseSyncSourceScenario.name}」自身を除く ${expenseSyncTargetCount} 件に反映します。` +
+            (!expenseSyncSourceIsCurrentScenario && excludeCurrentScenarioFromExpenseSync
+              ? `現在開いている「${scenario.name}」も誤操作防止のため反映先から外します。`
+              : "") +
+            "生活費だけをそろえたい場合は、必要な項目だけを選んで実行してください。"
+          }
           options={[
             { key: "monthlyExpenses", label: "月額生活費", description: "費目別の月額入力" },
             { key: "ageAdjustments", label: "年齢別変更", description: "60歳以降などの変更ルール" },
@@ -6856,11 +6977,30 @@ function SpecialSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [specialSyncTargetMode, setSpecialSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [specialSyncSourceScenarioId, setSpecialSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromSpecialSync, setExcludeCurrentScenarioFromSpecialSync] = useState(true);
   const [specialSyncOptions, setSpecialSyncOptions] = useState<SpecialSyncOptions>({
     specialExpenses: true,
   });
   const [specialSyncMessage, setSpecialSyncMessage] = useState<string | null>(null);
-  const specialSyncTargetCount = countAssetSyncTargets(scenarios, scenario.id, specialSyncTargetMode);
+  const specialSyncSourceScenario = scenarios.find((item) => item.id === specialSyncSourceScenarioId) ?? scenario;
+  const specialSyncSourceIsCurrentScenario = specialSyncSourceScenario.id === scenario.id;
+  const specialSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromSpecialSync && !specialSyncSourceIsCurrentScenario) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [excludeCurrentScenarioFromSpecialSync, scenario.id, specialSyncSourceIsCurrentScenario]);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === specialSyncSourceScenarioId)) {
+      setSpecialSyncSourceScenarioId(scenario.id);
+    }
+  }, [scenario.id, scenarios, specialSyncSourceScenarioId]);
+  const specialSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    specialSyncSourceScenario.id,
+    specialSyncTargetMode,
+    specialSyncExcludedScenarioIds,
+  );
   const hasSpecialSyncSelection = Object.values(specialSyncOptions).some(Boolean);
   const selectedSpecialSyncLabels = [specialSyncOptions.specialExpenses ? "特別支出リスト" : ""].filter(Boolean);
   const updateSpecialSyncOption = (key: keyof SpecialSyncOptions) => {
@@ -6868,13 +7008,18 @@ function SpecialSection({
   };
   const applySpecialSync = () => {
     if (specialSyncTargetCount === 0 || !hasSpecialSyncSelection) return;
-    const source = structuredClone(scenario);
+    const source = structuredClone(specialSyncSourceScenario);
     const confirmed = window.confirm(
-      `「${source.name}」の ${selectedSpecialSyncLabels.join("、")} を、コピー元自身を除く ${specialSyncTargetCount} 件のシナリオへ反映します。実行しますか？`,
+      `「${source.name}」の ${selectedSpecialSyncLabels.join("、")} を、コピー元自身を除く ${specialSyncTargetCount} 件のシナリオへ反映します。` +
+        (!specialSyncSourceIsCurrentScenario && excludeCurrentScenarioFromSpecialSync
+          ? `現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
+        "実行しますか？",
     );
     if (!confirmed) return;
     updateScenarios((target) => {
       if (target.id === source.id) return target;
+      if (specialSyncExcludedScenarioIds.has(target.id)) return target;
       if (specialSyncTargetMode === "compare" && !target.compare) return target;
       applySpecialSyncFromSource(target, source, specialSyncOptions);
       return target;
@@ -7015,13 +7160,50 @@ function SpecialSection({
             </FormGrid>
           </EventEditor>
         ))}
+        <div className="rounded-lg border bg-white px-4 py-3">
+          <div className="grid gap-4 lg:grid-cols-[minmax(260px,420px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select value={specialSyncSourceScenario.id} onChange={(event) => setSpecialSyncSourceScenarioId(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+              現在のコピー元は「{specialSyncSourceScenario.name}」です。特別支出リストの反映だけに使い、表示中シナリオの入力欄は切り替えません。
+            </div>
+          </div>
+          {!specialSyncSourceIsCurrentScenario && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <input
+                type="checkbox"
+                checked={excludeCurrentScenarioFromSpecialSync}
+                onChange={(event) => setExcludeCurrentScenarioFromSpecialSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">現在開いているシナリオは上書きしない</span>
+                <span className="text-xs">
+                  「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                </span>
+              </span>
+            </label>
+          )}
+        </div>
         <ScenarioSyncCard<keyof SpecialSyncOptions>
-          title="このシナリオの特別支出前提を他シナリオへ反映"
-          description={`現在選択中の「${scenario.name}」をコピー元にして、旅行・修繕・家電買替などの特別支出リストを他シナリオへ反映します。将来は、どのシナリオを選んでもそこから他へ反映できる運用へ広げます。`}
+          title="特別支出前提を他シナリオへ反映"
+          description="コピー元シナリオを選び、旅行・修繕・家電買替などの特別支出リストを他シナリオへ反映します。"
           targetMode={specialSyncTargetMode}
           setTargetMode={setSpecialSyncTargetMode}
           targetCount={specialSyncTargetCount}
-          targetSummary={`コピー元自身を除く ${specialSyncTargetCount} 件に反映します。反映先の既存の特別支出リストは、コピー元のリストで置き換わります。`}
+          targetSummary={
+            `コピー元「${specialSyncSourceScenario.name}」自身を除く ${specialSyncTargetCount} 件に反映します。` +
+            (!specialSyncSourceIsCurrentScenario && excludeCurrentScenarioFromSpecialSync
+              ? `現在開いている「${scenario.name}」も誤操作防止のため反映先から外します。`
+              : "") +
+            "反映先の既存の特別支出リストは、コピー元のリストで置き換わります。"
+          }
           options={[
             { key: "specialExpenses", label: "特別支出リスト", description: "名称、年月、金額、カテゴリ、繰り返し設定" },
           ]}
