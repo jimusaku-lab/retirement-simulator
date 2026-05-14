@@ -1021,6 +1021,22 @@ function AssetUseWorkspace({
       : incomePowerDiagnostics.firstUsefulMonthlyIncomePower === undefined
         ? "この条件では、入金力を上げても楽しみ支出を安全に増やせる明確な分岐点は出ていません。税社保増、最低維持額、90歳目標差額を確認してください。"
         : `この条件では、月${compactYen(incomePowerDiagnostics.firstUsefulMonthlyIncomePower)}付近から、90歳目標を守りながら楽しみ支出を増やせる目安が出ます。`;
+  const incomePowerFirstUsefulRow = incomePowerDiagnostics?.rows.find(
+    (row) => row.monthlyIncomePower === incomePowerDiagnostics.firstUsefulMonthlyIncomePower,
+  );
+  const incomePowerBestEnjoymentRow = incomePowerDiagnostics?.rows.reduce(
+    (best, row) => (row.maxAdditionalEnjoymentAnnual > best.maxAdditionalEnjoymentAnnual ? row : best),
+    incomePowerDiagnostics.rows[0],
+  );
+  const incomePowerBestEfficiencyRow = incomePowerDiagnostics?.rows
+    .filter((row) => row.effectiveRate !== null && row.grossIncomeIncrease > 0)
+    .reduce(
+      (best, row) => (!best || (row.effectiveRate ?? 0) > (best.effectiveRate ?? 0) ? row : best),
+      undefined as (typeof incomePowerDiagnostics.rows)[number] | undefined,
+    );
+  const incomePowerMaxNetIncome = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.netIncomeIncrease) ?? [0]));
+  const incomePowerMaxTaxIncrease = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.taxAndSocialIncrease) ?? [0]));
+  const incomePowerMaxEnjoyment = Math.max(1, ...(incomePowerDiagnostics?.rows.map((row) => row.maxAdditionalEnjoymentAnnual) ?? [0]));
   useEffect(() => {
     setIncomePowerDiagnostics(null);
   }, [scenario.id, trialStartAge, trialEndAge]);
@@ -1208,6 +1224,83 @@ function AssetUseWorkspace({
                       <div className="mt-1 text-xl font-semibold">{compactYen(incomePowerDiagnostics.baselineMaxAdditionalEnjoymentAnnual)} / 年</div>
                       <div className="mt-1 text-xs text-muted-foreground">比較の基準値</div>
                     </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
+                      <div className="text-sm text-teal-950">分岐点</div>
+                      <div className="mt-1 text-xl font-semibold text-teal-800">
+                        {incomePowerFirstUsefulRow ? `月${compactYen(incomePowerFirstUsefulRow.monthlyIncomePower)}` : "明確な分岐点なし"}
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-teal-950">
+                        {incomePowerFirstUsefulRow
+                          ? `楽しみ支出 ${compactYen(incomePowerFirstUsefulRow.maxAdditionalEnjoymentAnnual)} / 年、実質手残り ${compactYen(incomePowerFirstUsefulRow.netIncomeIncrease)}`
+                          : "90歳目標を守りながら楽しみ支出を増やせる候補が見つかっていません。"}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-slate-50 px-4 py-3">
+                      <div className="text-sm text-muted-foreground">最大候補</div>
+                      <div className="mt-1 text-xl font-semibold">
+                        {incomePowerBestEnjoymentRow ? `${compactYen(incomePowerBestEnjoymentRow.maxAdditionalEnjoymentAnnual)} / 年` : "-"}
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {incomePowerBestEnjoymentRow
+                          ? `仮の入金力 月${compactYen(incomePowerBestEnjoymentRow.monthlyIncomePower)}、90歳目標差額 ${compactYen(incomePowerBestEnjoymentRow.targetBalanceGapAfterMax)}`
+                          : "診断結果がありません。"}
+                      </div>
+                    </div>
+                    <div className="rounded-md border bg-slate-50 px-4 py-3">
+                      <div className="text-sm text-muted-foreground">効率がよい候補</div>
+                      <div className="mt-1 text-xl font-semibold">
+                        {incomePowerBestEfficiencyRow?.effectiveRate === null || !incomePowerBestEfficiencyRow
+                          ? "-"
+                          : `月${compactYen(incomePowerBestEfficiencyRow.monthlyIncomePower)} / ${compactPercent(incomePowerBestEfficiencyRow.effectiveRate)}`}
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {incomePowerBestEfficiencyRow
+                          ? `入金総額 ${compactYen(incomePowerBestEfficiencyRow.grossIncomeIncrease)} に対し、実質手残り ${compactYen(incomePowerBestEfficiencyRow.netIncomeIncrease)}`
+                          : "入金増の実質手残りを比較できる候補がありません。"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-md border bg-white px-4 py-3">
+                    <div className="grid gap-2 text-xs font-medium text-muted-foreground md:grid-cols-[9rem_1fr_1fr_1fr]">
+                      <div>仮の入金力</div>
+                      <div>実質手残り</div>
+                      <div>税・社保増</div>
+                      <div>楽しみに増やせる年額</div>
+                    </div>
+                    {incomePowerDiagnostics.rows.map((row) => (
+                      <div key={`visual-${row.monthlyIncomePower}`} className="grid items-center gap-2 text-sm md:grid-cols-[9rem_1fr_1fr_1fr]">
+                        <div className="font-medium">月{compactYen(row.monthlyIncomePower)}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 min-w-16 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-teal-600"
+                              style={{ width: `${Math.max(0, Math.min(100, (row.netIncomeIncrease / incomePowerMaxNetIncome) * 100))}%` }}
+                            />
+                          </div>
+                          <span className="w-20 text-right text-teal-700">{compactYen(row.netIncomeIncrease)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 min-w-16 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-amber-600"
+                              style={{ width: `${Math.max(0, Math.min(100, (row.taxAndSocialIncrease / incomePowerMaxTaxIncrease) * 100))}%` }}
+                            />
+                          </div>
+                          <span className="w-20 text-right text-amber-700">{compactYen(row.taxAndSocialIncrease)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 min-w-16 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-sky-600"
+                              style={{ width: `${Math.max(0, Math.min(100, (row.maxAdditionalEnjoymentAnnual / incomePowerMaxEnjoyment) * 100))}%` }}
+                            />
+                          </div>
+                          <span className="w-20 text-right">{compactYen(row.maxAdditionalEnjoymentAnnual)}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   <div className="table-scroll overflow-auto">
                     <Table className="min-w-[1100px]">
