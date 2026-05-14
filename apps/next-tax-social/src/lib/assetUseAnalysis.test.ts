@@ -233,6 +233,7 @@ describe("asset use analysis", () => {
 
   it("compares income power without mutating the source scenario", () => {
     const scenario = structuredClone(sampleState.scenarios[0]);
+    scenario.name = `${scenario.name} 米国株オプション30`;
     const originalName = scenario.name;
     scenario.incomeEvents.push({
       id: "option-income",
@@ -256,8 +257,8 @@ describe("asset use analysis", () => {
     expect(scenario.incomeEvents.find((event) => event.id === "option-income")?.monthlyAmount).toBe(100_000);
     expect(diagnostics.sourceEventCount).toBeGreaterThan(0);
     expect(diagnostics.rows.map((row) => row.monthlyIncomePower)).toEqual([0, 100_000, 200_000]);
-    expect(diagnostics.rows[1].grossIncomeIncrease).toBeGreaterThan(0);
-    expect(diagnostics.rows[2].grossIncomeIncrease).toBeGreaterThan(diagnostics.rows[1].grossIncomeIncrease);
+    expect(diagnostics.rows[1].grossIncomeIncrease).toBe(diagnostics.rows[1].activeMonths * 100_000);
+    expect(diagnostics.rows[2].grossIncomeIncrease).toBe(diagnostics.rows[2].activeMonths * 200_000);
     expect(diagnostics.rows[1].maxAdditionalEnjoymentAnnual).toBeGreaterThanOrEqual(0);
   });
 });

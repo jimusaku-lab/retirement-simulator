@@ -233,15 +233,25 @@ function getOrdinaryOptionIncomeEvents(scenario: Pick<ScenarioData, "incomeEvent
 }
 
 function setOrdinaryOptionIncomePower(scenario: ScenarioData, monthlyIncomePower: number) {
-  const optionIncomeEventIds = new Set(getOrdinaryOptionIncomeEvents(scenario).map((event) => event.id));
-  scenario.name = `${scenario.name} 入金力診断`;
+  const optionIncomeEvents = getOrdinaryOptionIncomeEvents(scenario);
+  const optionIncomeEventIds = new Set(optionIncomeEvents.map((event) => event.id));
+  const currentTotal = optionIncomeEvents.reduce((sum, event) => sum + Math.max(0, event.monthlyAmount ?? 0), 0);
+  let remainingAmount = monthlyIncomePower;
+  let remainingWeight = currentTotal > 0 ? currentTotal : 1;
+  scenario.name = "入金力診断";
   scenario.incomeEvents = scenario.incomeEvents.map((event) =>
     optionIncomeEventIds.has(event.id)
-      ? {
-          ...event,
-          monthlyAmount: monthlyIncomePower,
-          amountInputMode: "monthly" as const,
-        }
+      ? (() => {
+          const weight = currentTotal > 0 ? Math.max(0, event.monthlyAmount ?? 0) : remainingAmount === monthlyIncomePower ? 1 : 0;
+          const allocatedAmount = remainingWeight > 0 ? Math.round((remainingAmount * weight) / remainingWeight) : 0;
+          remainingAmount = Math.max(0, remainingAmount - allocatedAmount);
+          remainingWeight = Math.max(0, remainingWeight - weight);
+          return {
+            ...event,
+            monthlyAmount: remainingWeight === 0 ? remainingAmount + allocatedAmount : allocatedAmount,
+            amountInputMode: "monthly" as const,
+          };
+        })()
       : event,
   );
 }
@@ -261,6 +271,25 @@ function countIncomePowerActiveMonths(
           row.ageYears <= period.endAge &&
           isEventActive(event as Pick<IncomeEvent, "startYearMonth" | "endYearMonth">, row.yearMonth),
       ).length,
+    0,
+  );
+}
+
+function calculateOptionIncomeGrossAmount(
+  scenario: Pick<ScenarioData, "incomeEvents">,
+  result: Pick<SimulationResult, "monthly">,
+  period: FlexibleFreeCashPeriod,
+) {
+  const events = getOrdinaryOptionIncomeEvents(scenario);
+  return events.reduce(
+    (sum, event) =>
+      sum +
+      result.monthly.filter(
+        (row) =>
+          row.ageYears >= period.startAge &&
+          row.ageYears <= period.endAge &&
+          isEventActive(event as Pick<IncomeEvent, "startYearMonth" | "endYearMonth">, row.yearMonth),
+      ).length * Math.max(0, event.monthlyAmount ?? 0),
     0,
   );
 }
@@ -322,7 +351,10 @@ export function calculateIncomePowerDiagnostics(
 ): IncomePowerDiagnostics {
   const period = calculateFlexibleFreeCashSummary(simulateScenario(scenario), periodInput).period;
   const sourceEventCount = getOrdinaryOptionIncomeEvents(scenario).length;
-  const baselineMonthlyIncomePower = getOrdinaryOptionIncomeEvents(scenario)[0]?.monthlyAmount ?? 0;
+  const baselineMonthlyIncomePower = getOrdinaryOptionIncomeEvents(scenario).reduce(
+    (sum, event) => sum + Math.max(0, event.monthlyAmount ?? 0),
+    0,
+  );
   if (sourceEventCount === 0) {
     return {
       period,
@@ -336,6 +368,7 @@ export function calculateIncomePowerDiagnostics(
   setOrdinaryOptionIncomePower(zeroScenario, 0);
   const zeroResult = simulateScenario(zeroScenario);
   const zeroSummary = calculateFlexibleFreeCashSummary(zeroResult, period);
+  const zeroGrossIncome = calculateOptionIncomeGrossAmount(zeroScenario, zeroResult, period);
   const zeroMaxAdditional = findMaxAdditionalEnjoymentAnnual(zeroScenario, zeroResult, period);
   const uniqueMonthlyIncomePowers = [...new Set(monthlyIncomePowers.map((amount) => Math.max(0, Math.round(amount))))].sort((a, b) => a - b);
 
@@ -346,7 +379,7 @@ export function calculateIncomePowerDiagnostics(
     const trialSummary = calculateFlexibleFreeCashSummary(trialResult, period);
     const maxAdditional = findMaxAdditionalEnjoymentAnnual(trialScenario, trialResult, period);
     const activeMonths = countIncomePowerActiveMonths(trialScenario, trialResult, period);
-    const grossIncomeIncrease = monthlyIncomePower * activeMonths;
+    const grossIncomeIncrease = Math.max(0, calculateOptionIncomeGrossAmount(trialScenario, trialResult, period) - zeroGrossIncome);
     const taxAndSocialIncrease = Math.max(0, trialSummary.taxAndSocialTotal - zeroSummary.taxAndSocialTotal);
     const netIncomeIncrease = grossIncomeIncrease - taxAndSocialIncrease;
 

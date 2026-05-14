@@ -56,6 +56,7 @@ import {
   calculateOptionLiquidityAnalysis,
   calculateTargetBalanceAnalysis,
   findSpecialExpenseCategoryWarnings,
+  type IncomePowerDiagnostics,
   type TargetBalanceStatus,
 } from "@/lib/assetUseAnalysis";
 import {
@@ -861,6 +862,7 @@ function AssetUseWorkspace({
   const [trialEndAge, setTrialEndAge] = useState(flexibleFreeCashPeriod.endAge);
   const [trialAnnualAmount, setTrialAnnualAmount] = useState(1_000_000);
   const [trialCategory, setTrialCategory] = useState<SpecialExpenseCategory>("enjoyment");
+  const [incomePowerDiagnostics, setIncomePowerDiagnostics] = useState<IncomePowerDiagnostics | null>(null);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
   const optionLiquidityAnalysis = calculateOptionLiquidityAnalysis(result, flexibleFreeCashPeriod);
   const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
@@ -1005,21 +1007,31 @@ function AssetUseWorkspace({
       }),
     [scenario, result, trialAnnualAmount, trialCategory, trialEndAge, trialStartAge],
   );
-  const incomePowerDiagnostics = useMemo(
-    () =>
+  const targetBalanceImpact = additionalSpendingTrial.targetBalance.actualAmount - targetBalanceAnalysis.actualAmount;
+  const hasOrdinaryOptionIncomeEvents = scenario.incomeEvents.some(
+    (event) =>
+      event.sourceAssetKey === "ordinaryAccountForOptions" &&
+      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
+  );
+  const incomePowerFocusText =
+    !hasOrdinaryOptionIncomeEvents
+      ? "普通口座オプション収入イベントがないため、入金力別診断はまだ使えません。収入タブで普通口座オプション由来の収入イベントを登録してください。"
+      : !incomePowerDiagnostics
+        ? "重い診断のため自動計算はしません。期間を確認してから診断を実行してください。"
+      : incomePowerDiagnostics.firstUsefulMonthlyIncomePower === undefined
+        ? "この条件では、入金力を上げても楽しみ支出を安全に増やせる明確な分岐点は出ていません。税社保増、最低維持額、90歳目標差額を確認してください。"
+        : `この条件では、月${compactYen(incomePowerDiagnostics.firstUsefulMonthlyIncomePower)}付近から、90歳目標を守りながら楽しみ支出を増やせる目安が出ます。`;
+  useEffect(() => {
+    setIncomePowerDiagnostics(null);
+  }, [scenario.id, trialStartAge, trialEndAge]);
+  const runIncomePowerDiagnostics = () => {
+    setIncomePowerDiagnostics(
       calculateIncomePowerDiagnostics(scenario, {
         startAge: trialStartAge,
         endAge: trialEndAge,
       }),
-    [scenario, trialEndAge, trialStartAge],
-  );
-  const targetBalanceImpact = additionalSpendingTrial.targetBalance.actualAmount - targetBalanceAnalysis.actualAmount;
-  const incomePowerFocusText =
-    incomePowerDiagnostics.sourceEventCount === 0
-      ? "普通口座オプション収入イベントがないため、入金力別診断はまだ使えません。収入タブで普通口座オプション由来の収入イベントを登録してください。"
-      : incomePowerDiagnostics.firstUsefulMonthlyIncomePower === undefined
-        ? "この条件では、入金力を上げても楽しみ支出を安全に増やせる明確な分岐点は出ていません。税社保増、最低維持額、90歳目標差額を確認してください。"
-        : `この条件では、月${compactYen(incomePowerDiagnostics.firstUsefulMonthlyIncomePower)}付近から、90歳目標を守りながら楽しみ支出を増やせる目安が出ます。`;
+    );
+  };
   const setTrialPeriod = (startAge: number, endAge: number) => {
     setTrialStartAge(startAge);
     setTrialEndAge(Math.max(startAge, endAge));
@@ -1168,64 +1180,81 @@ function AssetUseWorkspace({
           <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
             {incomePowerFocusText}
           </div>
-          {incomePowerDiagnostics.sourceEventCount > 0 ? (
+          {hasOrdinaryOptionIncomeEvents ? (
             <>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-md border bg-slate-50 px-4 py-3">
-                  <div className="text-sm text-muted-foreground">診断対象</div>
-                  <div className="mt-1 text-xl font-semibold">{incomePowerDiagnostics.sourceEventCount}件</div>
-                  <div className="mt-1 text-xs text-muted-foreground">普通口座オプション収入イベント</div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-slate-50 px-4 py-3">
+                <div className="text-sm text-muted-foreground">
+                  {trialStartAge}〜{trialEndAge}歳の期間で、月0〜50万円の仮入金力を比較します。
                 </div>
-                <div className="rounded-md border bg-slate-50 px-4 py-3">
-                  <div className="text-sm text-muted-foreground">現在の入金力</div>
-                  <div className="mt-1 text-xl font-semibold">{compactYen(incomePowerDiagnostics.baselineMonthlyIncomePower)} / 月</div>
-                  <div className="mt-1 text-xs text-muted-foreground">保存済みシナリオの入力値</div>
-                </div>
-                <div className="rounded-md border bg-slate-50 px-4 py-3">
-                  <div className="text-sm text-muted-foreground">0円入金時の楽しみ余地</div>
-                  <div className="mt-1 text-xl font-semibold">{compactYen(incomePowerDiagnostics.baselineMaxAdditionalEnjoymentAnnual)} / 年</div>
-                  <div className="mt-1 text-xs text-muted-foreground">比較の基準値</div>
-                </div>
+                <Button onClick={runIncomePowerDiagnostics}>
+                  診断を実行
+                </Button>
               </div>
-              <div className="table-scroll overflow-auto">
-                <Table className="min-w-[1100px]">
-                  <thead>
-                    <Tr>
-                      <Th>仮の入金力</Th>
-                      <Th>楽しみに増やせる年額</Th>
-                      <Th>入金総額</Th>
-                      <Th>税・社保増</Th>
-                      <Th>実質手残り</Th>
-                      <Th>有効率</Th>
-                      <Th>90歳目標差額</Th>
-                      <Th>資産寿命</Th>
-                    </Tr>
-                  </thead>
-                  <tbody>
-                    {incomePowerDiagnostics.rows.map((row) => (
-                      <Tr key={row.monthlyIncomePower}>
-                        <Td className={row.monthlyIncomePower === incomePowerDiagnostics.baselineMonthlyIncomePower ? "font-semibold text-teal-700" : ""}>
-                          月{compactYen(row.monthlyIncomePower)}
-                        </Td>
-                        <Td className="font-medium">{compactYen(row.maxAdditionalEnjoymentAnnual)} / 年</Td>
-                        <Td>
-                          {compactYen(row.grossIncomeIncrease)}
-                          <div className="text-xs text-muted-foreground">{row.activeMonths}か月分</div>
-                        </Td>
-                        <Td className={row.taxAndSocialIncrease > 0 ? "text-amber-700" : ""}>{compactYen(row.taxAndSocialIncrease)}</Td>
-                        <Td className={row.netIncomeIncrease < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(row.netIncomeIncrease)}</Td>
-                        <Td>{row.effectiveRate === null ? "-" : compactPercent(row.effectiveRate)}</Td>
-                        <Td className={targetBalanceStatusClassNames[row.targetBalanceStatusAfterMax]}>{compactYen(row.targetBalanceGapAfterMax)}</Td>
-                        <Td>{row.depletionLabelAfterMax}</Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </div>
-              <p className="text-xs leading-6 text-muted-foreground">
-                「楽しみに増やせる年額」は、上のクイック試算と同じ期間に楽しみ支出を月割り追加し、90歳目標残高を割らない範囲を探索した目安です。
-                税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
-              </p>
+              {incomePowerDiagnostics ? (
+                <>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-md border bg-slate-50 px-4 py-3">
+                      <div className="text-sm text-muted-foreground">診断対象</div>
+                      <div className="mt-1 text-xl font-semibold">{incomePowerDiagnostics.sourceEventCount}件</div>
+                      <div className="mt-1 text-xs text-muted-foreground">普通口座オプション収入イベント</div>
+                    </div>
+                    <div className="rounded-md border bg-slate-50 px-4 py-3">
+                      <div className="text-sm text-muted-foreground">現在の入金力</div>
+                      <div className="mt-1 text-xl font-semibold">{compactYen(incomePowerDiagnostics.baselineMonthlyIncomePower)} / 月</div>
+                      <div className="mt-1 text-xs text-muted-foreground">保存済みシナリオの合計入力値</div>
+                    </div>
+                    <div className="rounded-md border bg-slate-50 px-4 py-3">
+                      <div className="text-sm text-muted-foreground">0円入金時の楽しみ余地</div>
+                      <div className="mt-1 text-xl font-semibold">{compactYen(incomePowerDiagnostics.baselineMaxAdditionalEnjoymentAnnual)} / 年</div>
+                      <div className="mt-1 text-xs text-muted-foreground">比較の基準値</div>
+                    </div>
+                  </div>
+                  <div className="table-scroll overflow-auto">
+                    <Table className="min-w-[1100px]">
+                      <thead>
+                        <Tr>
+                          <Th>仮の入金力</Th>
+                          <Th>楽しみに増やせる年額</Th>
+                          <Th>入金総額</Th>
+                          <Th>税・社保増</Th>
+                          <Th>実質手残り</Th>
+                          <Th>有効率</Th>
+                          <Th>90歳目標差額</Th>
+                          <Th>資産寿命</Th>
+                        </Tr>
+                      </thead>
+                      <tbody>
+                        {incomePowerDiagnostics.rows.map((row) => (
+                          <Tr key={row.monthlyIncomePower}>
+                            <Td className={row.monthlyIncomePower === incomePowerDiagnostics.baselineMonthlyIncomePower ? "font-semibold text-teal-700" : ""}>
+                              月{compactYen(row.monthlyIncomePower)}
+                            </Td>
+                            <Td className="font-medium">{compactYen(row.maxAdditionalEnjoymentAnnual)} / 年</Td>
+                            <Td>
+                              {compactYen(row.grossIncomeIncrease)}
+                              <div className="text-xs text-muted-foreground">イベント延べ{row.activeMonths}か月対象</div>
+                            </Td>
+                            <Td className={row.taxAndSocialIncrease > 0 ? "text-amber-700" : ""}>{compactYen(row.taxAndSocialIncrease)}</Td>
+                            <Td className={row.netIncomeIncrease < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(row.netIncomeIncrease)}</Td>
+                            <Td>{row.effectiveRate === null ? "-" : compactPercent(row.effectiveRate)}</Td>
+                            <Td className={targetBalanceStatusClassNames[row.targetBalanceStatusAfterMax]}>{compactYen(row.targetBalanceGapAfterMax)}</Td>
+                            <Td>{row.depletionLabelAfterMax}</Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    「仮の入金力」は普通口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
+                    イベントごとに有効期間が違う場合、入金総額は単純な「月額×延べ月数」ではなく、配分後の各イベント月額×対象月数の合計です。
+                    税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  診断表はまだ計算していません。上の「診断を実行」を押すと、現在の期間設定で横並び比較を作成します。
+                </p>
+              )}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
