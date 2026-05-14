@@ -984,6 +984,28 @@ function AssetUseWorkspace({
           : "期間内に楽しみカテゴリの特別支出はありません。使う候補は下の追加支出シミュレーターで試せます。",
     },
   ];
+  const assetUseKeyMetrics = [
+    {
+      title: "資産寿命",
+      value: assetLifeValue,
+      sub: `${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`,
+    },
+    {
+      title: `${scenario.userProfile.targetBalanceAge}歳目標との差額`,
+      value: compactYen(targetBalanceAnalysis.gap),
+      sub: targetGapSub,
+    },
+    {
+      title: `${flexibleFreeCashLabel} 資産活用額`,
+      value: compactYen(flexibleFreeCashSummary.assetUtilizationAmount),
+      sub: "現金収入等で賄いきれず資産で補った額",
+    },
+    {
+      title: `${flexibleFreeCashSummary.period.endAge}歳時点残高`,
+      value: compactYen(flexibleFreeCashSummary.periodEndBalance),
+      sub: "健康寿命期の終点で残る年末資産",
+    },
+  ];
   const hasOrdinaryOptionIncomeEvents = scenario.incomeEvents.some(
     (event) =>
       event.sourceAssetKey === "ordinaryAccountForOptions" &&
@@ -1119,19 +1141,23 @@ function AssetUseWorkspace({
             安全性シミュレーションと同じ計算結果を使い、目標残高を守ったうえで健康寿命期にどれだけ使えているかを確認します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric title="選択シナリオ" value={scenario.name} sub="安全性側と同じシナリオ" />
-          <Metric title="資産寿命" value={assetLifeValue} sub={`${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`} />
-          <Metric title={`${scenario.userProfile.targetBalanceAge}歳目標との差額`} value={compactYen(targetBalanceAnalysis.gap)} sub={targetGapSub} />
-          <Metric
-            title="目標達成判定"
-            value={targetBalanceStatusLabels[targetBalanceAnalysis.status]}
-            sub={targetBalanceAnalysis.status === "shortfall" ? "追加支出より先に安全性の調整が必要です" : "追加支出候補を検討できる状態です"}
-          />
-          <Metric title={`${flexibleFreeCashLabel} 資産活用額`} value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)} sub="現金収入等で賄いきれず資産で補った額" />
-          <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub={`特別支出内の楽しみ比率 ${compactPercent(enjoymentShare)}`} />
-          <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="健康寿命期の終点で残る年末資産" />
-          <Metric title={`${flexibleFreeCashLabel} 最低流動資金`} value={compactYen(flexibleFreeCashSummary.minimumLiquidBuffer)} sub={`保持したい安全資金 ${compactYen(scenario.userProfile.cashReserve)}`} />
+        <CardContent className="grid gap-3 text-sm leading-6 md:grid-cols-4">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">選択シナリオ</div>
+            <div className="mt-1 font-semibold text-slate-900">{scenario.name}</div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">見る期間</div>
+            <div className="mt-1 font-semibold text-slate-900">{flexibleFreeCashLabel}</div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">守る基準</div>
+            <div className="mt-1 font-semibold text-slate-900">{targetBalanceAnalysis.targetAge}歳目標 {compactYen(targetBalanceAnalysis.targetAmount)}</div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">確認順</div>
+            <div className="mt-1 font-semibold text-slate-900">レビュー → 試算 → 診断 → 詳細</div>
+          </div>
         </CardContent>
       </Card>
 
@@ -1154,6 +1180,15 @@ function AssetUseWorkspace({
               <div className="mt-1 text-xl font-semibold text-slate-900">{assetUseDecision.next}</div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{assetUseNextFocus}</p>
             </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {assetUseKeyMetrics.map((item) => (
+              <div key={item.title} className="rounded-md border bg-slate-50 px-4 py-3">
+                <div className="text-sm text-muted-foreground">{item.title}</div>
+                <div className="mt-1 text-xl font-semibold text-slate-900">{item.value}</div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.sub}</p>
+              </div>
+            ))}
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {assetUseReviewItems.map((item) => (
