@@ -3,6 +3,7 @@ import {
   calculateAdditionalSpendingTrial,
   calculateAssetUseCategoryBreakdown,
   calculateEnjoymentShare,
+  calculateIncomePowerDiagnostics,
   calculateOptionLiquidityAnalysis,
   calculateTargetBalanceAnalysis,
   findSpecialExpenseCategoryWarnings,
@@ -228,5 +229,35 @@ describe("asset use analysis", () => {
     expect(trial.endYearMonth).toBeDefined();
     expect(trial.result.targetAgeBalance ?? 0).toBeLessThan(baselineResult.targetAgeBalance ?? 0);
     expect(trial.targetBalance.actualAmount).toBe(trial.result.targetAgeBalance);
+  });
+
+  it("compares income power without mutating the source scenario", () => {
+    const scenario = structuredClone(sampleState.scenarios[0]);
+    const originalName = scenario.name;
+    scenario.incomeEvents.push({
+      id: "option-income",
+      memberId: scenario.householdProfile.headMemberId,
+      name: "米国株オプション",
+      type: "investmentIncome",
+      startYearMonth: scenario.userProfile.simulationStartYearMonth,
+      monthlyAmount: 100_000,
+      taxTreatment: "taxable",
+      sourceAssetKey: "ordinaryAccountForOptions",
+      sourceAssetPayoutMode: "retainInSourceAsset",
+    });
+
+    const diagnostics = calculateIncomePowerDiagnostics(
+      scenario,
+      { startAge: 60, endAge: 60 },
+      [0, 100_000, 200_000],
+    );
+
+    expect(scenario.name).toBe(originalName);
+    expect(scenario.incomeEvents.find((event) => event.id === "option-income")?.monthlyAmount).toBe(100_000);
+    expect(diagnostics.sourceEventCount).toBeGreaterThan(0);
+    expect(diagnostics.rows.map((row) => row.monthlyIncomePower)).toEqual([0, 100_000, 200_000]);
+    expect(diagnostics.rows[1].grossIncomeIncrease).toBeGreaterThan(0);
+    expect(diagnostics.rows[2].grossIncomeIncrease).toBeGreaterThan(diagnostics.rows[1].grossIncomeIncrease);
+    expect(diagnostics.rows[1].maxAdditionalEnjoymentAnnual).toBeGreaterThanOrEqual(0);
   });
 });

@@ -5,8 +5,9 @@ import {
   type FlexibleFreeCashPeriod,
   type SpecialExpenseCategory,
 } from "@/lib/flexibleFreeCash";
-import { simulateScenario } from "@/lib/simulation";
-import type { ScenarioData, SimulationResult, SpecialExpenseEvent } from "@/types";
+import { isEventActive, simulateScenario } from "@/lib/simulation";
+import { isOrdinaryOptionIncomeEvent } from "@/lib/optionIncomeHints";
+import type { IncomeEvent, ScenarioData, SimulationResult, SpecialExpenseEvent } from "@/types";
 
 export type TargetBalanceStatus = "surplus" | "onTarget" | "shortfall";
 
@@ -55,6 +56,29 @@ export type OptionLiquidityAnalysis = {
   optionToLiquidTotal: number;
   suspendedIncomeTotal: number;
   optionToLiquidShareOfDeclaredProfit: number | null;
+};
+
+export type IncomePowerDiagnosticRow = {
+  monthlyIncomePower: number;
+  activeMonths: number;
+  grossIncomeIncrease: number;
+  taxAndSocialIncrease: number;
+  netIncomeIncrease: number;
+  effectiveRate: number | null;
+  maxAdditionalEnjoymentAnnual: number;
+  maxAdditionalEnjoymentTotal: number;
+  targetBalanceGapAfterMax: number;
+  targetBalanceStatusAfterMax: TargetBalanceStatus;
+  depletionLabelAfterMax: string;
+};
+
+export type IncomePowerDiagnostics = {
+  period: FlexibleFreeCashPeriod;
+  sourceEventCount: number;
+  baselineMonthlyIncomePower: number;
+  baselineMaxAdditionalEnjoymentAnnual: number;
+  rows: IncomePowerDiagnosticRow[];
+  firstUsefulMonthlyIncomePower?: number;
 };
 
 const enjoymentNamePattern = /旅行|旅|趣味|レジャー|温泉|外食|観光|帰省|家族旅行|イベント|記念|娯楽|遊び|ベトナム|海外|国内/i;
@@ -201,5 +225,159 @@ export function calculateAdditionalSpendingTrial(
     targetBalance,
     flexibleFreeCash,
     depletionLabel,
+  };
+}
+
+function getOrdinaryOptionIncomeEvents(scenario: Pick<ScenarioData, "incomeEvents">) {
+  return scenario.incomeEvents.filter((event) => isOrdinaryOptionIncomeEvent(event));
+}
+
+function setOrdinaryOptionIncomePower(scenario: ScenarioData, monthlyIncomePower: number) {
+  const optionIncomeEventIds = new Set(getOrdinaryOptionIncomeEvents(scenario).map((event) => event.id));
+  scenario.name = `${scenario.name} 入金力診断`;
+  scenario.incomeEvents = scenario.incomeEvents.map((event) =>
+    optionIncomeEventIds.has(event.id)
+      ? {
+          ...event,
+          monthlyAmount: monthlyIncomePower,
+          amountInputMode: "monthly" as const,
+        }
+      : event,
+  );
+}
+
+function countIncomePowerActiveMonths(
+  scenario: Pick<ScenarioData, "incomeEvents">,
+  result: Pick<SimulationResult, "monthly">,
+  period: FlexibleFreeCashPeriod,
+) {
+  const events = getOrdinaryOptionIncomeEvents(scenario);
+  return events.reduce(
+    (sum, event) =>
+      sum +
+      result.monthly.filter(
+        (row) =>
+          row.ageYears >= period.startAge &&
+          row.ageYears <= period.endAge &&
+          isEventActive(event as Pick<IncomeEvent, "startYearMonth" | "endYearMonth">, row.yearMonth),
+      ).length,
+    0,
+  );
+}
+
+function findMaxAdditionalEnjoymentAnnual(
+  scenario: ScenarioData,
+  result: SimulationResult,
+  period: FlexibleFreeCashPeriod,
+  maxAnnualAmount = 6_000_000,
+) {
+  const targetAmount = Math.max(0, scenario.userProfile.targetBalanceAmount ?? 0);
+  const baselineTargetBalance = result.targetAgeBalance ?? 0;
+  if (baselineTargetBalance < targetAmount) {
+    const targetBalance = calculateTargetBalanceAnalysis(scenario, result);
+    return {
+      annualAmount: 0,
+      trial: {
+        targetBalance,
+        totalAddedExpense: 0,
+        depletionLabel: result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持",
+      },
+    };
+  }
+
+  let low = 0;
+  let high = maxAnnualAmount;
+  let best = calculateAdditionalSpendingTrial(scenario, result, {
+    ...period,
+    annualAmount: 0,
+    category: "enjoyment",
+  });
+
+  for (let i = 0; i < 12; i += 1) {
+    const mid = Math.round((low + high) / 200_000) * 100_000;
+    const trial = calculateAdditionalSpendingTrial(scenario, result, {
+      ...period,
+      annualAmount: mid,
+      category: "enjoyment",
+    });
+    if (trial.targetBalance.gap >= 0) {
+      best = trial;
+      low = mid + 100_000;
+    } else {
+      high = mid - 100_000;
+    }
+    if (high < low) break;
+  }
+
+  return {
+    annualAmount: Math.max(0, best.input.annualAmount),
+    trial: best,
+  };
+}
+
+export function calculateIncomePowerDiagnostics(
+  scenario: ScenarioData,
+  periodInput?: Partial<FlexibleFreeCashPeriod>,
+  monthlyIncomePowers = [0, 100_000, 200_000, 300_000, 400_000, 500_000],
+): IncomePowerDiagnostics {
+  const period = calculateFlexibleFreeCashSummary(simulateScenario(scenario), periodInput).period;
+  const sourceEventCount = getOrdinaryOptionIncomeEvents(scenario).length;
+  const baselineMonthlyIncomePower = getOrdinaryOptionIncomeEvents(scenario)[0]?.monthlyAmount ?? 0;
+  if (sourceEventCount === 0) {
+    return {
+      period,
+      sourceEventCount,
+      baselineMonthlyIncomePower,
+      baselineMaxAdditionalEnjoymentAnnual: 0,
+      rows: [],
+    };
+  }
+  const zeroScenario = structuredClone(scenario);
+  setOrdinaryOptionIncomePower(zeroScenario, 0);
+  const zeroResult = simulateScenario(zeroScenario);
+  const zeroSummary = calculateFlexibleFreeCashSummary(zeroResult, period);
+  const zeroMaxAdditional = findMaxAdditionalEnjoymentAnnual(zeroScenario, zeroResult, period);
+  const uniqueMonthlyIncomePowers = [...new Set(monthlyIncomePowers.map((amount) => Math.max(0, Math.round(amount))))].sort((a, b) => a - b);
+
+  const rows = uniqueMonthlyIncomePowers.map((monthlyIncomePower) => {
+    const trialScenario = structuredClone(scenario);
+    setOrdinaryOptionIncomePower(trialScenario, monthlyIncomePower);
+    const trialResult = simulateScenario(trialScenario);
+    const trialSummary = calculateFlexibleFreeCashSummary(trialResult, period);
+    const maxAdditional = findMaxAdditionalEnjoymentAnnual(trialScenario, trialResult, period);
+    const activeMonths = countIncomePowerActiveMonths(trialScenario, trialResult, period);
+    const grossIncomeIncrease = monthlyIncomePower * activeMonths;
+    const taxAndSocialIncrease = Math.max(0, trialSummary.taxAndSocialTotal - zeroSummary.taxAndSocialTotal);
+    const netIncomeIncrease = grossIncomeIncrease - taxAndSocialIncrease;
+
+    return {
+      monthlyIncomePower,
+      activeMonths,
+      grossIncomeIncrease,
+      taxAndSocialIncrease,
+      netIncomeIncrease,
+      effectiveRate: grossIncomeIncrease > 0 ? netIncomeIncrease / grossIncomeIncrease : null,
+      maxAdditionalEnjoymentAnnual: maxAdditional.annualAmount,
+      maxAdditionalEnjoymentTotal: maxAdditional.trial.totalAddedExpense,
+      targetBalanceGapAfterMax: maxAdditional.trial.targetBalance.gap,
+      targetBalanceStatusAfterMax: maxAdditional.trial.targetBalance.status,
+      depletionLabelAfterMax: maxAdditional.trial.depletionLabel,
+    };
+  });
+
+  const firstUsefulRow = rows.find(
+    (row) =>
+      row.monthlyIncomePower > 0 &&
+      row.maxAdditionalEnjoymentAnnual > zeroMaxAdditional.annualAmount &&
+      (row.effectiveRate ?? 0) > 0,
+  );
+
+  return {
+    period,
+    sourceEventCount,
+    baselineMonthlyIncomePower,
+    baselineMaxAdditionalEnjoymentAnnual: zeroMaxAdditional.annualAmount,
+    rows,
+    firstUsefulMonthlyIncomePower: firstUsefulRow?.monthlyIncomePower,
   };
 }
