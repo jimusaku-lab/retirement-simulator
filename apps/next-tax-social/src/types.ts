@@ -231,6 +231,8 @@ export type SpecialExpenseEvent = {
   repeatIntervalMonths?: number;
   activeStartMonth?: number;
   activeEndMonth?: number;
+  inflationMode?: "none" | "livingCost" | "medical" | "custom";
+  customAnnualInflationRate?: number;
   endYearMonth?: YearMonth;
   note?: string;
 };

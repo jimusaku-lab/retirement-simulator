@@ -1,4 +1,4 @@
-import { isSpecialExpenseActive } from "@/lib/simulation";
+import { getSpecialExpenseAmountForMonth, isSpecialExpenseActive } from "@/lib/simulation";
 import type { AnnualResult, ScenarioData, SimulationResult, SpecialExpenseEvent, YearMonth } from "@/types";
 
 export type SpecialExpenseCategory = NonNullable<SpecialExpenseEvent["category"]>;
@@ -113,7 +113,10 @@ export function calculateFlexibleFreeCashSummary(
 }
 
 export function calculateSpecialExpenseCategoryTotals(
-  scenario: Pick<ScenarioData, "specialExpenses">,
+  scenario: Pick<ScenarioData, "specialExpenses"> & {
+    userProfile: Pick<ScenarioData["userProfile"], "simulationStartYearMonth">;
+    inflationSettings: Pick<ScenarioData["inflationSettings"], "livingCostAnnualInflationRate" | "medicalAnnualInflationRate">;
+  },
   result: Pick<SimulationResult, "monthly" | "annual">,
   periodInput?: Partial<FlexibleFreeCashPeriod>,
 ): Record<SpecialExpenseCategory, number> {
@@ -135,7 +138,7 @@ export function calculateSpecialExpenseCategoryTotals(
     const category = normalizeSpecialExpenseCategory(event.category);
     for (const yearMonth of periodYearMonths) {
       if (isSpecialExpenseActive(event, yearMonth as YearMonth)) {
-        totals[category] += event.amount;
+        totals[category] += getSpecialExpenseAmountForMonth(scenario, event, yearMonth as YearMonth);
       }
     }
   }

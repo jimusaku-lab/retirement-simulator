@@ -408,6 +408,28 @@ export function isSpecialExpenseActive(
   return diffMonths % interval === 0;
 }
 
+export function getSpecialExpenseAmountForMonth(
+  scenario: {
+    userProfile: Pick<ScenarioData["userProfile"], "simulationStartYearMonth">;
+    inflationSettings: Pick<ScenarioData["inflationSettings"], "livingCostAnnualInflationRate" | "medicalAnnualInflationRate">;
+  },
+  event: Pick<SpecialExpenseEvent, "amount" | "inflationMode" | "customAnnualInflationRate">,
+  yearMonth: YearMonth,
+) {
+  const mode = event.inflationMode ?? "none";
+  const baseAmount = Math.max(0, event.amount);
+  if (mode === "none" || baseAmount <= 0) return baseAmount;
+  const annualRate =
+    mode === "custom"
+      ? event.customAnnualInflationRate ?? 0
+      : mode === "medical"
+        ? scenario.inflationSettings.medicalAnnualInflationRate
+        : scenario.inflationSettings.livingCostAnnualInflationRate;
+  if (annualRate === 0) return baseAmount;
+  const monthsFromStart = Math.max(0, ym(yearMonth).diff(ym(scenario.userProfile.simulationStartYearMonth), "month"));
+  return baseAmount * Math.pow(1 + annualRate, monthsFromStart / 12);
+}
+
 export function getIncomeForMonth(events: IncomeEvent[], yearMonth: YearMonth, monthsFromStart: number, pensionAdjustmentRate = 0) {
   return events.reduce((sum, event) => {
     if (!isEventActive(event, yearMonth)) return sum;
@@ -1433,7 +1455,7 @@ function simulateScenarioCore(
     }
     const specialExpenseTotal = scenario.specialExpenses
       .filter((expense) => isSpecialExpenseActive(expense, yearMonth))
-      .reduce((sum, expense) => sum + expense.amount, 0);
+      .reduce((sum, expense) => sum + getSpecialExpenseAmountForMonth(scenario, expense, yearMonth), 0);
     const taxCashBreakdown = getTaxInsuranceCashPaymentBreakdownForMonth(
       scenario,
       effectiveTaxRows,

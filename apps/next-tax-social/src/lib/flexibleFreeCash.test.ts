@@ -162,6 +162,13 @@ describe("flexible free cash", () => {
     };
     const totals = calculateSpecialExpenseCategoryTotals(
       {
+        userProfile: {
+          simulationStartYearMonth: "2026-04",
+        },
+        inflationSettings: {
+          livingCostAnnualInflationRate: 0,
+          medicalAnnualInflationRate: 0,
+        },
         specialExpenses: [
           { id: "trip", name: "旅行", yearMonth: "2026-04", amount: 300_000, category: "enjoyment" },
           { id: "repair", name: "修繕", yearMonth: "2027-04", amount: 500_000, category: "housingCar" },

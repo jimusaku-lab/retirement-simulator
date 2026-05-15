@@ -6005,6 +6005,60 @@ describe("simulation", () => {
     expect(result.monthly.find((row) => row.yearMonth === "2027-12")?.specialExpenseTotal).toBe(0);
   });
 
+  it("特別支出はカードごとのインフレ設定を反映する", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-01",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2027-01",
+          targetBalanceAge: 60,
+          cashReserve: 0,
+        },
+        monthlyExpenses: {
+          food: 0,
+          dailyGoods: 0,
+          hobbyEntertainment: 0,
+          social: 0,
+          transportation: 0,
+          clothingBeauty: 0,
+          healthMedical: 0,
+          car: 0,
+          educationCulture: 0,
+          specialExpense: 0,
+          cashCard: 0,
+          utilities: 0,
+          communication: 0,
+          housing: 0,
+          taxSocialInsurance: 0,
+          insurance: 0,
+          other: 0,
+        },
+        inflationSettings: {
+          enabled: false,
+          livingCostAnnualInflationRate: 0.12,
+          medicalAnnualInflationRate: 0.2,
+          pensionAnnualAdjustmentRate: 0,
+          livingCostInflationTargets: [],
+          medicalInflationTargets: [],
+        },
+        specialExpenses: [
+          {
+            id: "fridge",
+            name: "冷蔵庫",
+            yearMonth: "2027-01",
+            amount: 100_000,
+            schedule: "once",
+            inflationMode: "livingCost",
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.specialExpenseTotal).toBe(112_000);
+  });
+
   it("普通口座サブ口座ごとの最低維持額を取り崩し時に守る", () => {
     const base = simpleScenario();
     const result = simulateScenario(

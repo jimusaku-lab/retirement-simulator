@@ -104,6 +104,8 @@ function normalizeSpecialExpenses(source: LegacySpecialExpenseEvent[] | undefine
     repeatIntervalMonths: event.repeatIntervalMonths,
     activeStartMonth: event.activeStartMonth,
     activeEndMonth: event.activeEndMonth,
+    inflationMode: event.inflationMode,
+    customAnnualInflationRate: event.customAnnualInflationRate,
     endYearMonth: event.endYearMonth,
     note: event.note,
   }));

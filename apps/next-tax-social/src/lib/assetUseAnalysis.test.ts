@@ -143,6 +143,13 @@ describe("asset use analysis", () => {
 
     const breakdown = calculateAssetUseCategoryBreakdown(
       {
+        userProfile: {
+          simulationStartYearMonth: "2026-04",
+        },
+        inflationSettings: {
+          livingCostAnnualInflationRate: 0,
+          medicalAnnualInflationRate: 0,
+        },
         specialExpenses: [
           { id: "trip", name: "旅行", yearMonth: "2026-04", amount: 400_000, category: "enjoyment" },
           { id: "support", name: "家族支援", yearMonth: "2027-04", amount: 300_000, category: "familySupport" },

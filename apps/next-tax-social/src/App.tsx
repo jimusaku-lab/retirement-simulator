@@ -7416,6 +7416,32 @@ function SpecialSection({
               <Field label="金額">
                 <Input type="number" value={event.amount} onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].amount = numberOrZero(e.target.value)))} />
               </Field>
+              <Field label="インフレ反映">
+                <Select
+                  value={event.inflationMode ?? "none"}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      const mode = e.target.value as NonNullable<SpecialExpenseEvent["inflationMode"]>;
+                      s.specialExpenses[index].inflationMode = mode;
+                      if (mode === "custom") {
+                        s.specialExpenses[index].customAnnualInflationRate = s.specialExpenses[index].customAnnualInflationRate ?? 0.02;
+                      }
+                    })
+                  }
+                >
+                  <option value="none">反映しない</option>
+                  <option value="livingCost">生活費インフレ率を使う</option>
+                  <option value="medical">医療インフレ率を使う</option>
+                  <option value="custom">個別指定</option>
+                </Select>
+              </Field>
+              {event.inflationMode === "custom" && (
+                <RateField
+                  label="特別支出インフレ率"
+                  value={event.customAnnualInflationRate ?? 0}
+                  onChange={(value) => updateScenario((s) => void (s.specialExpenses[index].customAnnualInflationRate = value))}
+                />
+              )}
             </FormGrid>
           </EventEditor>
         ))}
@@ -7468,7 +7494,7 @@ function SpecialSection({
             "反映先の既存の特別支出リストは、コピー元のリストで置き換わります。"
           }
           options={[
-            { key: "specialExpenses", label: "特別支出リスト", description: "名称、年月、金額、カテゴリ、繰り返し設定" },
+            { key: "specialExpenses", label: "特別支出リスト", description: "名称、年月、金額、カテゴリ、繰り返し設定、インフレ設定" },
           ]}
           selectedOptions={specialSyncOptions}
           toggleOption={updateSpecialSyncOption}

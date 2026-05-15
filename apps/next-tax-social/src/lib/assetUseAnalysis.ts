@@ -102,7 +102,10 @@ export function calculateTargetBalanceAnalysis(
 }
 
 export function calculateAssetUseCategoryBreakdown(
-  scenario: Pick<ScenarioData, "specialExpenses">,
+  scenario: Pick<ScenarioData, "specialExpenses"> & {
+    userProfile: Pick<ScenarioData["userProfile"], "simulationStartYearMonth">;
+    inflationSettings: Pick<ScenarioData["inflationSettings"], "livingCostAnnualInflationRate" | "medicalAnnualInflationRate">;
+  },
   result: Pick<SimulationResult, "annual" | "monthly">,
   periodInput?: Partial<FlexibleFreeCashPeriod>,
 ): AssetUseCategoryBreakdown {
