@@ -7220,6 +7220,15 @@ function SpecialSection({
         name: source.name ? `${source.name} コピー` : "特別支出 コピー",
       });
     });
+  const moveSpecialExpense = (fromIndex: number, toIndex: number) =>
+    updateScenario((s) => {
+      if (fromIndex === toIndex) return;
+      if (fromIndex < 0 || fromIndex >= s.specialExpenses.length) return;
+      const boundedToIndex = Math.max(0, Math.min(toIndex, s.specialExpenses.length - 1));
+      const [event] = s.specialExpenses.splice(fromIndex, 1);
+      if (!event) return;
+      s.specialExpenses.splice(boundedToIndex, 0, event);
+    });
   return (
     <Card>
       <CardHeader>
@@ -7253,10 +7262,47 @@ function SpecialSection({
             title={event.name || "特別支出"}
             onDelete={() => updateScenario((s) => void s.specialExpenses.splice(index, 1))}
             actions={
-              <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
-                <Copy className="h-4 w-4" />
-                複製
-              </Button>
+              <>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  順番
+                  <Select
+                    className="h-8 w-24 py-1 text-xs"
+                    value={String(index)}
+                    onChange={(event) => moveSpecialExpense(index, Number(event.target.value))}
+                    aria-label={`${event.name || "特別支出"} の順番`}
+                  >
+                    {scenario.specialExpenses.map((item, orderIndex) => (
+                      <option key={item.id} value={orderIndex}>
+                        {orderIndex + 1}番目
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => moveSpecialExpense(index, index - 1)}
+                  disabled={index === 0}
+                  title="上へ移動"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                  上へ
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => moveSpecialExpense(index, index + 1)}
+                  disabled={index === scenario.specialExpenses.length - 1}
+                  title="下へ移動"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                  下へ
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
+                  <Copy className="h-4 w-4" />
+                  複製
+                </Button>
+              </>
             }
           >
             <FormGrid>
@@ -9346,9 +9392,9 @@ function EventEditor({
 }) {
   return (
     <div className="rounded-lg border bg-white p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">{title}</h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {actions}
           <Button variant="ghost" size="sm" onClick={onDelete}>
             <Trash2 className="h-4 w-4" />
