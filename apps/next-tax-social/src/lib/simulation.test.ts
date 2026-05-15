@@ -5952,6 +5952,59 @@ describe("simulation", () => {
     expect(result.monthly.find((row) => row.yearMonth === "2027-06")?.specialExpenseTotal).toBe(80_000);
   });
 
+  it("特別支出は毎年の指定月範囲だけ毎月反映する", () => {
+    const result = simulateScenario(
+      simpleScenario({
+        userProfile: {
+          birthDate: "1966-04-01",
+          simulationStartYearMonth: "2026-01",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2027-12",
+          targetBalanceAge: 60,
+          cashReserve: 0,
+        },
+        monthlyExpenses: {
+          food: 0,
+          dailyGoods: 0,
+          hobbyEntertainment: 0,
+          social: 0,
+          transportation: 0,
+          clothingBeauty: 0,
+          healthMedical: 0,
+          car: 0,
+          educationCulture: 0,
+          specialExpense: 0,
+          cashCard: 0,
+          utilities: 0,
+          communication: 0,
+          housing: 0,
+          taxSocialInsurance: 0,
+          insurance: 0,
+          other: 0,
+        },
+        specialExpenses: [
+          {
+            id: "hiking",
+            name: "ハイキング",
+            yearMonth: "2026-01",
+            endYearMonth: "2027-12",
+            amount: 20_000,
+            schedule: "seasonalMonthly",
+            activeStartMonth: 3,
+            activeEndMonth: 11,
+          },
+        ],
+      }),
+    );
+
+    expect(result.monthly.find((row) => row.yearMonth === "2026-02")?.specialExpenseTotal).toBe(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-03")?.specialExpenseTotal).toBe(20_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-11")?.specialExpenseTotal).toBe(20_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2026-12")?.specialExpenseTotal).toBe(0);
+    expect(result.monthly.find((row) => row.yearMonth === "2027-03")?.specialExpenseTotal).toBe(20_000);
+    expect(result.monthly.find((row) => row.yearMonth === "2027-12")?.specialExpenseTotal).toBe(0);
+  });
+
   it("普通口座サブ口座ごとの最低維持額を取り崩し時に守る", () => {
     const base = simpleScenario();
     const result = simulateScenario(

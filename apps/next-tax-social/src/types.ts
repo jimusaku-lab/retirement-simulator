@@ -227,8 +227,10 @@ export type SpecialExpenseEvent = {
   yearMonth: YearMonth;
   amount: number;
   category?: "enjoyment" | "lifeMaintenance" | "housingCar" | "medicalCare" | "familySupport";
-  schedule?: "once" | "monthly" | "quarterly" | "semiannual" | "yearly" | "customInterval";
+  schedule?: "once" | "monthly" | "quarterly" | "semiannual" | "yearly" | "seasonalMonthly" | "customInterval";
   repeatIntervalMonths?: number;
+  activeStartMonth?: number;
+  activeEndMonth?: number;
   endYearMonth?: YearMonth;
   note?: string;
 };

@@ -380,7 +380,7 @@ export function isContributionActive(
 }
 
 export function isSpecialExpenseActive(
-  event: Pick<SpecialExpenseEvent, "yearMonth" | "endYearMonth" | "schedule" | "repeatIntervalMonths">,
+  event: Pick<SpecialExpenseEvent, "yearMonth" | "endYearMonth" | "schedule" | "repeatIntervalMonths" | "activeStartMonth" | "activeEndMonth">,
   yearMonth: YearMonth,
 ) {
   const schedule = event.schedule ?? "once";
@@ -391,6 +391,15 @@ export function isSpecialExpenseActive(
   if (event.endYearMonth && yearMonth > event.endYearMonth) return false;
   const diffMonths = ym(yearMonth).diff(ym(event.yearMonth), "month");
   if (diffMonths < 0) return false;
+  const activeStartMonth = event.activeStartMonth ? Math.max(1, Math.min(12, Math.round(event.activeStartMonth))) : undefined;
+  const activeEndMonth = event.activeEndMonth ? Math.max(1, Math.min(12, Math.round(event.activeEndMonth))) : undefined;
+  const isInActiveMonthWindow = () => {
+    if (!activeStartMonth || !activeEndMonth) return true;
+    const month = ym(yearMonth).month() + 1;
+    if (activeStartMonth <= activeEndMonth) return month >= activeStartMonth && month <= activeEndMonth;
+    return month >= activeStartMonth || month <= activeEndMonth;
+  };
+  if (schedule === "seasonalMonthly") return isInActiveMonthWindow();
   if (schedule === "monthly") return diffMonths % 1 === 0;
   if (schedule === "quarterly") return diffMonths % 3 === 0;
   if (schedule === "semiannual") return diffMonths % 6 === 0;

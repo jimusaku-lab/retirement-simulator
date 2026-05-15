@@ -102,6 +102,8 @@ function normalizeSpecialExpenses(source: LegacySpecialExpenseEvent[] | undefine
       : "lifeMaintenance",
     schedule: event.schedule,
     repeatIntervalMonths: event.repeatIntervalMonths,
+    activeStartMonth: event.activeStartMonth,
+    activeEndMonth: event.activeEndMonth,
     endYearMonth: event.endYearMonth,
     note: event.note,
   }));

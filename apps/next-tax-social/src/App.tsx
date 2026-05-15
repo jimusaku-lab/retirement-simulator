@@ -181,6 +181,8 @@ const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
   familySupport: "家族支援",
 };
 
+const monthOptions = Array.from({ length: 12 }, (_, index) => index + 1);
+
 const targetBalanceStatusLabels: Record<TargetBalanceStatus, string> = {
   surplus: "達成",
   onTarget: "目標一致",
@@ -842,8 +844,14 @@ function specialExpenseScheduleLabel(event: SpecialExpenseEvent) {
           ? "半年ごと"
           : schedule === "yearly"
             ? "毎年"
-            : `${Math.max(1, Math.round(event.repeatIntervalMonths ?? 1))}か月ごと`;
-  return `${start}〜${end} / ${interval}`;
+            : schedule === "seasonalMonthly"
+              ? "毎年指定月"
+              : `${Math.max(1, Math.round(event.repeatIntervalMonths ?? 1))}か月ごと`;
+  const monthWindow =
+    schedule === "seasonalMonthly" && event.activeStartMonth && event.activeEndMonth
+      ? ` / ${event.activeStartMonth}月〜${event.activeEndMonth}月`
+      : "";
+  return `${start}〜${end} / ${interval}${monthWindow}`;
 }
 
 function AssetUseWorkspace({
@@ -7319,6 +7327,11 @@ function SpecialSection({
                       if (schedule === "quarterly") s.specialExpenses[index].repeatIntervalMonths = 3;
                       else if (schedule === "semiannual") s.specialExpenses[index].repeatIntervalMonths = 6;
                       else if (schedule === "yearly") s.specialExpenses[index].repeatIntervalMonths = 12;
+                      else if (schedule === "seasonalMonthly") {
+                        s.specialExpenses[index].repeatIntervalMonths = 1;
+                        s.specialExpenses[index].activeStartMonth = s.specialExpenses[index].activeStartMonth ?? 3;
+                        s.specialExpenses[index].activeEndMonth = s.specialExpenses[index].activeEndMonth ?? 11;
+                      }
                       else if (schedule === "monthly") s.specialExpenses[index].repeatIntervalMonths = 1;
                       else if (schedule === "once") s.specialExpenses[index].repeatIntervalMonths = undefined;
                       else s.specialExpenses[index].repeatIntervalMonths = s.specialExpenses[index].repeatIntervalMonths ?? 12;
@@ -7330,6 +7343,7 @@ function SpecialSection({
                   <option value="quarterly">四半期に1回</option>
                   <option value="semiannual">半年に1回</option>
                   <option value="yearly">毎年発生</option>
+                  <option value="seasonalMonthly">毎年 指定月だけ毎月</option>
                   <option value="customInterval">任意の月数ごと</option>
                 </Select>
               </Field>
@@ -7370,6 +7384,34 @@ function SpecialSection({
                     }
                   />
                 </Field>
+              )}
+              {event.schedule === "seasonalMonthly" && (
+                <>
+                  <Field label="発生開始月">
+                    <Select
+                      value={String(event.activeStartMonth ?? 3)}
+                      onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].activeStartMonth = numberOrZero(e.target.value)))}
+                    >
+                      {monthOptions.map((month) => (
+                        <option key={month} value={month}>
+                          {month}月
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="発生終了月">
+                    <Select
+                      value={String(event.activeEndMonth ?? 11)}
+                      onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].activeEndMonth = numberOrZero(e.target.value)))}
+                    >
+                      {monthOptions.map((month) => (
+                        <option key={month} value={month}>
+                          {month}月
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
               )}
               <Field label="金額">
                 <Input type="number" value={event.amount} onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].amount = numberOrZero(e.target.value)))} />
