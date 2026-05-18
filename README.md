@@ -1,22 +1,19 @@
 # Retirement Simulator Workspace
 
-This repository now keeps the stable app and the tax/social-insurance rewrite side by side.
+This repository keeps the official retirement life planner and older reference apps side by side.
 
 ## Apps
 
-- `apps/current`: current stable retirement simulator
-- `apps/next-tax-social`: next version with detailed tax and social-insurance logic
+- `apps/retirement-life-planner`: official version with detailed tax, social-insurance, and asset-use planning logic
+- `apps/current`: old reference version
 
 ## Common commands
 
 ```bash
 npm run serve:local
-npm run serve:current
-npm run serve:next-tax-social
-npm run build:current
-npm run build:next-tax-social
-npm run test:current
-npm run test:next-tax-social
+npm run serve:retirement-life-planner
+npm run build:retirement-life-planner
+npm run test:retirement-life-planner
 ```
 
-The stable local URL remains `http://127.0.0.1:5174/`.
+The official local URL is `http://127.0.0.1:5175/`.

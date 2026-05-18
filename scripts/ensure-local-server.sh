@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="${1:-current}"
-PORT="${PORT:-5174}"
+APP_NAME="${1:-retirement-life-planner}"
+PORT="${PORT:-5175}"
 HOST="${HOST:-127.0.0.1}"
 LABEL="com.motomichi.retirement-simulator-static-${APP_NAME}-${PORT}"
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

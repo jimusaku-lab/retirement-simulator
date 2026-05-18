@@ -1,7 +1,7 @@
 # 退職後生活シミュレーター 引き継ぎレポート
 
 作成日: 2026-05-12  
-対象: 本質改善版 `next-tax-social`
+対象: 正式版 `retirement-life-planner`
 
 ## 1. このレポートの目的
 
@@ -13,10 +13,10 @@
 
 ## 2. 対象アプリと作業範囲
 
-本質改善プロジェクトの対象は、次のアプリだけです。
+正式版の対象は、次のアプリだけです。
 
 ```text
-/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social
+/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner
 ```
 
 ローカルURL:
@@ -27,10 +27,9 @@ http://127.0.0.1:5175/
 
 重要:
 
-- `5175` が本質改善版です。
-- `5174` は従来版・比較用として扱います。
-- ユーザーが明示しない限り、`5174` 側の実装や挙動は変更しないでください。
-- 本質改善の実装・検証・デバッグは `apps/next-tax-social` に限定します。
+- `5175` が正式版です。
+- 旧 `5174` のローカル配信は停止済みです。
+- 正式版の実装・検証・デバッグは `apps/retirement-life-planner` に限定します。
 
 ## 3. GitHub管理状況
 
@@ -43,7 +42,7 @@ https://github.com/jimusaku-lab/retirement-simulator.git
 作業ツリー:
 
 ```text
-/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social
+/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner
 ```
 
 ブランチ:
@@ -183,11 +182,9 @@ iDeCo年金受取について、受取月に源泉徴収される金額を表に
 
 ## 6. 重要な設計判断
 
-### 6.1 本質改善版は5175だけ
+### 6.1 正式版は5175だけ
 
-本質改善版は `http://127.0.0.1:5175/` です。
-
-`5174` は従来版で、ユーザーは比較用に使っています。5174側を変更すると、比較基準が壊れます。
+正式版は `http://127.0.0.1:5175/` です。
 
 ### 6.2 iDeCo年金は任意売却ではない
 
@@ -282,7 +279,7 @@ iDeCo年金受取は、取り崩し順に従う任意売却ではありません
 - 2036年だけ不足補填売却が0円になる。
 - その翌年2037年に不足補填売却が大きく膨らむ。
 - 前後の年はNISA非課税口座からおおむね安定して補填されている。
-- 5174では同様の不自然な揺らぎは見られない。
+- 旧比較版では同様の不自然な揺らぎは見られない。
 
 ユーザーの認識:
 
@@ -393,7 +390,7 @@ iDeCo年金受取は、取り崩し順に従う任意売却ではありません
 ### Step 1: 現状確認
 
 ```bash
-cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social"
+cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner"
 git status --short
 git log --oneline -5
 git diff --stat
@@ -499,7 +496,7 @@ Clarify tax and liquid fund result tables
 基本:
 
 ```bash
-cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social"
+cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner"
 npm run test
 npm run build
 ```
@@ -515,7 +512,7 @@ npm run build
 ビルド成果物は、以下に同期して使っています。
 
 ```text
-/Users/motomichi/.retirement-simulator/site-next-tax-social-5175/
+/Users/motomichi/.retirement-simulator/site-retirement-life-planner-5175/
 ```
 
 ローカル確認:
@@ -539,8 +536,7 @@ curl -I http://127.0.0.1:5175/
 - 小さな意味単位でcommit
 - テストとビルドが通ってからpush
 - 個人資料、PDF、CSV、スクリーンショットは原則コミットしない
-- 本質改善版は5175だけ
-- 5174に触る場合は必ず事前確認
+- 正式版は5175だけ
 
 よく使うコマンド:
 
@@ -576,9 +572,8 @@ git push origin main
 次スレッドでは、ユーザーはこのように依頼するとよいです。
 
 ```text
-添付の handoff_next_tax_social.md を読んで、退職後生活シミュレーターの本質改善版 apps/next-tax-social の作業を引き継いでください。
+添付の handoff_next_tax_social.md を読んで、退職後生活シミュレーターの正式版 apps/retirement-life-planner の作業を引き継いでください。
 まず git status とテスト・ビルド状況を確認し、未コミット変更を把握してください。
 その後、最優先で2036年と2037年の不足補填売却・流動資金補充の不自然な挙動を、月次シミュレーションの内部値から原因特定してください。
-5174は比較用なので触らず、5175側だけで進めてください。
+5175側だけで進めてください。
 ```
-

@@ -3,7 +3,7 @@
 作成日: 2026-05-13  
 対象アプリ: 退職後生活シミュレーション  
 対象リポジトリ: `retirement-simulator`  
-対象ディレクトリ: `apps/next-tax-social`  
+対象ディレクトリ: `apps/retirement-life-planner`  
 現在ブランチ: `main`  
 直近の計画更新コミット: `91a17ed6 Prioritize flexible free cash metric`
 
@@ -21,7 +21,7 @@
 
 - 計算保証・改善全体計画: `docs/calculation-assurance-plan.md`
 - 元の設計依頼メモ: `/Users/motomichi/Documents/30_ファイナンス（作業中）/任意期間自由資金_設計依頼メモ.md`
-- 安定タグ: `stable-next-tax-social-2026-05-12`
+- 安定タグ: `stable-retirement-life-planner-2026-05-12`
 
 ## 現在の全体計画における位置づけ
 

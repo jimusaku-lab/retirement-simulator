@@ -2,7 +2,7 @@
 
 作成日: 2026-05-18
 
-対象アプリ: `apps/next-tax-social`
+対象アプリ: `apps/retirement-life-planner`
 
 現在の基準コミット:
 
@@ -131,7 +131,7 @@
 実装後に以下を実行する。
 
 ```bash
-cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social"
+cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner"
 npm run build
 npm test
 npm run serve:local
@@ -172,7 +172,7 @@ Improve retirement planning time buckets
 cd "/Users/motomichi/Documents/30_ファイナンス（作業中）"
 git status --short
 find . -maxdepth 2 -mindepth 1 \
-  \( -path './.git' -o -path './node_modules' -o -path './apps/next-tax-social/node_modules' -o -path './apps/next-tax-social/dist' -o -path './.codex-runtime' \) -prune -o -print | sort
+  \( -path './.git' -o -path './node_modules' -o -path './apps/retirement-life-planner/node_modules' -o -path './apps/retirement-life-planner/dist' -o -path './.codex-runtime' \) -prune -o -print | sort
 ```
 
 推奨構成:
@@ -180,7 +180,7 @@ find . -maxdepth 2 -mindepth 1 \
 ```text
 30_ファイナンス（作業中）/
   apps/
-    next-tax-social/
+    retirement-life-planner/
     time-bucket-planner/
   docs/
     app-requirements/
@@ -199,7 +199,7 @@ find . -maxdepth 2 -mindepth 1 \
 
 原則:
 
-- `apps/next-tax-social` は公開・共有候補。
+- `apps/retirement-life-planner` は公開・共有候補。
 - `docs` は公開してよい設計資料だけを置く。
 - `private-materials` はGit管理外。
 - マイナカード画像、確定申告資料、年金PDF、社会保険料試算、個人バックアップJSONはGitHubへ入れない。

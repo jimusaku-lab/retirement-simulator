@@ -1,7 +1,7 @@
 # 改善フェーズ4 引き継ぎレポート
 
 作成日: 2026-05-16  
-対象アプリ: `apps/next-tax-social` 退職後生活シミュレーション  
+対象アプリ: `apps/retirement-life-planner` 退職後生活シミュレーション  
 直近の安定コミット: `9b3faca3 Add special expense inflation settings`
 
 ## 目的
@@ -165,7 +165,7 @@ npm run dev:time-bucket
 "build:time-bucket": "npm --prefix apps/time-bucket-planner run build"
 ```
 
-### next-tax-social への統合案・導入状態
+### retirement-life-planner への統合案・導入状態
 
 `src/components/TimeBucketPlanner.tsx` と `src/App.tsx` の差分を見る限り、以下の統合が進んでいる。
 

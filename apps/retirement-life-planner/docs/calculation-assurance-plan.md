@@ -107,7 +107,7 @@ type CalculationTrace = {
 
 ### Phase 0: 現在状態の保存
 
-完了済み。現在の安定状態は GitHub に保存し、タグ `stable-next-tax-social-2026-05-12` を作成済み。
+完了済み。現在の安定状態は GitHub に保存し、タグ `stable-retirement-life-planner-2026-05-12` を作成済み。
 
 目的:
 

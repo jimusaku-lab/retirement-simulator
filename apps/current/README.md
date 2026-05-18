@@ -11,13 +11,15 @@ npm run dev
 
 表示されたローカルURLをブラウザで開きます。
 
-作業中に `ERR_CONNECTION_REFUSED` が出る場合は、ローカルサーバーが止まっています。固定URLで再公開する場合は次を使います。
+このフォルダは旧版の参照用です。正式版は `apps/retirement-life-planner` を使います。
+
+作業中に `ERR_CONNECTION_REFUSED` が出る場合は、ローカルサーバーが止まっています。旧版を明示的に確認する場合だけ次を使います。
 
 ```bash
-npm run serve:local
+npm run serve:current
 ```
 
-固定URLは `http://127.0.0.1:5174/` です。`serve:local` は本番ビルドを作成し、macOSのLaunchAgentで静的配信します。
+旧版の固定配信は現在停止済みです。
 
 ## テスト
 

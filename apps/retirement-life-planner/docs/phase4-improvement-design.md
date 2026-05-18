@@ -1,7 +1,7 @@
 # 退職後シミュレーション改善フェーズ4 設計案
 
 作成日: 2026-05-16  
-対象アプリ: `apps/next-tax-social` 退職後生活シミュレーション  
+対象アプリ: `apps/retirement-life-planner` 退職後生活シミュレーション  
 参照資料:
 
 - `docs/handoff-phase4-current-state.md`

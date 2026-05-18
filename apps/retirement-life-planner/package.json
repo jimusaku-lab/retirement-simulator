@@ -1,11 +1,11 @@
 {
-  "name": "retirement-life-simulator-next-tax-social",
+  "name": "retirement-life-planner",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "serve:local": "PORT=5175 bash ../../scripts/ensure-local-server.sh next-tax-social",
+    "serve:local": "PORT=5175 bash ../../scripts/ensure-local-server.sh retirement-life-planner",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest --run",

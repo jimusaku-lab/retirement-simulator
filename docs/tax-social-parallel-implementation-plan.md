@@ -19,7 +19,7 @@ retirement-simulator/
   apps/
     current/
       現在の安定版アプリ
-    next-tax-social/
+    retirement-life-planner/
       税・社会保険強化版アプリ
   docs/
     要件定義、調査レポート、設計メモ
@@ -61,29 +61,29 @@ retirement-simulator/
 
 ## 起動設計
 
-現行版:
+旧現行版:
 
 ```bash
 npm run serve:current
 ```
 
-- URL: `http://127.0.0.1:5174/`
-- 目的: 現在の安定版をそのまま確認する
+- URL: 停止済み
+- 目的: 過去の比較用アプリ。通常は起動しない
 
-新税社保版:
+正式版:
 
 ```bash
-npm run serve:next-tax-social
+npm run serve:retirement-life-planner
 ```
 
 - URL: `http://127.0.0.1:5175/`
-- 目的: 新ロジックを確認する
+- 目的: 正式版を確認する
 
 比較確認:
 
 ```bash
 npm run test:current
-npm run test:next-tax-social
+npm run test:retirement-life-planner
 ```
 
 ## 新税社保版で導入する主な設計
@@ -124,9 +124,9 @@ npm run test:next-tax-social
 ## 実装順序
 
 1. 現行版を `apps/current/` に退避する
-2. 現行版をコピーして `apps/next-tax-social/` を作る
+2. 現行版をコピーして `apps/retirement-life-planner/` を作る
 3. ルートの `package.json` をワークスペース管理に変更する
-4. 現行版を `5174`、新税社保版を `5175` で起動できるようにする
+4. 正式版を `5175` で起動できるようにする
 5. 現行版のテスト・ビルドが通ることを確認する
 6. 新税社保版の初期コピーでもテスト・ビルドが通ることを確認する
 7. 新税社保版だけに税・社会保険の詳細ロジックを段階導入する
@@ -144,7 +144,7 @@ npm run test:next-tax-social
 次に実施する作業は、フォルダ再編だけに限定する。
 
 - `apps/current/` 作成
-- `apps/next-tax-social/` 作成
+- `apps/retirement-life-planner/` 作成
 - 既存アプリを両方に配置
 - 起動スクリプト追加
 - ビルドとテスト確認

@@ -1,7 +1,7 @@
 # 退職後シミュレーション フェーズ4完了・引き継ぎ資料
 
 作成日: 2026-05-18  
-対象アプリ: `apps/next-tax-social`  
+対象アプリ: `apps/retirement-life-planner`  
 ローカルURL: `http://127.0.0.1:5175/`  
 完了コミット: `6d4c233d Improve retirement simulator phase 4 UX`
 
@@ -66,7 +66,7 @@ http://127.0.0.1:5175/
 ### 2.3 資産活用ビュー / タイムバケット
 
 - 資産活用ビューの導線を、`タイムバケット -> クイック試算 -> 資産レビュー -> 入金力診断` の順に整理した。
-- タイムバケットを `apps/next-tax-social` に統合した。
+- タイムバケットを `apps/retirement-life-planner` に統合した。
 - タイムバケット項目は、置いただけでは計算に入らない。
 - 明示的に特別支出へ変換したものだけが計算対象になる。
 - 変換時に、カテゴリ、計算方式、インフレ反映、終了年月を設定できる。
@@ -103,30 +103,30 @@ http://127.0.0.1:5175/
 ## 3. 追加された主なファイル
 
 ```text
-apps/next-tax-social/docs/handoff-phase4-current-state.md
-apps/next-tax-social/docs/phase4-improvement-design.md
-apps/next-tax-social/docs/handoff-phase4-completion-and-cleanup.md
-apps/next-tax-social/src/components/TimeBucketPlanner.tsx
-apps/next-tax-social/src/lib/scenarioDiff.ts
-apps/next-tax-social/src/lib/scenarioDiff.test.ts
+apps/retirement-life-planner/docs/handoff-phase4-current-state.md
+apps/retirement-life-planner/docs/phase4-improvement-design.md
+apps/retirement-life-planner/docs/handoff-phase4-completion-and-cleanup.md
+apps/retirement-life-planner/src/components/TimeBucketPlanner.tsx
+apps/retirement-life-planner/src/lib/scenarioDiff.ts
+apps/retirement-life-planner/src/lib/scenarioDiff.test.ts
 apps/time-bucket-planner/
 ```
 
 `apps/time-bucket-planner/` は、別アプリとして作られたタイムバケット・プランナーです。  
-`apps/next-tax-social` には、その考え方を取り込んだ `TimeBucketPlanner.tsx` が統合されています。
+`apps/retirement-life-planner` には、その考え方を取り込んだ `TimeBucketPlanner.tsx` が統合されています。
 
 ## 4. 変更された主なファイル
 
 ```text
-apps/next-tax-social/src/App.tsx
-apps/next-tax-social/src/types.ts
-apps/next-tax-social/src/store/usePlanStore.ts
-apps/next-tax-social/src/store/usePlanStore.test.ts
-apps/next-tax-social/src/lib/flexibleFreeCash.ts
-apps/next-tax-social/src/lib/flexibleFreeCash.test.ts
-apps/next-tax-social/src/lib/simulation.ts
-apps/next-tax-social/src/lib/simulation.test.ts
-apps/next-tax-social/src/data/sampleData.ts
+apps/retirement-life-planner/src/App.tsx
+apps/retirement-life-planner/src/types.ts
+apps/retirement-life-planner/src/store/usePlanStore.ts
+apps/retirement-life-planner/src/store/usePlanStore.test.ts
+apps/retirement-life-planner/src/lib/flexibleFreeCash.ts
+apps/retirement-life-planner/src/lib/flexibleFreeCash.test.ts
+apps/retirement-life-planner/src/lib/simulation.ts
+apps/retirement-life-planner/src/lib/simulation.test.ts
+apps/retirement-life-planner/src/data/sampleData.ts
 package.json
 ```
 
@@ -135,7 +135,7 @@ package.json
 次スレッドでは、まず以下を実行してください。
 
 ```bash
-cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/next-tax-social"
+cd "/Users/motomichi/Documents/30_ファイナンス（作業中）/apps/retirement-life-planner"
 git log -1 --oneline
 npm run build
 npm test
@@ -206,7 +206,7 @@ retirement_sim_usage_guide.md
 ```text
 30_ファイナンス（作業中）/
   apps/
-    next-tax-social/
+    retirement-life-planner/
     time-bucket-planner/
   docs/
     app-requirements/
@@ -237,7 +237,7 @@ retirement_sim_usage_guide.md
 
 ```text
 退職後シミュレーションアプリのフェーズ4はコミット 6d4c233d で完了済みです。
-apps/next-tax-social/docs/handoff-phase4-completion-and-cleanup.md を読んで、現在状態を確認してください。
+apps/retirement-life-planner/docs/handoff-phase4-completion-and-cleanup.md を読んで、現在状態を確認してください。
 次はフォルダ整理をしたいです。未追跡ファイルを分類し、移動してよいもの・確認が必要なものを分けて提案してください。
 勝手にファイル移動せず、まず整理案を出してください。
 ```

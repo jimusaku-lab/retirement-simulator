@@ -1,7 +1,7 @@
 # UI Design Rules for Finance Planner Projects
 
 このファイルは、ファイナンスプランナー系アプリを Codex で修正・拡張する時に必ず参照する共通UIルールです。
-特に `apps/next-tax-social` の退職後生活シミュレーション、資産レビュー、タイムバケット関連の作業では、実装前にこの内容を確認してください。
+特に `apps/retirement-life-planner` の退職後生活シミュレーション、資産レビュー、タイムバケット関連の作業では、実装前にこの内容を確認してください。
 
 ## 基本思想
 
