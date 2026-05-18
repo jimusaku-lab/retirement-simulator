@@ -17,3 +17,17 @@ npm run test:retirement-life-planner
 ```
 
 The official local URL is `http://127.0.0.1:5175/`.
+
+## LAN sharing
+
+The official app is also deployed on the QNAP for home LAN access:
+
+```text
+http://192.168.10.156:5175/
+```
+
+Redeploy the latest build to QNAP with:
+
+```bash
+scripts/deploy-qnap-lan.sh
+```
