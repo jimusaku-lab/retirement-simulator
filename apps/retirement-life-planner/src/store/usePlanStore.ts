@@ -6,6 +6,7 @@ import { applyScenarioNameOptionIncomeHint, inferMonthlyOptionIncomeFromScenario
 import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getPensionPlannerMembers, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
 import { cloneScenario } from "@/lib/simulation";
+import { createId } from "@/lib/id";
 import type {
   AgeExpenseAdjustment,
   ExpenseAdjustmentTarget,
@@ -140,7 +141,7 @@ function createSnapshot(state: Pick<RetirementPlanState, "version" | "activeScen
 function createBackupEntry(state: RetirementPlanState, label = "手動バックアップ"): PlanBackup {
   const savedAt = nowIso();
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     savedAt,
     label,
     state: {
@@ -353,7 +354,7 @@ function normalizeHouseholdMembers(source: LegacyScenario): HouseholdMember[] {
 
   if (source.userProfile?.hasSpouse && !normalized.some((member) => member.relationship === "spouse")) {
     normalized.push({
-      id: crypto.randomUUID(),
+      id: createId(),
       name: "配偶者",
       relationship: "spouse",
       birthDate: source.userProfile?.birthDate ?? baseScenario.userProfile.birthDate,

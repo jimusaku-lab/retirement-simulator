@@ -20,6 +20,7 @@ import { applyScenarioNameOptionIncomeHint, inferMonthlyOptionIncomeFromScenario
 import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
+import { createId } from "@/lib/id";
 import type {
   AnnualResult,
   AssetContributionEvent,
@@ -2200,7 +2201,7 @@ export function getBalanceAtAge(monthly: MonthlyResult[], targetAge: number) {
 export function cloneScenario(scenario: ScenarioData, name: string): ScenarioData {
   return {
     ...structuredClone(scenario),
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     compare: true,
   };

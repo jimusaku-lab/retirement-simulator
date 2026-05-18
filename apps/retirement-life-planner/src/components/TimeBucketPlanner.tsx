@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_FLEXIBLE_FREE_CASH_PERIOD, normalizeFlexibleFreeCashPeriod } from "@/lib/flexibleFreeCash";
 import { compactYen, numberOrZero } from "@/lib/utils";
+import { createId } from "@/lib/id";
 import type { HouseholdMember, ScenarioData, SpecialExpenseEvent, TimeBucketBucket, TimeBucketBucketId, TimeBucketItem } from "@/types";
 
 type TimeBucketMode = "retirement" | "decade";
@@ -221,7 +222,7 @@ function cloneTimeBucketSetForTarget(source: ScenarioData, includeLinkedSpecialE
     if (!includeLinkedSpecialExpenses || !linkedExpense) {
       return { ...structuredClone(item), convertedSpecialExpenseId: undefined };
     }
-    const newExpenseId = crypto.randomUUID();
+    const newExpenseId = createId();
     linkedExpenseIdMap.set(linkedExpense.id, newExpenseId);
     clonedSpecialExpenses.push({
       ...structuredClone(linkedExpense),
@@ -292,7 +293,7 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
     if (!title) return;
     updateScenario((draft) => {
       draft.timeBucketItems.unshift({
-        id: crypto.randomUUID(),
+        id: createId(),
         title,
         bucketId: "todo",
       });
@@ -356,7 +357,7 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
 
   const convertToSpecialExpense = () => {
     if (!conversionDraft || !convertingItem) return;
-    const specialExpenseId = crypto.randomUUID();
+    const specialExpenseId = createId();
     updateScenario((draft) => {
       draft.specialExpenses.push({
         id: specialExpenseId,

@@ -102,6 +102,7 @@ import {
   simulateScenario,
 } from "@/lib/simulation";
 import { usePlanStore } from "@/store/usePlanStore";
+import { createId } from "@/lib/id";
 import type {
   AnnualResult,
   IncomeEvent,
@@ -2877,7 +2878,7 @@ type SectionProps = {
 function ensureSpouseMember(scenario: ScenarioData) {
   if (scenario.householdMembers.some((member) => member.relationship === "spouse")) return;
   scenario.householdMembers.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name: "配偶者",
     relationship: "spouse",
     birthDate: scenario.userProfile.birthDate,
@@ -2930,7 +2931,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
   const addMember = () =>
     updateScenario((s) =>
       s.householdMembers.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: `メンバー${s.householdMembers.length + 1}`,
         relationship: "other",
         birthDate: s.userProfile.birthDate,
@@ -2948,7 +2949,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         s.householdMembers.find((member) => member.relationship !== "self") ??
         s.householdMembers[0];
       s.householdLivingArrangementEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         memberId: targetMember?.id ?? s.householdMembers[0]?.id ?? "",
         name: `${targetMember?.name ?? "家族"}の別居`,
         changeType: "moveOut",
@@ -2968,7 +2969,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         s.householdMembers.find((member) => member.relationship !== "self") ??
         s.householdMembers[0];
       s.householdMemberStatusEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         memberId: targetMember?.id ?? s.householdMembers[0]?.id ?? "",
         name: `${targetMember?.name ?? "家族"}の税扶養・国保変更`,
         changeYearMonth: s.userProfile.simulationStartYearMonth,
@@ -2987,7 +2988,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
       if (!source) return;
       s.householdMemberStatusEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "税扶養・国保変更 コピー",
       });
     });
@@ -2997,7 +2998,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
       if (!source) return;
       s.householdLivingArrangementEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "別居予定 コピー",
       });
     });
@@ -4036,7 +4037,7 @@ function AssetsSection({
   const addOptionSubAccount = () =>
     updateScenario((s) => {
       s.optionSubAccounts.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: `普通口座${s.optionSubAccounts.length + 1}`,
         initialValue: 0,
         initialCostBasis: 0,
@@ -4062,7 +4063,7 @@ function AssetsSection({
       if (!source) return;
       s.optionSubAccounts.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "普通口座 コピー",
         withdrawalPriority: s.optionSubAccounts.length + 1,
       });
@@ -4091,7 +4092,7 @@ function AssetsSection({
   const addContribution = () =>
     updateScenario((s) =>
       s.assetContributionEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         assetKey: "nisa",
         name: "新しい追加投資",
         startYearMonth: s.userProfile.simulationStartYearMonth,
@@ -4107,14 +4108,14 @@ function AssetsSection({
       if (!source) return;
       s.assetContributionEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "追加投資 コピー",
       });
     });
   const addTransfer = () =>
     updateScenario((s) =>
       s.assetTransferEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: "新しい原資移動",
         yearMonth: s.userProfile.simulationStartYearMonth,
         fromAssetKey: "cash",
@@ -4129,7 +4130,7 @@ function AssetsSection({
       if (!source) return;
       s.assetTransferEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "原資移動 コピー",
       });
     });
@@ -5007,7 +5008,7 @@ function ExpensesSection({
   const addAdjustment = () =>
     updateScenario((s) =>
       s.ageExpenseAdjustments.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: "60歳から",
         startAge: 60,
         target: "all",
@@ -5925,7 +5926,7 @@ function IncomeSection({
   const add = () =>
       updateScenario((s) =>
         s.incomeEvents.push({
-          id: crypto.randomUUID(),
+          id: createId(),
           memberId: s.householdProfile.headMemberId || s.householdMembers[0]?.id || "",
           name: "新しい収入",
           type: "other",
@@ -5942,7 +5943,7 @@ function IncomeSection({
       if (!source) return;
       s.incomeEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "収入 コピー",
       });
     });
@@ -6408,7 +6409,7 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
     updateScenario((s) => {
       if (!s.retirementIncomeEvents) s.retirementIncomeEvents = [];
       s.retirementIncomeEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         memberId: s.householdProfile.headMemberId || s.householdMembers[0]?.id || "",
         name: "退職所得イベント",
         type: "companyRetirementAllowance",
@@ -6431,7 +6432,7 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
       if (!source) return;
       s.retirementIncomeEvents.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "退職所得 コピー",
       });
     });
@@ -6701,7 +6702,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const add = () =>
     updateScenario((s) =>
       s.taxInsurance.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         fiscalYear: new Date().getFullYear(),
         residentTaxAnnual: 0,
         incomeTaxAnnual: 0,
@@ -6718,7 +6719,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
       const latest = [...s.taxInsurance].sort((a, b) => a.fiscalYear - b.fiscalYear).at(-1);
       if (!latest) {
         s.taxInsurance.push({
-          id: crypto.randomUUID(),
+          id: createId(),
           fiscalYear: new Date().getFullYear(),
           residentTaxAnnual: 0,
           incomeTaxAnnual: 0,
@@ -6732,7 +6733,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
       }
       s.taxInsurance.push({
         ...structuredClone(latest),
-        id: crypto.randomUUID(),
+        id: createId(),
         fiscalYear: latest.fiscalYear + 1,
       });
       s.taxInsurance.sort((a, b) => a.fiscalYear - b.fiscalYear);
@@ -7048,7 +7049,7 @@ function TaxDeductionSection({ scenario, updateScenario }: SectionProps) {
   const add = () =>
     updateScenario((s) =>
       s.taxDeductionEvents.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         fiscalYear: new Date().getFullYear(),
         memberId: s.householdProfile.headMemberId ?? s.householdMembers[0]?.id ?? "member-self",
         socialInsuranceDeductionAnnual: 0,
@@ -7061,7 +7062,7 @@ function TaxDeductionSection({ scenario, updateScenario }: SectionProps) {
       const latest = [...s.taxDeductionEvents].sort((a, b) => a.fiscalYear - b.fiscalYear).at(-1);
       if (!latest) {
         s.taxDeductionEvents.push({
-          id: crypto.randomUUID(),
+          id: createId(),
           fiscalYear: new Date().getFullYear(),
           memberId: s.householdProfile.headMemberId ?? s.householdMembers[0]?.id ?? "member-self",
           socialInsuranceDeductionAnnual: 0,
@@ -7071,7 +7072,7 @@ function TaxDeductionSection({ scenario, updateScenario }: SectionProps) {
       }
       s.taxDeductionEvents.push({
         ...structuredClone(latest),
-        id: crypto.randomUUID(),
+        id: createId(),
         fiscalYear: latest.fiscalYear + 1,
       });
       s.taxDeductionEvents.sort((a, b) => a.fiscalYear - b.fiscalYear);
@@ -8565,7 +8566,7 @@ function SpecialSection({
   const add = () =>
     updateScenario((s) =>
       s.specialExpenses.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: "新しい特別支出",
         yearMonth: s.userProfile.simulationStartYearMonth,
         amount: 0,
@@ -8580,7 +8581,7 @@ function SpecialSection({
       if (!source) return;
       s.specialExpenses.splice(index + 1, 0, {
         ...structuredClone(source),
-        id: crypto.randomUUID(),
+        id: createId(),
         name: source.name ? `${source.name} コピー` : "特別支出 コピー",
       });
     });
