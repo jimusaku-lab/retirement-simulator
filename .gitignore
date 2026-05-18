@@ -7,3 +7,8 @@ recovered_retirement_5173_state.json
 retirement-simulation-backup-*.json
 public/recovered_retirement_5173_from_chrome.json
 *.log
+
+# Local finance/private source materials
+private-materials/
+source-materials/
+backups/
