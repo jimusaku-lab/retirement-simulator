@@ -10018,14 +10018,20 @@ function CompareSection({
     const baselineNisaSkipped = baselineCompareRow?.nisaSkipped ?? 0;
     const baselineNisaRemainingLifetimeLimit = baselineCompareRow?.finalNisaRemainingLifetimeLimit ?? 0;
     const baselineTargetBalance = baselineCompareRow?.result.targetAgeBalance ?? 0;
+    const baselineAfterLivingCapacity = baselineCompareRow?.afterLivingCapacity ?? 0;
+    const referenceTax = declaredOptionTaxBreakdownForDisplay(row.declaredOptionProfit).totalEquivalent;
+    const taxSocialDelta = row.taxSocial - baselineTaxSocial;
     return {
       ...row,
-      taxSocialDelta: row.taxSocial - baselineTaxSocial,
+      referenceTax,
+      taxSocialDelta,
+      taxSocialBurdenRate: row.declaredOptionProfit > 0 ? taxSocialDelta / row.declaredOptionProfit : null,
       optionToLiquidDelta: row.optionToLiquid - baselineOptionToLiquid,
       nisaExecutedDelta: row.nisaExecuted - baselineNisaExecuted,
       nisaSkippedDelta: row.nisaSkipped - baselineNisaSkipped,
       nisaRemainingLifetimeLimitDelta: row.finalNisaRemainingLifetimeLimit - baselineNisaRemainingLifetimeLimit,
       targetBalanceDelta: (row.result.targetAgeBalance ?? 0) - baselineTargetBalance,
+      afterLivingCapacityDelta: row.afterLivingCapacity - baselineAfterLivingCapacity,
     };
   });
   const getOptionImpactSummary = (row: (typeof optionTaxSocialImpactRows)[number]) => {
@@ -10182,13 +10188,17 @@ function CompareSection({
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1300px]">
+          <Table className="min-w-[1600px]">
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th>普通口座<br />申告対象損益</Th>
+                <Th>参考税額<br />20.315%</Th>
                 <Th>普通口座から<br />現金・普通預金へ</Th>
                 <Th>税社保増分<br />基準比</Th>
+                <Th>税社保<br />負担率</Th>
+                <Th>生活後余力</Th>
+                <Th>生活後余力差<br />基準比</Th>
                 <Th>NISA実行額</Th>
                 <Th>NISA実行額差<br />基準比</Th>
                 <Th>NISA未実行差<br />基準比</Th>
@@ -10204,9 +10214,17 @@ function CompareSection({
                 <Tr key={`option-impact-${row.scenario.id}`}>
                   <Td className="sticky-col left-0 z-20 bg-white font-medium">{row.scenario.name}</Td>
                   <Td>{compactYen(row.declaredOptionProfit)}</Td>
+                  <Td>{compactYen(row.referenceTax)}</Td>
                   <Td>{compactYen(row.optionToLiquid)}</Td>
                   <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
                     {compactYen(row.taxSocialDelta)}
+                  </Td>
+                  <Td className={row.taxSocialBurdenRate !== null && row.taxSocialBurdenRate > 0.35 ? "text-red-600" : ""}>
+                    {row.taxSocialBurdenRate === null ? "-" : compactPercent(row.taxSocialBurdenRate)}
+                  </Td>
+                  <Td>{compactYen(row.afterLivingCapacity)}</Td>
+                  <Td className={row.afterLivingCapacityDelta < 0 ? "text-red-600" : row.afterLivingCapacityDelta > 0 ? "text-teal-700" : ""}>
+                    {compactYen(row.afterLivingCapacityDelta)}
                   </Td>
                   <Td>{compactYen(row.nisaExecuted)}</Td>
                   <Td className={row.nisaExecutedDelta < 0 ? "text-red-600" : row.nisaExecutedDelta > 0 ? "text-teal-700" : ""}>
@@ -10230,7 +10248,8 @@ function CompareSection({
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
             ここは「普通口座オプション利益だけの税額」ではなく、シナリオ全体の差分です。普通口座利益は翌年の所得税精算・住民税・国保等に合算されるため、
-            税社保増分として見ます。NISA未実行差は基準シナリオに対する未実行額の差で、NISA実行額そのものの増減ではありません。資金不足と枠上限を切り分けるため、NISA実行額とNISA残り生涯枠を併せて確認します。
+            税社保増分として見ます。参考税額20.315%は申告対象損益だけに税率を掛けた目安で、実際の所得税・住民税・国保等の増分とは一致しない場合があります。
+            NISA未実行差は基準シナリオに対する未実行額の差で、NISA実行額そのものの増減ではありません。資金不足と枠上限を切り分けるため、NISA実行額とNISA残り生涯枠を併せて確認します。
           </p>
         </CardContent>
       </Card>
