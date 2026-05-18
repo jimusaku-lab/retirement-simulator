@@ -39,6 +39,15 @@ export type FlexibleFreeCashSummary = {
   nisaRemainingLifetimeLimit: number;
 };
 
+export type AssetUseWaterfallRow = {
+  key: string;
+  label: string;
+  amount: number;
+  kind: "inflow" | "outflow" | "net" | "assetUse";
+  section: "breakdown" | "result";
+  description: string;
+};
+
 export const DEFAULT_FLEXIBLE_FREE_CASH_PERIOD: FlexibleFreeCashPeriod = {
   startAge: 60,
   endAge: 72,
@@ -110,6 +119,91 @@ export function calculateFlexibleFreeCashSummary(
     nisaContributionTotal,
     nisaRemainingLifetimeLimit,
   };
+}
+
+export function calculateAssetUseWaterfallRows(
+  result: Pick<SimulationResult, "annual">,
+  periodInput?: Partial<FlexibleFreeCashPeriod>,
+): AssetUseWaterfallRow[] {
+  const { rows } = getRowsInFlexibleFreeCashPeriod(result, periodInput);
+  const cashIncomeTotal = rows.reduce((sum, row) => sum + row.incomeTotal, 0);
+  const optionToLiquidTotal = rows.reduce((sum, row) => sum + row.optionProfitSweepTotal + row.optionAccountReleaseTotal, 0);
+  const livingExpenseTotal = rows.reduce((sum, row) => sum + row.livingExpenseTotal, 0);
+  const taxAndSocialTotal = rows.reduce(
+    (sum, row) => sum + row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal,
+    0,
+  );
+  const specialExpenseTotal = rows.reduce((sum, row) => sum + row.specialExpenseTotal, 0);
+  const idecoFeeTotal = rows.reduce((sum, row) => sum + row.idecoFeeTotal, 0);
+  const netCashFlow = rows.reduce((sum, row) => sum + getAnnualFlexibleFreeCash(row), 0);
+  const assetUseAmount = Math.max(0, -netCashFlow);
+
+  return [
+    {
+      key: "cashIncome",
+      label: "現金収入",
+      amount: cashIncomeTotal,
+      kind: "inflow",
+      section: "breakdown",
+      description: "年金、給与、iDeCo年金受取など普通預金へ入る収入",
+    },
+    {
+      key: "optionToLiquid",
+      label: "普通口座から流動資金へ",
+      amount: optionToLiquidTotal,
+      kind: "inflow",
+      section: "breakdown",
+      description: "普通口座オプション利益や終了後戻しで現金・普通預金へ移った額",
+    },
+    {
+      key: "living",
+      label: "生活費",
+      amount: -livingExpenseTotal,
+      kind: "outflow",
+      section: "breakdown",
+      description: "通常生活費",
+    },
+    {
+      key: "tax",
+      label: "税社保・源泉/譲渡益税",
+      amount: -taxAndSocialTotal,
+      kind: "outflow",
+      section: "breakdown",
+      description: "税・社会保険、譲渡益税、iDeCo源泉の合計",
+    },
+    {
+      key: "special",
+      label: "特別支出",
+      amount: -specialExpenseTotal,
+      kind: "outflow",
+      section: "breakdown",
+      description: "旅行、住宅修繕、医療・介護などの特別支出",
+    },
+    {
+      key: "idecoFee",
+      label: "iDeCo手数料",
+      amount: -idecoFeeTotal,
+      kind: "outflow",
+      section: "breakdown",
+      description: "iDeCo受取期間中の管理・振込手数料",
+    },
+    {
+      key: "net",
+      label: "現金収支",
+      amount: netCashFlow,
+      kind: "net",
+      section: "result",
+      description: "上記の現金収入と支出を足し引きした結果",
+    },
+    {
+      key: "assetUse",
+      label: "資産活用額",
+      amount: assetUseAmount,
+      kind: "assetUse",
+      section: "result",
+      description: "現金収支がマイナスの時に資産で補った額。追加投資は含めない",
+    },
+  ];
 }
 
 export function calculateSpecialExpenseCategoryTotals(

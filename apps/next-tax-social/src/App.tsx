@@ -5,9 +5,12 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,6 +35,7 @@ import { Select } from "@/components/ui/select";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
+import { TimeBucketPlanner } from "@/components/TimeBucketPlanner";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
 import {
@@ -42,6 +46,7 @@ import {
 } from "@/lib/retirementIncome";
 import { getTaxFilingAdvice, type TaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import {
+  calculateAssetUseWaterfallRows,
   calculateSpecialExpenseCategoryTotals,
   calculateFlexibleFreeCashSummary,
   normalizeFlexibleFreeCashPeriod,
@@ -67,6 +72,7 @@ import {
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
 import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
+import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
   PENSION_STANDARD_CLAIM_AGE,
@@ -120,25 +126,26 @@ import type {
   OptionSubAccount,
   RetirementIncomeEvent,
   PensionPlannerSettings,
+  RealizedGainDetail,
 } from "@/types";
 
 const tabs = [
-  ["dashboard", "ダッシュボード"],
-  ["profile", "基本情報"],
-  ["assets", "初期資産"],
-  ["expenses", "生活費"],
-  ["income", "収入"],
-  ["tax", "税・社会保険"],
-  ["special", "特別支出"],
-  ["scenarios", "シナリオ"],
-  ["results", "結果"],
-  ["compare", "比較"],
-  ["manual", "マニュアル"],
-  ["data", "データ"],
+  { key: "profile", label: "基本情報", group: "input" },
+  { key: "assets", label: "初期資産", group: "input" },
+  { key: "expenses", label: "生活費", group: "input" },
+  { key: "income", label: "収入", group: "input" },
+  { key: "tax", label: "税・社会保険", group: "hybrid" },
+  { key: "special", label: "特別支出", group: "input" },
+  { key: "results", label: "結果", group: "output" },
+  { key: "compare", label: "比較", group: "output" },
+  { key: "scenarios", label: "シナリオ", group: "management" },
+  { key: "data", label: "データ", group: "management" },
 ] as const;
 
-type TabKey = (typeof tabs)[number][0];
+type TabKey = "dashboard" | "manual" | (typeof tabs)[number]["key"];
+type TabGroup = (typeof tabs)[number]["group"];
 type AppMode = "safety" | "assetUse";
+type AssetUseTab = "timeBucket" | "quickTrial" | "review" | "incomePower";
 type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
@@ -193,6 +200,46 @@ const targetBalanceStatusClassNames: Record<TargetBalanceStatus, string> = {
   surplus: "text-teal-700",
   onTarget: "text-slate-700",
   shortfall: "text-destructive",
+};
+
+const primaryNavClassNames = {
+  dashboardActive: "border border-sky-700 bg-sky-700 text-white shadow-sm hover:bg-sky-800",
+  dashboardInactive: "border border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100",
+  safetyActive: "border border-teal-800 bg-teal-800 text-white shadow-sm hover:bg-teal-900",
+  safetyInactive: "border border-teal-700 bg-teal-700 text-white shadow-sm hover:bg-teal-800",
+  assetActive: "border border-indigo-800 bg-indigo-800 text-white shadow-sm hover:bg-indigo-900",
+  assetInactive: "border border-indigo-700 bg-indigo-700 text-white shadow-sm hover:bg-indigo-800",
+};
+
+const tabGroupClassNames: Record<TabGroup, { active: string; inactive: string }> = {
+  input: {
+    active: "border border-emerald-400 bg-emerald-100 text-emerald-950 shadow-sm hover:bg-emerald-100",
+    inactive: "border border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+  },
+  output: {
+    active: "border border-sky-400 bg-sky-100 text-sky-950 shadow-sm hover:bg-sky-100",
+    inactive: "border border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100",
+  },
+  hybrid: {
+    active: "border border-amber-400 bg-amber-100 text-amber-950 shadow-sm hover:bg-amber-100",
+    inactive: "border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100",
+  },
+  management: {
+    active: "border border-violet-400 bg-violet-100 text-violet-950 shadow-sm hover:bg-violet-100",
+    inactive: "border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100",
+  },
+};
+
+const enjoymentNavClassNames = {
+  active: "border border-rose-400 bg-rose-100 text-rose-950 shadow-sm hover:bg-rose-100",
+  inactive: "border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100",
+};
+
+const assetUseTabLabels: Record<AssetUseTab, string> = {
+  timeBucket: "タイムバケット",
+  quickTrial: "クイック試算",
+  review: "資産レビュー",
+  incomePower: "入金力診断",
 };
 
 function appModeFromHash(): AppMode {
@@ -453,12 +500,15 @@ function shouldIgnoreTaxExpenseField(scenario: ScenarioData) {
 function App() {
   const [appMode, setAppMode] = useState<AppMode>(() => appModeFromHash());
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
+  const [assetUseTab, setAssetUseTab] = useState<AssetUseTab>("timeBucket");
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     scenarios,
     activeScenarioId,
+    baselineScenarioId,
     setActiveScenario,
+    setBaselineScenario,
     updateActiveScenario,
     updateScenarios,
     duplicateScenario,
@@ -475,17 +525,28 @@ function App() {
   } = usePlanStore();
 
   const activeScenario = scenarios.find((scenario) => scenario.id === activeScenarioId) ?? scenarios[0];
+  const baselineScenario = scenarios.find((scenario) => scenario.id === baselineScenarioId) ?? scenarios.find((scenario) => scenario.compare) ?? scenarios[0];
   const deferredScenarios = useDeferredValue(scenarios);
   const result = useMemo(() => simulateScenario(activeScenario), [activeScenario]);
   const allResults = useMemo(
-    () => activeTab === "compare"
-      ? deferredScenarios.filter((scenario) => scenario.compare).map((scenario) => ({ scenario, result: simulateScenario(scenario) }))
-      : [],
-    [activeTab, deferredScenarios],
+    () => {
+      if (activeTab !== "compare") return [];
+      const compareScenarios = deferredScenarios.filter((scenario) => scenario.compare);
+      const scenariosForCompare = compareScenarios.some((scenario) => scenario.id === baselineScenario.id)
+        ? compareScenarios
+        : [baselineScenario, ...compareScenarios];
+      return scenariosForCompare.map((scenario) => ({ scenario, result: simulateScenario(scenario) }));
+    },
+    [activeTab, baselineScenario, deferredScenarios],
   );
   const isLikelySampleState =
     scenarios.length === sampleState.scenarios.length &&
     scenarios.every((scenario, index) => scenario.name === sampleState.scenarios[index]?.name);
+
+  useEffect(() => {
+    if (!baselineScenario || baselineScenario.id === baselineScenarioId) return;
+    setBaselineScenario(baselineScenario.id);
+  }, [baselineScenario, baselineScenarioId, setBaselineScenario]);
 
   useEffect(() => {
     const syncAppMode = () => setAppMode(appModeFromHash());
@@ -534,14 +595,14 @@ function App() {
   };
 
   const exportJson = () => {
-    const state: RetirementPlanState = { version: 1, activeScenarioId, scenarios, lastSavedAt, backups };
+    const state: RetirementPlanState = { version: 1, activeScenarioId, baselineScenarioId, scenarios, lastSavedAt, backups };
     downloadText("retirement-simulation.json", JSON.stringify(state, null, 2));
   };
 
   const createBackupAndExport = () => {
     const savedAt = new Date().toISOString();
     createBackup("JSON出力時バックアップ");
-    const state: RetirementPlanState = { version: 1, activeScenarioId, scenarios, lastSavedAt: savedAt, backups };
+    const state: RetirementPlanState = { version: 1, activeScenarioId, baselineScenarioId, scenarios, lastSavedAt: savedAt, backups };
     const timestamp = savedAt.replaceAll(":", "").slice(0, 15);
     downloadText(`retirement-simulation-backup-${timestamp}.json`, JSON.stringify(state, null, 2));
   };
@@ -621,6 +682,14 @@ function App() {
     }
   };
 
+  const openFlexibleFreeCashSettings = () => {
+    setAppModeHash("safety");
+    setActiveTab("profile");
+    window.setTimeout(() => {
+      document.getElementById("asset-use-period-settings")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  };
+
   return (
     <div className="min-h-screen">
       {restoreMessage && (
@@ -662,36 +731,101 @@ function App() {
               <Copy className="h-4 w-4" />
               複製
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setAppModeHash("safety");
+                setActiveTab("manual");
+              }}
+              className="text-muted-foreground hover:text-slate-900"
+            >
+              <BookOpen className="h-4 w-4" />
+              マニュアル
+            </Button>
           </div>
         </div>
         <nav className="container flex gap-2 overflow-x-auto pb-3">
           <Button
-            variant={appMode === "safety" ? "default" : "ghost"}
+            variant="ghost"
             size="sm"
-            onClick={() => setAppModeHash("safety")}
-            className="shrink-0"
+            onClick={() => {
+              setAppModeHash("safety");
+              setActiveTab("dashboard");
+            }}
+            className={`shrink-0 ${appMode === "safety" && activeTab === "dashboard" ? primaryNavClassNames.dashboardActive : primaryNavClassNames.dashboardInactive}`}
+          >
+            ダッシュボード
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAppModeHash("safety");
+              setActiveTab("dashboard");
+            }}
+            className={`shrink-0 ${appMode === "safety" && activeTab !== "dashboard" && activeTab !== "manual" ? primaryNavClassNames.safetyActive : primaryNavClassNames.safetyInactive}`}
           >
             安全性シミュレーション
           </Button>
           <Button
-            variant={appMode === "assetUse" ? "default" : "ghost"}
+            variant="ghost"
             size="sm"
-            onClick={() => setAppModeHash("assetUse")}
-            className="shrink-0"
+            onClick={() => {
+              setAssetUseTab("timeBucket");
+              setAppModeHash("assetUse");
+            }}
+            className={`shrink-0 ${appMode === "assetUse" ? primaryNavClassNames.assetActive : primaryNavClassNames.assetInactive}`}
           >
-            資産活用ビュー
+            資産活用
           </Button>
-          {appMode === "safety" && tabs.map(([key, label]) => (
+          {appMode === "safety" && activeTab !== "manual" && tabs.map((tab) => (
             <Button
-              key={key}
-              variant={activeTab === key ? "default" : "ghost"}
+              key={tab.key}
+              variant="ghost"
               size="sm"
-              onClick={() => setActiveTab(key)}
-              className="shrink-0"
+              onClick={() => setActiveTab(tab.key)}
+              className={`shrink-0 ${activeTab === tab.key ? tabGroupClassNames[tab.group].active : tabGroupClassNames[tab.group].inactive}`}
             >
-              {label}
+              {tab.label}
             </Button>
           ))}
+          {appMode === "assetUse" && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAssetUseTab("timeBucket")}
+                className={`shrink-0 ${assetUseTab === "timeBucket" ? enjoymentNavClassNames.active : enjoymentNavClassNames.inactive}`}
+              >
+                タイムバケット
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAssetUseTab("quickTrial")}
+                className={`shrink-0 ${assetUseTab === "quickTrial" ? enjoymentNavClassNames.active : enjoymentNavClassNames.inactive}`}
+              >
+                クイック試算
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAssetUseTab("review")}
+                className={`shrink-0 ${assetUseTab === "review" ? enjoymentNavClassNames.active : enjoymentNavClassNames.inactive}`}
+              >
+                資産レビュー
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAssetUseTab("incomePower")}
+                className={`shrink-0 ${assetUseTab === "incomePower" ? enjoymentNavClassNames.active : enjoymentNavClassNames.inactive}`}
+              >
+                入金力診断
+              </Button>
+            </>
+          )}
         </nav>
       </header>
 
@@ -703,12 +837,34 @@ function App() {
             scenarios={scenarios}
             activeScenarioId={activeScenarioId}
             setActiveScenario={setActiveScenario}
+            updateScenario={updateScenario}
+            updateScenarios={updateScenarios}
+            onOpenSpecialExpenses={() => {
+              setActiveTab("special");
+              setAppModeHash("safety");
+            }}
+            onOpenFlexibleFreeCashSettings={openFlexibleFreeCashSettings}
+            activeAssetUseTab={assetUseTab}
           />
         )}
         {appMode === "safety" && (
           <>
-            {activeTab === "dashboard" && <Dashboard scenario={activeScenario} result={result} />}
-            {activeTab === "profile" && <ProfileSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "dashboard" && (
+              <Dashboard
+                scenario={activeScenario}
+                result={result}
+                baselineScenario={baselineScenario}
+                onOpenFlexibleFreeCashSettings={openFlexibleFreeCashSettings}
+              />
+            )}
+            {activeTab === "profile" && (
+              <ProfileSection
+                scenario={activeScenario}
+                scenarios={scenarios}
+                updateScenario={updateScenario}
+                updateScenarios={updateScenarios}
+              />
+            )}
             {activeTab === "assets" && (
               <AssetsSection
                 scenario={activeScenario}
@@ -740,6 +896,10 @@ function App() {
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                onOpenTimeBucket={() => {
+                  setAssetUseTab("timeBucket");
+                  setAppModeHash("assetUse");
+                }}
               />
             )}
             {activeTab === "scenarios" && (
@@ -755,7 +915,17 @@ function App() {
               />
             )}
             {activeTab === "results" && <ResultsSection result={result} />}
-            {activeTab === "compare" && <CompareSection items={allResults} periodSourceScenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "compare" && (
+              <CompareSection
+                items={allResults}
+                scenarios={scenarios}
+                baselineScenario={baselineScenario}
+                baselineScenarioId={baselineScenario.id}
+                setBaselineScenarioId={setBaselineScenario}
+                periodSourceScenario={activeScenario}
+                updateScenario={updateScenario}
+              />
+            )}
             {activeTab === "manual" && <ManualSection />}
             {activeTab === "data" && (
               <DataSection
@@ -860,12 +1030,22 @@ function AssetUseWorkspace({
   scenarios,
   activeScenarioId,
   setActiveScenario,
+  updateScenario,
+  updateScenarios,
+  onOpenSpecialExpenses,
+  onOpenFlexibleFreeCashSettings,
+  activeAssetUseTab,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
   scenarios: ScenarioData[];
   activeScenarioId: string;
   setActiveScenario: (id: string) => void;
+  updateScenario: (updater: (scenario: ScenarioData) => void) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  onOpenSpecialExpenses: () => void;
+  onOpenFlexibleFreeCashSettings: () => void;
+  activeAssetUseTab: AssetUseTab;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const [trialStartAge, setTrialStartAge] = useState(flexibleFreeCashPeriod.startAge);
@@ -1146,7 +1326,7 @@ function AssetUseWorkspace({
         <CardHeader>
           <CardTitle>資産活用ビュー</CardTitle>
           <CardDescription>
-            安全性シミュレーションと同じ計算結果を使い、目標残高を守ったうえで健康寿命期にどれだけ使えているかを確認します。
+            何をしたいかを整理し、年額で試し、安全性を確認し、必要な時だけ入金力の意味を見ます。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm leading-6 md:grid-cols-4">
@@ -1156,19 +1336,36 @@ function AssetUseWorkspace({
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="text-muted-foreground">見る期間</div>
-            <div className="mt-1 font-semibold text-slate-900">{flexibleFreeCashLabel}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-slate-900">{flexibleFreeCashLabel}</span>
+              <Button variant="outline" size="sm" onClick={onOpenFlexibleFreeCashSettings}>
+                設定
+              </Button>
+            </div>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="text-muted-foreground">守る基準</div>
             <div className="mt-1 font-semibold text-slate-900">{targetBalanceAnalysis.targetAge}歳目標 {compactYen(targetBalanceAnalysis.targetAmount)}</div>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <div className="text-muted-foreground">確認順</div>
-            <div className="mt-1 font-semibold text-slate-900">レビュー → 試算 → 診断 → 詳細</div>
+            <div className="text-muted-foreground">表示中</div>
+            <div className="mt-1 font-semibold text-slate-900">{assetUseTabLabels[activeAssetUseTab]}</div>
           </div>
         </CardContent>
       </Card>
 
+      {activeAssetUseTab === "timeBucket" && (
+        <TimeBucketPlanner
+          scenario={scenario}
+          scenarios={scenarios}
+          updateScenario={updateScenario}
+          updateScenarios={updateScenarios}
+          onOpenSpecialExpenses={onOpenSpecialExpenses}
+        />
+      )}
+
+      {activeAssetUseTab === "review" && (
+        <>
       <Card>
         <CardHeader>
           <CardTitle>資産活用レビュー</CardTitle>
@@ -1210,6 +1407,11 @@ function AssetUseWorkspace({
         </CardContent>
       </Card>
 
+        </>
+      )}
+
+      {activeAssetUseTab === "quickTrial" && (
+        <>
       <Card>
         <CardHeader>
           <CardTitle>楽しみに使える額を探すクイック試算</CardTitle>
@@ -1316,6 +1518,12 @@ function AssetUseWorkspace({
           </div>
         </CardContent>
       </Card>
+
+        </>
+      )}
+
+      {activeAssetUseTab === "incomePower" && (
+        <>
 
       <Card>
         <CardHeader>
@@ -1647,6 +1855,12 @@ function AssetUseWorkspace({
       </Card>
       </ScenarioSyncDetails>
 
+        </>
+      )}
+
+      {activeAssetUseTab === "review" && (
+        <>
+
       <Card>
         <CardHeader>
           <CardTitle>特別支出内の楽しみ比率</CardTitle>
@@ -1753,6 +1967,11 @@ function AssetUseWorkspace({
         )}
       </Card>
 
+        </>
+      )}
+
+      {activeAssetUseTab === "quickTrial" && (
+        <>
       <ScenarioSyncDetails
         title="追加支出シミュレーター詳細"
         description="クイック試算の条件で、目標残高・期間末残高・最低流動資金を詳しく確認します。"
@@ -1813,6 +2032,11 @@ function AssetUseWorkspace({
       </Card>
       </ScenarioSyncDetails>
 
+        </>
+      )}
+
+      {activeAssetUseTab === "review" && (
+        <>
       <ScenarioSyncDetails
         title="判定の前提"
         description="目標残高、計画取り崩し、安全資金、カテゴリ警告の前提を確認します。"
@@ -1849,6 +2073,8 @@ function AssetUseWorkspace({
         </CardContent>
       </Card>
       </ScenarioSyncDetails>
+        </>
+      )}
     </div>
   );
 }
@@ -1856,13 +2082,19 @@ function AssetUseWorkspace({
 function Dashboard({
   scenario,
   result,
+  baselineScenario,
+  onOpenFlexibleFreeCashSettings,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
+  baselineScenario: ScenarioData;
+  onOpenFlexibleFreeCashSettings: () => void;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+  const assetUseWaterfallRows = calculateAssetUseWaterfallRows(result, flexibleFreeCashPeriod);
   const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
+  const diffSummary = buildScenarioDiffSummary(baselineScenario, scenario);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
   const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
   const assetLifeSub = `${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`;
@@ -1885,6 +2117,26 @@ function Dashboard({
     contribution: -row.assetContributionTotal,
     net: row.netCashFlow,
   }));
+  const assetUseWaterfallChartData = assetUseWaterfallRows.map((row) => ({
+    ...row,
+    displayAmount: row.amount,
+    shortLabel: row.label === "普通口座から流動資金へ" ? "普通口座→流動資金" : row.label,
+  }));
+  const nisaProgressChartData = result.annual
+    .filter((row) => row.ageYears >= flexibleFreeCashSummary.period.startAge && row.ageYears <= flexibleFreeCashSummary.period.endAge)
+    .map((row) => ({
+      label: yearEndAgeLabel(row.year, row.ageYears),
+      executed: row.nisaContributionTotal,
+      skipped: row.nisaContributionSkippedTotal,
+      remaining: Number.isFinite(row.nisaRemainingLifetimeLimit) ? row.nisaRemainingLifetimeLimit : 0,
+    }));
+  const nisaSkippedTotal = nisaProgressChartData.reduce((sum, row) => sum + row.skipped, 0);
+  const assetUseWaterfallColors: Record<(typeof assetUseWaterfallRows)[number]["kind"], string> = {
+    inflow: "#0f766e",
+    outflow: "#dc2626",
+    net: flexibleFreeCashSummary.totalFreeCash < 0 ? "#b45309" : "#2563eb",
+    assetUse: "#ea580c",
+  };
 
   return (
     <div className="space-y-6">
@@ -1898,7 +2150,7 @@ function Dashboard({
         />
         <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="指定期間末の年末資産" />
         <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
-        <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="生活費と税社保の実支出" />
+        <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="生活費、税社保、譲渡益税、iDeCo源泉の合計" />
         <Metric title={`${flexibleFreeCashLabel} その他特別支出`} value={compactYen(otherSpecialExpenseTotal)} sub="生活維持、住宅・車、医療、家族支援" />
         <Metric
           title="NISA実行額 / 残り枠"
@@ -1908,24 +2160,78 @@ function Dashboard({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>資産活用集計期間</CardTitle>
-          <CardDescription>
-            資産活用額は、現金収入と普通口座から現金・普通預金へ戻した額で、生活費・税社保・特別支出・iDeCo手数料を賄いきれなかった額をプラス表示します。追加投資は別指標として扱います。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-2xl font-semibold">{flexibleFreeCashLabel}</div>
-          <p className="text-sm text-muted-foreground">
-            集計期間の変更は比較タブで行います。変更すると、このダッシュボードの資産活用額・期間末残高・NISA指標にも同じ設定が反映されます。
-          </p>
+        <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-medium text-muted-foreground">資産活用集計期間</div>
+            <div className="mt-1 text-2xl font-semibold">{flexibleFreeCashLabel}</div>
+          </div>
+          <div className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <span className="font-medium text-slate-800">資産活用額:</span>{" "}
+            生活費・税社保・特別支出を現金収入だけで賄えず資産で補った額。追加投資は別指標です。
+            <span className="ml-0 block md:ml-2 md:inline">期間変更は基本情報の資産活用年齢で行います。</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={onOpenFlexibleFreeCashSettings} className="shrink-0">
+            期間を設定
+          </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>資産残高と取り崩しの推移</CardTitle>
-          <CardDescription>年末資産残高と、生活費や投資不足を埋めるために必要だった年間不足分を確認します。普通預金は流動資金として扱います。</CardDescription>
+          <CardTitle>{flexibleFreeCashLabel} 資産活用ウォーターフォール</CardTitle>
+          <CardDescription>
+            現金収入と普通口座から流動資金へ戻した額で、生活費・税社保・特別支出をどこまで賄えたかを見ます。NISAなどの追加投資はここには含めません。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
+          <div className="h-[28rem] min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={assetUseWaterfallChartData} layout="vertical" margin={{ top: 8, right: 28, bottom: 8, left: 36 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} />
+                <YAxis dataKey="shortLabel" type="category" width={150} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value) => yen(Number(value))} />
+                <ReferenceArea y1="現金収支" y2="資産活用額" fill="#fef3c7" fillOpacity={0.45} strokeOpacity={0} />
+                <Bar dataKey="displayAmount" name="金額" maxBarSize={28}>
+                  {assetUseWaterfallChartData.map((row) => (
+                    <Cell key={row.key} fill={assetUseWaterfallColors[row.kind]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="table-scroll overflow-auto">
+            <Table className="min-w-[520px]">
+              <thead>
+                <Tr>
+                  <Th>区分</Th>
+                  <Th>金額</Th>
+                  <Th>読み方</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {assetUseWaterfallRows.map((row) => (
+                  <Tr key={row.key} className={row.section === "result" ? "bg-amber-50" : ""}>
+                    <Td>
+                      {row.section === "result" && <span className="mr-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">ネット</span>}
+                      {row.label}
+                    </Td>
+                    <Td className={row.amount < 0 ? "text-red-600" : row.kind === "assetUse" ? "text-amber-700" : ""}>
+                      {compactYen(row.amount)}
+                    </Td>
+                    <Td className="text-sm text-muted-foreground">{row.description}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>資産残高推移</CardTitle>
+          <CardDescription>年末資産残高だけを確認します。取り崩しや追加投資の原資不足は、結果タブの詳細で分けて確認します。</CardDescription>
         </CardHeader>
         <CardContent className="h-96">
           <ResponsiveContainer width="100%" height="100%">
@@ -1935,11 +2241,58 @@ function Dashboard({
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Area dataKey="assets" name="年末資産" stroke="#0f766e" fill="#99f6e4" />
-              <Line dataKey="withdrawal" name="年間取り崩し" stroke="#e11d48" strokeWidth={2} dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{flexibleFreeCashLabel} NISA実行・未実行・残り枠</CardTitle>
+          <CardDescription>
+            年ごとのNISA実行額と未実行額を棒で、残り生涯枠を線で見ます。左軸は年次額、右軸は残り枠です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.65fr)]">
+          <div className="h-80 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={nisaProgressChartData} barCategoryGap="28%" barGap={3} margin={{ top: 8, right: 18, bottom: 54, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+                <YAxis yAxisId="annual" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                <YAxis yAxisId="limit" orientation="right" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+                <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+                <Bar yAxisId="annual" dataKey="executed" name="NISA実行額" fill="#0f766e" maxBarSize={18} />
+                <Bar yAxisId="annual" dataKey="skipped" name="NISA未実行額" fill="#dc2626" maxBarSize={18} />
+                <Line yAxisId="limit" type="monotone" dataKey="remaining" name="残りNISA枠" stroke="#2563eb" strokeWidth={3} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="rounded-lg border bg-slate-50 p-4">
+            <div className="text-sm font-medium text-muted-foreground">期間合計</div>
+            <dl className="mt-4 space-y-4">
+              <div>
+                <dt className="text-sm text-muted-foreground">NISA実行額</dt>
+                <dd className="text-2xl font-semibold text-emerald-700">{compactYen(flexibleFreeCashSummary.nisaContributionTotal)}</dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">NISA未実行額</dt>
+                <dd className={`text-2xl font-semibold ${nisaSkippedTotal > 0 ? "text-red-600" : "text-slate-900"}`}>{compactYen(nisaSkippedTotal)}</dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">期間末の残りNISA枠</dt>
+                <dd className="text-2xl font-semibold text-blue-700">{compactLimitYen(flexibleFreeCashSummary.nisaRemainingLifetimeLimit)}</dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              未実行額が出る年は、NISA枠そのものではなく、その年の投資原資や流動資金の条件で予定額を入れきれなかった可能性があります。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <ScenarioDiffSummaryCard baselineScenario={baselineScenario} targetScenario={scenario} diffSummary={diffSummary} />
 
       <Card>
         <CardHeader>
@@ -1970,6 +2323,43 @@ function Dashboard({
   );
 }
 
+function ScenarioDiffSummaryCard({
+  baselineScenario,
+  targetScenario,
+  diffSummary,
+}: {
+  baselineScenario: ScenarioData;
+  targetScenario: ScenarioData;
+  diffSummary: ScenarioDiffSummary;
+}) {
+  const isBaseline = baselineScenario.id === targetScenario.id;
+  return (
+    <ScenarioSyncDetails
+      title={`基準との差分（基準: ${baselineScenario.name}）`}
+      description="必要な時だけ、表示中シナリオの入力条件が基準とどう違うかを確認します。基準は比較タブの「基準シナリオ」で変更できます。"
+    >
+      <div className="space-y-3">
+        <p className="text-sm leading-6 text-muted-foreground">
+          表示中: {targetScenario.name}。シナリオを一番上へ移動する必要はありません。比較タブで選んだ基準シナリオを使います。
+        </p>
+        {isBaseline ? (
+          <p className="text-sm text-muted-foreground">このシナリオが比較基準です。</p>
+        ) : diffSummary.headlineItems.length > 0 ? (
+          <ul className="space-y-2 text-sm leading-6">
+            {diffSummary.headlineItems.map((item) => (
+              <li key={item.id} className="rounded-md border bg-slate-50 px-3 py-2">
+                {item.summary}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">基準との差分は見つかりません。</p>
+        )}
+      </div>
+    </ScenarioSyncDetails>
+  );
+}
+
 function Metric({ title, value, sub }: { title: string; value: string; sub: string }) {
   return (
     <Card>
@@ -1984,7 +2374,87 @@ function Metric({ title, value, sub }: { title: string; value: string; sub: stri
   );
 }
 
-function ProfileSection({ scenario, updateScenario }: SectionProps) {
+function ProfileSection({
+  scenario,
+  scenarios,
+  updateScenario,
+  updateScenarios,
+}: SectionProps & {
+  scenarios: ScenarioData[];
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+}) {
+  const [profileSyncTargetMode, setProfileSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [profileSyncSelectedTargetIds, setProfileSyncSelectedTargetIds] = useState<string[]>([]);
+  const [profileSyncSourceScenarioId, setProfileSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromProfileSync, setExcludeCurrentScenarioFromProfileSync] = useState(true);
+  const [profileSyncOptions, setProfileSyncOptions] = useState<ProfileSyncOptions>({
+    basicProfile: true,
+    flexibleFreeCashPeriod: true,
+    household: true,
+  });
+  const [profileSyncMessage, setProfileSyncMessage] = useState<string | null>(null);
+  const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
+  const profileSyncSourceScenario = scenarios.find((item) => item.id === profileSyncSourceScenarioId) ?? scenario;
+  const profileSyncSourceIsCurrentScenario = profileSyncSourceScenario.id === scenario.id;
+  const profileSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromProfileSync && !profileSyncSourceIsCurrentScenario) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [excludeCurrentScenarioFromProfileSync, profileSyncSourceIsCurrentScenario, scenario.id]);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === profileSyncSourceScenarioId)) {
+      setProfileSyncSourceScenarioId(scenario.id);
+    }
+  }, [profileSyncSourceScenarioId, scenario.id, scenarios]);
+  const profileSyncSelectedTargetIdSet = useMemo(() => new Set(profileSyncSelectedTargetIds), [profileSyncSelectedTargetIds]);
+  const profileSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    profileSyncSourceScenario.id,
+    profileSyncTargetMode,
+    profileSyncExcludedScenarioIds,
+    profileSyncSelectedTargetIdSet,
+  );
+  const profileSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    profileSyncSourceScenario.id,
+    profileSyncTargetMode,
+    profileSyncExcludedScenarioIds,
+    profileSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
+  const hasProfileSyncSelection = Object.values(profileSyncOptions).some(Boolean);
+  const selectedProfileSyncLabels = [
+    profileSyncOptions.basicProfile ? "年齢・期間・目標残高など" : "",
+    profileSyncOptions.flexibleFreeCashPeriod ? "資産活用集計期間" : "",
+    profileSyncOptions.household ? "世帯情報・税扶養・国保状態" : "",
+  ].filter(Boolean);
+  const updateProfileSyncOption = (key: keyof ProfileSyncOptions) => {
+    setProfileSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleProfileSyncTarget = (scenarioId: string) => {
+    setProfileSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
+  };
+  const applyProfileSync = () => {
+    if (profileSyncTargetCount === 0 || !hasProfileSyncSelection) return;
+    const source = structuredClone(profileSyncSourceScenario);
+    const confirmed = window.confirm(
+      `「${source.name}」の ${selectedProfileSyncLabels.join("、")} を、コピー元自身を除く ${profileSyncTargetCount} 件のシナリオへ反映します。` +
+        (!profileSyncSourceIsCurrentScenario && excludeCurrentScenarioFromProfileSync
+          ? `現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(profileSyncTargetNames)}\n\nシナリオ名は変更しません。実行しますか？`,
+    );
+    if (!confirmed) return;
+    updateScenarios((target) => {
+      if (!isAssetSyncTarget(target, source.id, profileSyncTargetMode, profileSyncExcludedScenarioIds, profileSyncSelectedTargetIdSet)) return target;
+      applyProfileSyncFromSource(target, source, profileSyncOptions);
+      return target;
+    });
+    setProfileSyncMessage(
+      `${profileSyncTargetCount} 件のシナリオへ基本情報を反映しました: ${formatScenarioNamesForMessage(profileSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+    );
+  };
   return (
     <Card>
       <CardHeader>
@@ -2074,6 +2544,15 @@ function ProfileSection({ scenario, updateScenario }: SectionProps) {
             </Select>
           </Field>
         </FormGrid>
+        <div id="asset-use-period-settings" className="mt-6 scroll-mt-28 rounded-lg border border-sky-200 bg-sky-50 p-4">
+          <div className="mb-3">
+            <div className="font-medium text-sky-950">資産活用集計期間</div>
+            <p className="mt-1 text-sm leading-6 text-sky-900">
+              ダッシュボード、資産活用ビュー、比較タブで使う共通期間です。
+            </p>
+          </div>
+          <FlexibleFreeCashPeriodFields period={flexibleFreeCashPeriod} updateScenario={updateScenario} />
+        </div>
         <div className="mt-4">
           <Field label="メモ">
             <Textarea value={scenario.userProfile.note ?? ""} onChange={(event) => updateScenario((s) => void (s.userProfile.note = event.target.value))} />
@@ -2082,6 +2561,62 @@ function ProfileSection({ scenario, updateScenario }: SectionProps) {
         <div className="mt-6">
           <HouseholdSection scenario={scenario} updateScenario={updateScenario} />
         </div>
+        <ScenarioSyncDetails
+          title="他シナリオへ反映（必要時のみ）"
+          description="基本情報、資産活用集計期間、世帯情報を他シナリオへ反映します。"
+        >
+          <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+            <Field label="コピー元シナリオ">
+              <Select value={profileSyncSourceScenario.id} onChange={(event) => setProfileSyncSourceScenarioId(event.target.value)}>
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {!profileSyncSourceIsCurrentScenario && (
+              <label className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={excludeCurrentScenarioFromProfileSync}
+                  onChange={() => setExcludeCurrentScenarioFromProfileSync((current) => !current)}
+                />
+                現在開いているシナリオを反映先から外す
+              </label>
+            )}
+          </div>
+          <ScenarioSyncCard<keyof ProfileSyncOptions>
+            title="基本情報を他シナリオへ反映"
+            description="コピー元シナリオを選び、基本情報の前提だけを他シナリオへ反映します。シナリオ名、資産、生活費、収入、特別支出は変更しません。"
+            targetMode={profileSyncTargetMode}
+            setTargetMode={setProfileSyncTargetMode}
+            targetCount={profileSyncTargetCount}
+            targetNames={profileSyncTargetNames}
+            allScenarios={scenarios}
+            sourceScenarioId={profileSyncSourceScenario.id}
+            excludedScenarioIds={profileSyncExcludedScenarioIds}
+            selectedTargetIds={profileSyncSelectedTargetIdSet}
+            toggleSelectedTarget={toggleProfileSyncTarget}
+            targetSummary={
+              `コピー元「${profileSyncSourceScenario.name}」自身を除く ${profileSyncTargetCount} 件に反映します。` +
+              (!profileSyncSourceIsCurrentScenario && excludeCurrentScenarioFromProfileSync
+                ? `現在開いている「${scenario.name}」は反映先から外します。`
+                : "")
+            }
+            options={[
+              { key: "basicProfile", label: "年齢・期間・目標残高など", description: "生年月日、開始/終了条件、指定年齢残高、計画取り崩し、最低流動資金、自治体、配偶者有無" },
+              { key: "flexibleFreeCashPeriod", label: "資産活用集計期間", description: "ダッシュボード、資産レビュー、比較タブで使う開始年齢・終了年齢" },
+              { key: "household", label: "世帯情報・税扶養・国保状態", description: "世帯主、税社保計算モード、世帯メンバー、税扶養・国保変更、同居状態変更" },
+            ]}
+            selectedOptions={profileSyncOptions}
+            toggleOption={updateProfileSyncOption}
+            warningText="シナリオ名はコピーしません。世帯情報を反映すると、既存の収入・退職所得イベントの対象メンバーは続柄や名前が近いメンバーへ付け替えます。"
+            onApply={applyProfileSync}
+            message={profileSyncMessage}
+            applyDisabled={!hasProfileSyncSelection}
+          />
+        </ScenarioSyncDetails>
       </CardContent>
     </Card>
   );
@@ -2188,7 +2723,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
       s.householdMemberStatusEvents.push({
         id: crypto.randomUUID(),
         memberId: targetMember?.id ?? s.householdMembers[0]?.id ?? "",
-        name: `${targetMember?.name ?? "家族"}の扶養・国保変更`,
+        name: `${targetMember?.name ?? "家族"}の税扶養・国保変更`,
         changeYearMonth: s.userProfile.simulationStartYearMonth,
         isResident: undefined,
         isNationalHealthInsuranceMember: undefined,
@@ -2206,7 +2741,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
       s.householdMemberStatusEvents.splice(index + 1, 0, {
         ...structuredClone(source),
         id: crypto.randomUUID(),
-        name: source.name ? `${source.name} コピー` : "扶養・国保変更 コピー",
+        name: source.name ? `${source.name} コピー` : "税扶養・国保変更 コピー",
       });
     });
   const duplicateLivingArrangementEvent = (index: number) =>
@@ -2291,7 +2826,9 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
             <div>
               <h3 className="font-medium">世帯メンバー</h3>
-              <p className="text-sm text-muted-foreground">ここは現在時点の状態です。将来の扶養外・国保外は下の「扶養・国保などの状態変更」で年月を登録します。</p>
+              <p className="text-sm text-muted-foreground">
+                ここは現在時点の状態です。税計算上の扶養・配偶者控除と、国保加入は別々に設定します。将来変わる場合は下の状態変更で年月を登録します。
+              </p>
             </div>
             <Button onClick={addMember}>
               <Plus className="h-4 w-4" />
@@ -2331,7 +2868,8 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
               >
                 {member.relationship !== "self" && (
                   <p className="mb-4 text-sm text-muted-foreground">
-                    扶養に入るを選ぶと、{headMember?.name ?? "世帯主"} の扶養として扱います。
+                    「税計算上の扶養・配偶者控除」を入るにすると、{headMember?.name ?? "世帯主"} の所得税・住民税の控除対象として判定します。
+                    会社の健康保険の扶養とは別です。退職後に国保へ加入する場合でも、税計算上の扶養に入ることがあります。
                   </p>
                 )}
                 <FormGrid>
@@ -2403,7 +2941,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                     </Select>
                   </Field>
                   {member.relationship !== "self" && (
-                    <Field label="世帯主の扶養">
+                    <Field label="税計算上の扶養・配偶者控除">
                       <Select
                         value={member.isDependent ? "yes" : "no"}
                         onChange={(event) =>
@@ -2424,11 +2962,11 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                   <div className="mt-4 rounded-md border bg-white px-3 py-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
-                        将来このメンバーが扶養外・国保外になる場合は、年月付きの変更予定を追加します。
+                        将来このメンバーが税計算上の扶養・配偶者控除から外れる、または国保加入が変わる場合は、年月付きの変更予定を追加します。
                       </p>
                       <Button variant="outline" size="sm" onClick={() => addMemberStatusEventForMember(member.id)}>
                         <Plus className="h-4 w-4" />
-                        扶養・国保変更を追加
+                        税扶養・国保変更を追加
                       </Button>
                     </div>
                   </div>
@@ -2448,9 +2986,9 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
         <div className="rounded-lg border bg-slate-50">
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
             <div>
-              <h3 className="font-medium">扶養・国保などの状態変更</h3>
+              <h3 className="font-medium">税扶養・国保などの状態変更</h3>
               <p className="text-sm text-muted-foreground">
-                就職・独立などで扶養や国保加入が変わる年月を登録します。扶養はその年の年末判定、国保・国民年金は月単位で反映します。
+                就職・退職・独立などで税計算上の扶養・配偶者控除や国保加入が変わる年月を登録します。税扶養はその年の年末判定、国保・国民年金は月単位で反映します。
               </p>
             </div>
             <Button onClick={addMemberStatusEvent}>
@@ -2460,12 +2998,12 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
           </div>
           <div className="space-y-4 p-4">
             {scenario.householdMemberStatusEvents.length === 0 ? (
-              <p className="text-sm text-muted-foreground">扶養・国保などの状態変更はまだありません。</p>
+              <p className="text-sm text-muted-foreground">税扶養・国保などの状態変更はまだありません。</p>
             ) : (
               scenario.householdMemberStatusEvents.map((event, index) => (
                 <EventEditor
                   key={event.id}
-                  title={event.name || "扶養・国保変更"}
+                  title={event.name || "税扶養・国保変更"}
                   onDelete={() => updateScenario((s) => void s.householdMemberStatusEvents.splice(index, 1))}
                   actions={
                     <Button variant="ghost" size="sm" onClick={() => duplicateMemberStatusEvent(index)}>
@@ -2517,7 +3055,7 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                       }
                     />
                     <StatusSelect
-                      label="世帯主の扶養"
+                      label="税計算上の扶養・配偶者控除"
                       value={event.isDependent}
                       yesLabel="入る"
                       noLabel="入らない"
@@ -2699,13 +3237,19 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
-type AssetSyncTargetMode = "compare" | "all";
+type AssetSyncTargetMode = "compare" | "all" | "selected";
 
 type AssetSyncOptions = {
   liquidAssets: boolean;
   marketAssets: boolean;
   costBasis: boolean;
   optionSubAccounts: boolean;
+};
+
+type ProfileSyncOptions = {
+  basicProfile: boolean;
+  flexibleFreeCashPeriod: boolean;
+  household: boolean;
 };
 
 type ExpenseSyncOptions = {
@@ -2730,13 +3274,115 @@ function countAssetSyncTargets(
   sourceScenarioId: string,
   targetMode: AssetSyncTargetMode,
   excludedScenarioIds: Set<string> = new Set(),
+  selectedScenarioIds: Set<string> = new Set(),
+) {
+  return getAssetSyncTargets(scenarios, sourceScenarioId, targetMode, excludedScenarioIds, selectedScenarioIds).length;
+}
+
+function getAssetSyncTargets(
+  scenarios: ScenarioData[],
+  sourceScenarioId: string,
+  targetMode: AssetSyncTargetMode,
+  excludedScenarioIds: Set<string> = new Set(),
+  selectedScenarioIds: Set<string> = new Set(),
 ) {
   return scenarios.filter(
     (target) =>
       target.id !== sourceScenarioId &&
       !excludedScenarioIds.has(target.id) &&
-      (targetMode === "all" || target.compare),
-  ).length;
+      (targetMode === "all" || (targetMode === "compare" && target.compare) || (targetMode === "selected" && selectedScenarioIds.has(target.id))),
+  );
+}
+
+function isAssetSyncTarget(
+  target: ScenarioData,
+  sourceScenarioId: string,
+  targetMode: AssetSyncTargetMode,
+  excludedScenarioIds: Set<string> = new Set(),
+  selectedScenarioIds: Set<string> = new Set(),
+) {
+  if (target.id === sourceScenarioId || excludedScenarioIds.has(target.id)) return false;
+  if (targetMode === "all") return true;
+  if (targetMode === "compare") return target.compare;
+  return selectedScenarioIds.has(target.id);
+}
+
+function formatScenarioNamesForConfirm(names: string[]) {
+  if (names.length === 0) return "なし";
+  return names.map((name) => `・${name}`).join("\n");
+}
+
+function formatScenarioNamesForMessage(names: string[]) {
+  if (names.length === 0) return "対象なし";
+  if (names.length <= 3) return names.join("、");
+  return `${names.slice(0, 3).join("、")} ほか${names.length - 3}件`;
+}
+
+function findMatchingCopiedMemberId(sourceMembers: HouseholdMember[], oldTargetMember?: HouseholdMember) {
+  if (!oldTargetMember) return sourceMembers[0]?.id ?? "";
+  return (
+    sourceMembers.find((member) => member.relationship === oldTargetMember.relationship && member.name === oldTargetMember.name)?.id ??
+    sourceMembers.find((member) => member.relationship === oldTargetMember.relationship)?.id ??
+    sourceMembers[0]?.id ??
+    oldTargetMember.id
+  );
+}
+
+function applyProfileSyncFromSource(target: ScenarioData, source: ScenarioData, options: ProfileSyncOptions) {
+  if (options.basicProfile) {
+    target.userProfile = {
+      ...target.userProfile,
+      birthDate: source.userProfile.birthDate,
+      simulationStartYearMonth: source.userProfile.simulationStartYearMonth,
+      simulationEndMode: source.userProfile.simulationEndMode,
+      simulationEndAge: source.userProfile.simulationEndAge,
+      simulationEndYearMonth: source.userProfile.simulationEndYearMonth,
+      targetBalanceAge: source.userProfile.targetBalanceAge,
+      targetBalanceAmount: source.userProfile.targetBalanceAmount,
+      plannedDrawdownEnabled: source.userProfile.plannedDrawdownEnabled,
+      cashReserve: source.userProfile.cashReserve,
+      municipality: source.userProfile.municipality,
+      hasSpouse: source.userProfile.hasSpouse,
+    };
+  }
+
+  if (options.flexibleFreeCashPeriod) {
+    target.userProfile.flexibleFreeCashStartAge = source.userProfile.flexibleFreeCashStartAge;
+    target.userProfile.flexibleFreeCashEndAge = source.userProfile.flexibleFreeCashEndAge;
+  }
+
+  if (options.household) {
+    const oldMembersById = new Map(target.householdMembers.map((member) => [member.id, member]));
+    const copiedMembers = structuredClone(source.householdMembers);
+    const copiedMemberIds = new Set(copiedMembers.map((member) => member.id));
+    target.householdProfile = structuredClone(source.householdProfile);
+    target.householdMembers = copiedMembers;
+    target.householdMemberStatusEvents = structuredClone(source.householdMemberStatusEvents);
+    target.householdLivingArrangementEvents = structuredClone(source.householdLivingArrangementEvents);
+    if (!copiedMemberIds.has(target.householdProfile.headMemberId)) {
+      target.householdProfile.headMemberId = copiedMembers[0]?.id ?? "";
+    }
+    target.userProfile.hasSpouse = source.userProfile.hasSpouse;
+    target.userProfile.municipality = source.userProfile.municipality;
+
+    target.incomeEvents = target.incomeEvents.map((event) => ({
+      ...event,
+      memberId: copiedMemberIds.has(event.memberId)
+        ? event.memberId
+        : findMatchingCopiedMemberId(copiedMembers, oldMembersById.get(event.memberId)),
+      linkedHouseholdLivingArrangementEventId: target.householdLivingArrangementEvents.some(
+        (livingEvent) => livingEvent.id === event.linkedHouseholdLivingArrangementEventId,
+      )
+        ? event.linkedHouseholdLivingArrangementEventId
+        : undefined,
+    }));
+    target.retirementIncomeEvents = (target.retirementIncomeEvents ?? []).map((event) => ({
+      ...event,
+      memberId: copiedMemberIds.has(event.memberId)
+        ? event.memberId
+        : findMatchingCopiedMemberId(copiedMembers, oldMembersById.get(event.memberId)),
+    }));
+  }
 }
 
 function applyAssetSyncFromSource(target: ScenarioData, source: ScenarioData, options: AssetSyncOptions) {
@@ -2868,6 +3514,14 @@ export const __testHooks = {
 function applySpecialSyncFromSource(target: ScenarioData, source: ScenarioData, options: SpecialSyncOptions) {
   if (options.specialExpenses) {
     target.specialExpenses = structuredClone(source.specialExpenses);
+    const validSpecialExpenseIds = new Set(target.specialExpenses.map((event) => event.id));
+    target.timeBucketItems = target.timeBucketItems.map((item) => ({
+      ...item,
+      convertedSpecialExpenseId:
+        item.convertedSpecialExpenseId && validSpecialExpenseIds.has(item.convertedSpecialExpenseId)
+          ? item.convertedSpecialExpenseId
+          : undefined,
+    }));
   }
 }
 
@@ -2883,7 +3537,13 @@ function ScenarioSyncCard<T extends string>({
   targetMode,
   setTargetMode,
   targetCount,
+  targetNames,
   targetSummary,
+  allScenarios,
+  sourceScenarioId,
+  excludedScenarioIds = new Set(),
+  selectedTargetIds,
+  toggleSelectedTarget,
   options,
   selectedOptions,
   toggleOption,
@@ -2898,7 +3558,13 @@ function ScenarioSyncCard<T extends string>({
   targetMode: AssetSyncTargetMode;
   setTargetMode: (mode: AssetSyncTargetMode) => void;
   targetCount: number;
+  targetNames?: string[];
   targetSummary: string;
+  allScenarios?: ScenarioData[];
+  sourceScenarioId?: string;
+  excludedScenarioIds?: Set<string>;
+  selectedTargetIds?: Set<string>;
+  toggleSelectedTarget?: (scenarioId: string) => void;
   options: ScenarioSyncOptionDescriptor<T>[];
   selectedOptions: Record<T, boolean>;
   toggleOption: (key: T) => void;
@@ -2909,6 +3575,8 @@ function ScenarioSyncCard<T extends string>({
   optionGridClassName?: string;
 }) {
   const hasSelection = Object.values(selectedOptions).some(Boolean);
+  const visibleTargetNames = targetNames?.slice(0, 6) ?? [];
+  const hiddenTargetNameCount = Math.max(0, (targetNames?.length ?? 0) - visibleTargetNames.length);
 
   return (
     <Card className="border-dashed">
@@ -2920,14 +3588,64 @@ function ScenarioSyncCard<T extends string>({
         <div className="grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
           <Field label="反映先">
             <Select value={targetMode} onChange={(event) => setTargetMode(event.target.value as AssetSyncTargetMode)}>
-              <option value="compare">比較対象シナリオ</option>
+              <option value="compare">比較対象にチェック済み</option>
+              <option value="selected">個別に選択</option>
               <option value="all">全シナリオ</option>
             </Select>
           </Field>
-          <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
-            {targetSummary}
+          <div className="space-y-2 rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+            <p>{targetSummary}</p>
+            <div className="rounded-md border bg-white px-3 py-2">
+              <div className="font-medium text-foreground">今回の反映先</div>
+              {targetNames && targetNames.length > 0 ? (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {visibleTargetNames.map((name) => (
+                    <span key={name} className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">
+                      {name}
+                    </span>
+                  ))}
+                  {hiddenTargetNameCount > 0 && (
+                    <span className="rounded-full bg-slate-200 px-2 py-1 text-xs text-slate-700">
+                      ほか{hiddenTargetNameCount}件
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs">対象シナリオはありません。</p>
+              )}
+              {targetMode === "compare" && (
+                <p className="mt-2 text-xs">
+                  比較対象は、シナリオタブで「比較」に入れているシナリオです。任意の反映先だけにしたい場合は「個別に選択」を使います。
+                </p>
+              )}
+              {targetMode === "selected" && (
+                <p className="mt-2 text-xs">この画面内のチェックで、反映先を個別に選びます。</p>
+              )}
+            </div>
           </div>
         </div>
+        {targetMode === "selected" && allScenarios && sourceScenarioId && selectedTargetIds && toggleSelectedTarget && (
+          <div className="rounded-md border bg-white px-4 py-3">
+            <div className="text-sm font-medium">反映先を個別に選択</div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {allScenarios
+                .filter((item) => item.id !== sourceScenarioId && !excludedScenarioIds.has(item.id))
+                .map((item) => (
+                  <label key={item.id} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedTargetIds.has(item.id)}
+                      onChange={() => toggleSelectedTarget(item.id)}
+                    />
+                    <span>
+                      <span className="block font-medium">{item.name}</span>
+                      <span className="text-xs text-muted-foreground">{item.compare ? "比較対象" : "比較対象外"}</span>
+                    </span>
+                  </label>
+                ))}
+            </div>
+          </div>
+        )}
         <div className={optionGridClassName}>
           {options.map((option) => (
             <label key={option.key} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
@@ -2996,6 +3714,7 @@ function AssetsSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [assetSyncSelectedTargetIds, setAssetSyncSelectedTargetIds] = useState<string[]>([]);
   const [assetSyncSourceScenarioId, setAssetSyncSourceScenarioId] = useState(scenario.id);
   const [excludeCurrentScenarioFromAssetSync, setExcludeCurrentScenarioFromAssetSync] = useState(true);
   const [assetSyncOptions, setAssetSyncOptions] = useState<AssetSyncOptions>({
@@ -3017,15 +3736,29 @@ function AssetsSection({
       setAssetSyncSourceScenarioId(scenario.id);
     }
   }, [assetSyncSourceScenarioId, scenario.id, scenarios]);
+  const assetSyncSelectedTargetIdSet = useMemo(() => new Set(assetSyncSelectedTargetIds), [assetSyncSelectedTargetIds]);
   const assetSyncTargetCount = countAssetSyncTargets(
     scenarios,
     assetSyncSourceScenario.id,
     assetSyncTargetMode,
     assetSyncExcludedScenarioIds,
+    assetSyncSelectedTargetIdSet,
   );
+  const assetSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    assetSyncSourceScenario.id,
+    assetSyncTargetMode,
+    assetSyncExcludedScenarioIds,
+    assetSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
   const hasAssetSyncSelection = Object.values(assetSyncOptions).some(Boolean);
   const updateAssetSyncOption = (key: keyof AssetSyncOptions) => {
     setAssetSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleAssetSyncTarget = (scenarioId: string) => {
+    setAssetSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
   };
   const selectedAssetSyncLabels = [
     assetSyncOptions.liquidAssets ? "現金・預金・対象外資産" : "",
@@ -3041,17 +3774,17 @@ function AssetsSection({
         (!assetSyncSourceIsCurrentScenario && excludeCurrentScenarioFromAssetSync
           ? `現在開いている「${scenario.name}」は反映先から外します。`
           : "") +
-        "実行しますか？",
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(assetSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
-      if (target.id === source.id) return target;
-      if (assetSyncExcludedScenarioIds.has(target.id)) return target;
-      if (assetSyncTargetMode === "compare" && !target.compare) return target;
+      if (!isAssetSyncTarget(target, source.id, assetSyncTargetMode, assetSyncExcludedScenarioIds, assetSyncSelectedTargetIdSet)) return target;
       applyAssetSyncFromSource(target, source, assetSyncOptions);
       return target;
     });
-    setAssetSyncMessage(`${assetSyncTargetCount} 件のシナリオへ反映しました。実行前の状態は履歴に保存されています。`);
+    setAssetSyncMessage(
+      `${assetSyncTargetCount} 件のシナリオへ反映しました: ${formatScenarioNamesForMessage(assetSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+    );
   };
   const addOptionSubAccount = () =>
     updateScenario((s) => {
@@ -3908,6 +4641,12 @@ function AssetsSection({
           targetMode={assetSyncTargetMode}
           setTargetMode={setAssetSyncTargetMode}
           targetCount={assetSyncTargetCount}
+          targetNames={assetSyncTargetNames}
+          allScenarios={scenarios}
+          sourceScenarioId={assetSyncSourceScenario.id}
+          excludedScenarioIds={assetSyncExcludedScenarioIds}
+          selectedTargetIds={assetSyncSelectedTargetIdSet}
+          toggleSelectedTarget={toggleAssetSyncTarget}
           targetSummary={
             `コピー元「${assetSyncSourceScenario.name}」自身を除く ${assetSyncTargetCount} 件に反映します。` +
             (!assetSyncSourceIsCurrentScenario && excludeCurrentScenarioFromAssetSync
@@ -3942,6 +4681,7 @@ function ExpensesSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [expenseSyncTargetMode, setExpenseSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [expenseSyncSelectedTargetIds, setExpenseSyncSelectedTargetIds] = useState<string[]>([]);
   const [expenseSyncSourceScenarioId, setExpenseSyncSourceScenarioId] = useState(scenario.id);
   const [excludeCurrentScenarioFromExpenseSync, setExcludeCurrentScenarioFromExpenseSync] = useState(true);
   const [expenseSyncOptions, setExpenseSyncOptions] = useState<ExpenseSyncOptions>({
@@ -3962,12 +4702,21 @@ function ExpensesSection({
       setExpenseSyncSourceScenarioId(scenario.id);
     }
   }, [expenseSyncSourceScenarioId, scenario.id, scenarios]);
+  const expenseSyncSelectedTargetIdSet = useMemo(() => new Set(expenseSyncSelectedTargetIds), [expenseSyncSelectedTargetIds]);
   const expenseSyncTargetCount = countAssetSyncTargets(
     scenarios,
     expenseSyncSourceScenario.id,
     expenseSyncTargetMode,
     expenseSyncExcludedScenarioIds,
+    expenseSyncSelectedTargetIdSet,
   );
+  const expenseSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    expenseSyncSourceScenario.id,
+    expenseSyncTargetMode,
+    expenseSyncExcludedScenarioIds,
+    expenseSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
   const hasExpenseSyncSelection = Object.values(expenseSyncOptions).some(Boolean);
   const selectedExpenseSyncLabels = [
     expenseSyncOptions.monthlyExpenses ? "月額生活費" : "",
@@ -3977,6 +4726,11 @@ function ExpensesSection({
   const updateExpenseSyncOption = (key: keyof ExpenseSyncOptions) => {
     setExpenseSyncOptions((current) => ({ ...current, [key]: !current[key] }));
   };
+  const toggleExpenseSyncTarget = (scenarioId: string) => {
+    setExpenseSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
+  };
   const applyExpenseSync = () => {
     if (expenseSyncTargetCount === 0 || !hasExpenseSyncSelection) return;
     const source = structuredClone(expenseSyncSourceScenario);
@@ -3985,17 +4739,17 @@ function ExpensesSection({
         (!expenseSyncSourceIsCurrentScenario && excludeCurrentScenarioFromExpenseSync
           ? `現在開いている「${scenario.name}」は反映先から外します。`
           : "") +
-        "実行しますか？",
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(expenseSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
-      if (target.id === source.id) return target;
-      if (expenseSyncExcludedScenarioIds.has(target.id)) return target;
-      if (expenseSyncTargetMode === "compare" && !target.compare) return target;
+      if (!isAssetSyncTarget(target, source.id, expenseSyncTargetMode, expenseSyncExcludedScenarioIds, expenseSyncSelectedTargetIdSet)) return target;
       applyExpenseSyncFromSource(target, source, expenseSyncOptions);
       return target;
     });
-    setExpenseSyncMessage(`${expenseSyncTargetCount} 件のシナリオへ生活費前提を反映しました。実行前の状態は履歴に保存されています。`);
+    setExpenseSyncMessage(
+      `${expenseSyncTargetCount} 件のシナリオへ生活費前提を反映しました: ${formatScenarioNamesForMessage(expenseSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+    );
   };
   const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
   const warnings = getExpenseAdjustmentWarnings(scenario.ageExpenseAdjustments);
@@ -4327,6 +5081,12 @@ function ExpensesSection({
           targetMode={expenseSyncTargetMode}
           setTargetMode={setExpenseSyncTargetMode}
           targetCount={expenseSyncTargetCount}
+          targetNames={expenseSyncTargetNames}
+          allScenarios={scenarios}
+          sourceScenarioId={expenseSyncSourceScenario.id}
+          excludedScenarioIds={expenseSyncExcludedScenarioIds}
+          selectedTargetIds={expenseSyncSelectedTargetIdSet}
+          toggleSelectedTarget={toggleExpenseSyncTarget}
           targetSummary={
             `コピー元「${expenseSyncSourceScenario.name}」自身を除く ${expenseSyncTargetCount} 件に反映します。` +
             (!expenseSyncSourceIsCurrentScenario && excludeCurrentScenarioFromExpenseSync
@@ -4802,6 +5562,7 @@ function IncomeSection({
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
 }) {
   const [incomeSyncTargetMode, setIncomeSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [incomeSyncSelectedTargetIds, setIncomeSyncSelectedTargetIds] = useState<string[]>([]);
   const [incomeSyncSourceScenarioId, setIncomeSyncSourceScenarioId] = useState(scenario.id);
   const [excludeCurrentScenarioFromIncomeSync, setExcludeCurrentScenarioFromIncomeSync] = useState(true);
   const [incomeSyncOptions, setIncomeSyncOptions] = useState<IncomeSyncOptions>({
@@ -4836,12 +5597,21 @@ function IncomeSection({
       return [...retainedIds, ...addedIds];
     });
   }, [incomeEventIdsKey]);
+  const incomeSyncSelectedTargetIdSet = useMemo(() => new Set(incomeSyncSelectedTargetIds), [incomeSyncSelectedTargetIds]);
   const incomeSyncTargetCount = countAssetSyncTargets(
     scenarios,
     incomeSyncSourceScenario.id,
     incomeSyncTargetMode,
     incomeSyncExcludedScenarioIds,
+    incomeSyncSelectedTargetIdSet,
   );
+  const incomeSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    incomeSyncSourceScenario.id,
+    incomeSyncTargetMode,
+    incomeSyncExcludedScenarioIds,
+    incomeSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
   const selectedIncomeEventIdSet = useMemo(() => new Set(selectedIncomeEventIds), [selectedIncomeEventIds]);
   const selectedIncomeEventCount = incomeSyncSourceScenario.incomeEvents.filter((event) => selectedIncomeEventIdSet.has(event.id)).length;
   const sourceIsCurrentScenario = incomeSyncSourceScenario.id === scenario.id;
@@ -4870,6 +5640,11 @@ function IncomeSection({
       current.includes(eventId) ? current.filter((id) => id !== eventId) : [...current, eventId],
     );
   };
+  const toggleIncomeSyncTarget = (scenarioId: string) => {
+    setIncomeSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
+  };
   const selectAllIncomeEventsForSync = () => {
     setSelectedIncomeEventIds(incomeEventIds);
   };
@@ -4887,17 +5662,17 @@ function IncomeSection({
         (incomeSyncOptions.incomeEvents
           ? "チェックした収入イベントだけをコピーし、未選択または反映先にだけある収入イベントは残します。"
           : "") +
-        "実行しますか？",
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(incomeSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
-      if (target.id === source.id) return target;
-      if (incomeSyncExcludedScenarioIds.has(target.id)) return target;
-      if (incomeSyncTargetMode === "compare" && !target.compare) return target;
+      if (!isAssetSyncTarget(target, source.id, incomeSyncTargetMode, incomeSyncExcludedScenarioIds, incomeSyncSelectedTargetIdSet)) return target;
       applyIncomeSyncFromSource(target, source, incomeSyncOptions, selectedIncomeEventIds);
       return target;
     });
-    setIncomeSyncMessage(`${incomeSyncTargetCount} 件のシナリオへ収入前提を反映しました。実行前の状態は履歴に保存されています。`);
+    setIncomeSyncMessage(
+      `${incomeSyncTargetCount} 件のシナリオへ収入前提を反映しました: ${formatScenarioNamesForMessage(incomeSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+    );
   };
   const livingArrangementEvents = scenario.householdLivingArrangementEvents ?? [];
   const add = () =>
@@ -5308,6 +6083,12 @@ function IncomeSection({
           targetMode={incomeSyncTargetMode}
           setTargetMode={setIncomeSyncTargetMode}
           targetCount={incomeSyncTargetCount}
+          targetNames={incomeSyncTargetNames}
+          allScenarios={scenarios}
+          sourceScenarioId={incomeSyncSourceScenario.id}
+          excludedScenarioIds={incomeSyncExcludedScenarioIds}
+          selectedTargetIds={incomeSyncSelectedTargetIdSet}
+          toggleSelectedTarget={toggleIncomeSyncTarget}
           targetSummary={incomeSyncTargetSummary}
           options={[
             { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
@@ -5641,9 +6422,8 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const capitalGainsTaxByFiscalYear = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of simulationResult.monthly) {
-      const [year, month] = row.yearMonth.split("-").map(Number);
-      const fiscalYear = month >= 4 ? year : year - 1;
-      map.set(fiscalYear, (map.get(fiscalYear) ?? 0) + row.capitalGainsTaxTotal);
+      const summaryYear = getTaxSummaryYear(row.yearMonth);
+      map.set(summaryYear, (map.get(summaryYear) ?? 0) + row.capitalGainsTaxTotal);
     }
     return map;
   }, [simulationResult]);
@@ -5651,6 +6431,25 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const isAuto = mode === "auto";
   const retirementOverlapWarnings = useMemo(() => getRetirementOverlapWarnings(scenario), [scenario]);
   const retirementOverlapAdjustments = useMemo(() => getRetirementOverlapAdjustments(scenario), [scenario]);
+  const premiseRows = isManual ? scenario.taxInsurance : mode === "autoWithAdjustment" ? effectiveRows : autoRows;
+  const premiseYears = premiseRows.map((row) => row.fiscalYear).filter((year) => Number.isFinite(year));
+  const premiseYearLabel =
+    premiseYears.length === 0
+      ? "未作成"
+      : Math.min(...premiseYears) === Math.max(...premiseYears)
+        ? `${Math.min(...premiseYears)}年度`
+        : `${Math.min(...premiseYears)}〜${Math.max(...premiseYears)}年度`;
+  const ordinaryOptionIncomeEventCount = scenario.incomeEvents.filter(
+    (event) =>
+      event.sourceAssetKey === "ordinaryAccountForOptions" &&
+      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other"),
+  ).length;
+  const retainedOrdinaryOptionIncomeEventCount = scenario.incomeEvents.filter(
+    (event) =>
+      event.sourceAssetKey === "ordinaryAccountForOptions" &&
+      (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other") &&
+      event.sourceAssetPayoutMode === "retainInSourceAsset",
+  ).length;
 
   const add = () =>
     updateScenario((s) =>
@@ -5732,6 +6531,35 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <p className="mt-1 text-muted-foreground">控除、退職所得、負担率、計算式の分解は必要な時だけ開きます。</p>
           </div>
         </div>
+        <div className="grid gap-3 text-sm leading-6 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">計算モード</div>
+            <div className="mt-1 font-semibold text-slate-900">{taxModeHelp[mode].label}</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {mode === "manual" ? "入力年度の金額をそのまま使用" : mode === "auto" ? "自動計算結果を使用" : "自動計算 + 補正額を使用"}
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">年度ラベル</div>
+            <div className="mt-1 font-semibold text-slate-900">{premiseYearLabel}</div>
+            <p className="mt-1 text-xs text-muted-foreground">表の年度は所得発生年度です。住民税・国保などの現金支払は主に翌年側へ出ます。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">料率・制度前提</div>
+            <div className="mt-1 font-semibold text-slate-900">概算テーブル</div>
+            <p className="mt-1 text-xs text-muted-foreground">所得税・住民税の概算、国保は大田区、後期高齢者医療は東京都の概算ルールです。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">普通口座オプション</div>
+            <div className="mt-1 font-semibold text-slate-900">
+              {ordinaryOptionIncomeEventCount === 0 ? "対象イベントなし" : `${ordinaryOptionIncomeEventCount}件`}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              口座内積上げでも、申告対象損益は翌年の所得税・住民税・国保などの所得に入ります。
+              {retainedOrdinaryOptionIncomeEventCount > 0 && ` 口座内積上げ設定は${retainedOrdinaryOptionIncomeEventCount}件です。`}
+            </p>
+          </div>
+        </div>
         <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
           {mode === "manual" && (
             <p>このモードでは、ここで入力した年度金額だけを使います。生活費タブの `税・社会保険` は 0 円にしてください。</p>
@@ -5747,6 +6575,9 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
           )}
           <p className="mt-2">
             特定口座と普通口座（オプション用）の取り崩しでは、譲渡益部分に 20.315% の課税を掛けて差し引きます。NISA には掛けません。
+          </p>
+          <p className="mt-2">
+            反復計算が収束しない年度が出た場合は、このタブの詳細根拠で警告として扱います。現時点の自動計算結果には未収束警告はありません。
           </p>
         </div>
 
@@ -5883,6 +6714,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
+            <RealizedGainDetailsSummary details={simulationResult.monthly.flatMap((row) => row.realizedGainDetails)} />
             <TaxFilingAdviceSummary advice={taxFilingAdvice} />
             <TaxCashTimingSummary details={autoDetails} annualRows={simulationResult.annual} />
             <ScenarioSyncDetails
@@ -6088,20 +6920,20 @@ function TaxRowsSummary({
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">
         この表は所得が発生した年度ベースの概算です。実際に現金が出ていく年は、結果タブの「税金・社会保険のキャッシュ支払タイミング」で確認します。
-        普通口座（オプション用）の申告対象損益は、売却時控除税ではなく翌年の所得税・住民税・国保などに反映されます。
+        普通口座（オプション用）の申告対象損益は、売却時譲渡益税ではなく翌年の所得税・住民税・国保などに反映されます。
       </p>
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <thead>
           <Tr>
-            <Th>年度</Th>
+            <Th>所得発生年度</Th>
             <Th>住民税(通常+退職)</Th>
             <Th>所得税(通常+退職)</Th>
             <Th>国保</Th>
             <Th>後期高齢者医療</Th>
             <Th>国民年金(年額)</Th>
             <Th>介護</Th>
-            <Th>売却時控除税</Th>
+            <Th>売却時譲渡益税</Th>
             <Th>その他</Th>
             <Th>年間合計目安</Th>
           </Tr>
@@ -6137,6 +6969,212 @@ function TaxRowsSummary({
       </Table>
     </div>
     </div>
+  );
+}
+
+function getTaxSummaryYear(yearMonth: YearMonth) {
+  const [year, month] = yearMonth.split("-").map(Number);
+  return month >= 4 ? year : year - 1;
+}
+
+type RealizedGainSummaryRow = {
+  fiscalYear: number;
+  accountName: string;
+  assetKey: RealizedGainDetail["assetKey"];
+  grossWithdrawal: number;
+  costPortion: number;
+  realizedGain: number;
+  taxWithheld: number;
+  deferredTax: number;
+  declaredIncome: number;
+  netCashAdded: number;
+  reasons: Set<RealizedGainDetail["reason"]>;
+  treatments: Set<RealizedGainDetail["taxTreatment"]>;
+  details: RealizedGainDetail[];
+};
+
+const realizedGainReasonLabels: Record<RealizedGainDetail["reason"], string> = {
+  deficitFunding: "不足補填売却",
+  sourceAssetIncome: "予定受取",
+  retainedSourceIncome: "口座内積上げ利益",
+  optionSweep: "利益移動",
+  optionRelease: "終了後戻し",
+  plannedDrawdown: "計画取り崩し",
+};
+
+const realizedGainTreatmentLabels: Record<RealizedGainDetail["taxTreatment"], string> = {
+  withheldAtSale: "売却時に控除",
+  deferredToNextYear: "翌年申告扱い",
+  declaredIncome: "申告対象損益",
+  nonTaxable: "課税なし",
+};
+
+function summarizeRealizedGainDetails(details: RealizedGainDetail[]) {
+  const map = new Map<string, RealizedGainSummaryRow>();
+  for (const detail of details) {
+    const key = `${detail.fiscalYear}:${detail.assetKey}:${detail.accountName}:${detail.reason}:${detail.taxTreatment}`;
+    const current =
+      map.get(key) ??
+      ({
+        fiscalYear: detail.fiscalYear,
+        accountName: detail.accountName,
+        assetKey: detail.assetKey,
+        grossWithdrawal: 0,
+        costPortion: 0,
+        realizedGain: 0,
+        taxWithheld: 0,
+        deferredTax: 0,
+        declaredIncome: 0,
+        netCashAdded: 0,
+        reasons: new Set<RealizedGainDetail["reason"]>(),
+        treatments: new Set<RealizedGainDetail["taxTreatment"]>(),
+        details: [],
+      } satisfies RealizedGainSummaryRow);
+    current.grossWithdrawal += detail.grossWithdrawal;
+    current.costPortion += detail.costPortion;
+    current.realizedGain += detail.realizedGain;
+    current.taxWithheld += detail.taxWithheld;
+    current.deferredTax += detail.deferredTax;
+    current.declaredIncome += detail.declaredIncome;
+    current.netCashAdded += detail.netCashAdded;
+    current.reasons.add(detail.reason);
+    current.treatments.add(detail.taxTreatment);
+    current.details.push(detail);
+    map.set(key, current);
+  }
+  return [...map.values()].sort((a, b) => a.fiscalYear - b.fiscalYear || a.accountName.localeCompare(b.accountName, "ja"));
+}
+
+function joinLabels<T extends string>(values: Iterable<T>, labels: Record<T, string>) {
+  return [...values].map((value) => labels[value]).join(" / ");
+}
+
+function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[] }) {
+  const summaryRows = useMemo(() => summarizeRealizedGainDetails(details), [details]);
+  const totals = useMemo(
+    () =>
+      details.reduce(
+        (sum, detail) => ({
+          grossWithdrawal: sum.grossWithdrawal + detail.grossWithdrawal,
+          realizedGain: sum.realizedGain + detail.realizedGain,
+          taxWithheld: sum.taxWithheld + detail.taxWithheld,
+          deferredTax: sum.deferredTax + detail.deferredTax,
+          declaredIncome: sum.declaredIncome + detail.declaredIncome,
+        }),
+        { grossWithdrawal: 0, realizedGain: 0, taxWithheld: 0, deferredTax: 0, declaredIncome: 0 },
+      ),
+    [details],
+  );
+
+  return (
+    <ScenarioSyncDetails
+      title="譲渡益課税の根拠"
+      description="売却時譲渡益税や普通口座オプションの申告対象損益が、どの口座・年月から出たかを確認します。"
+    >
+      <div className="grid gap-3 text-sm md:grid-cols-3">
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="text-muted-foreground">売却時譲渡益税</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{yen(totals.taxWithheld)}</div>
+          <p className="mt-1 text-xs text-muted-foreground">特定口座の売却時に、譲渡益部分から差し引く税額です。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="text-muted-foreground">普通口座オプション申告損益</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{yen(totals.declaredIncome)}</div>
+          <p className="mt-1 text-xs text-muted-foreground">売却時に差し引く税額ではなく、翌年の所得税・住民税・国保などの計算に入ります。</p>
+        </div>
+        <div className="rounded-md border bg-slate-50 px-4 py-3">
+          <div className="text-muted-foreground">源泉なし等の翌年分</div>
+          <div className="mt-1 text-lg font-semibold text-slate-900">{yen(totals.deferredTax)}</div>
+          <p className="mt-1 text-xs text-muted-foreground">源泉なし設定の特定口座など、売却時ではなく翌年扱いにする税額です。</p>
+        </div>
+      </div>
+      {summaryRows.length === 0 ? (
+        <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
+          譲渡益課税の対象になる売却・申告対象損益はありません。NISAとiDeCoはこの表には含めません。
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>所得発生年度</Th>
+                  <Th>口座</Th>
+                  <Th>売却・移動/発生額</Th>
+                  <Th>取得原価部分</Th>
+                  <Th>実現譲渡益</Th>
+                  <Th>売却時譲渡益税</Th>
+                  <Th>翌年・申告扱い</Th>
+                  <Th>手取り額</Th>
+                  <Th>理由</Th>
+                  <Th>扱い</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {summaryRows.map((row) => (
+                  <Tr key={`${row.fiscalYear}-${row.assetKey}-${row.accountName}`}>
+                    <Td>{row.fiscalYear}</Td>
+                    <Td>
+                      <div className="font-medium">{row.accountName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.assetKey === "specificAccount" ? "特定口座" : "普通口座オプション"}
+                      </div>
+                    </Td>
+                    <Td>{yen(row.grossWithdrawal)}</Td>
+                    <Td>{yen(row.costPortion)}</Td>
+                    <Td>{yen(row.realizedGain)}</Td>
+                    <Td>{yen(row.taxWithheld)}</Td>
+                    <Td>{yen(row.deferredTax + row.declaredIncome)}</Td>
+                    <Td>{yen(row.netCashAdded)}</Td>
+                    <Td className="min-w-[10rem]">{joinLabels(row.reasons, realizedGainReasonLabels)}</Td>
+                    <Td className="min-w-[10rem]">{joinLabels(row.treatments, realizedGainTreatmentLabels)}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <details className="rounded-lg border bg-white px-4 py-3">
+            <summary className="cursor-pointer list-none text-sm font-medium">月別明細を開く</summary>
+            <div className="mt-3 overflow-x-auto rounded-lg border">
+              <Table>
+                <thead>
+                  <Tr>
+                    <Th>年月</Th>
+                    <Th>所得発生年度</Th>
+                    <Th>口座</Th>
+                    <Th>売却・移動/発生額</Th>
+                    <Th>取得原価部分</Th>
+                    <Th>実現譲渡益</Th>
+                    <Th>売却時譲渡益税</Th>
+                    <Th>翌年・申告扱い</Th>
+                    <Th>手取り額</Th>
+                    <Th>理由</Th>
+                    <Th>扱い</Th>
+                  </Tr>
+                </thead>
+                <tbody>
+                  {details.map((detail, index) => (
+                    <Tr key={`${detail.yearMonth}-${detail.accountName}-${index}`}>
+                      <Td>{detail.yearMonth}</Td>
+                      <Td>{detail.fiscalYear}</Td>
+                      <Td>{detail.accountName}</Td>
+                      <Td>{yen(detail.grossWithdrawal)}</Td>
+                      <Td>{yen(detail.costPortion)}</Td>
+                      <Td>{yen(detail.realizedGain)}</Td>
+                      <Td>{yen(detail.taxWithheld)}</Td>
+                      <Td>{yen(detail.deferredTax + detail.declaredIncome)}</Td>
+                      <Td>{yen(detail.netCashAdded)}</Td>
+                      <Td>{realizedGainReasonLabels[detail.reason]}</Td>
+                      <Td>{realizedGainTreatmentLabels[detail.taxTreatment]}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </details>
+        </div>
+      )}
+    </ScenarioSyncDetails>
   );
 }
 
@@ -7151,11 +8189,14 @@ function SpecialSection({
   scenarios,
   updateScenario,
   updateScenarios,
+  onOpenTimeBucket,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  onOpenTimeBucket: () => void;
 }) {
   const [specialSyncTargetMode, setSpecialSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [specialSyncSelectedTargetIds, setSpecialSyncSelectedTargetIds] = useState<string[]>([]);
   const [specialSyncSourceScenarioId, setSpecialSyncSourceScenarioId] = useState(scenario.id);
   const [excludeCurrentScenarioFromSpecialSync, setExcludeCurrentScenarioFromSpecialSync] = useState(true);
   const [specialSyncOptions, setSpecialSyncOptions] = useState<SpecialSyncOptions>({
@@ -7174,16 +8215,30 @@ function SpecialSection({
       setSpecialSyncSourceScenarioId(scenario.id);
     }
   }, [scenario.id, scenarios, specialSyncSourceScenarioId]);
+  const specialSyncSelectedTargetIdSet = useMemo(() => new Set(specialSyncSelectedTargetIds), [specialSyncSelectedTargetIds]);
   const specialSyncTargetCount = countAssetSyncTargets(
     scenarios,
     specialSyncSourceScenario.id,
     specialSyncTargetMode,
     specialSyncExcludedScenarioIds,
+    specialSyncSelectedTargetIdSet,
   );
+  const specialSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    specialSyncSourceScenario.id,
+    specialSyncTargetMode,
+    specialSyncExcludedScenarioIds,
+    specialSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
   const hasSpecialSyncSelection = Object.values(specialSyncOptions).some(Boolean);
   const selectedSpecialSyncLabels = [specialSyncOptions.specialExpenses ? "特別支出リスト" : ""].filter(Boolean);
   const updateSpecialSyncOption = (key: keyof SpecialSyncOptions) => {
     setSpecialSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleSpecialSyncTarget = (scenarioId: string) => {
+    setSpecialSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
   };
   const applySpecialSync = () => {
     if (specialSyncTargetCount === 0 || !hasSpecialSyncSelection) return;
@@ -7193,19 +8248,23 @@ function SpecialSection({
         (!specialSyncSourceIsCurrentScenario && excludeCurrentScenarioFromSpecialSync
           ? `現在開いている「${scenario.name}」は反映先から外します。`
           : "") +
-        "実行しますか？",
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(specialSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
-      if (target.id === source.id) return target;
-      if (specialSyncExcludedScenarioIds.has(target.id)) return target;
-      if (specialSyncTargetMode === "compare" && !target.compare) return target;
+      if (!isAssetSyncTarget(target, source.id, specialSyncTargetMode, specialSyncExcludedScenarioIds, specialSyncSelectedTargetIdSet)) return target;
       applySpecialSyncFromSource(target, source, specialSyncOptions);
       return target;
     });
-    setSpecialSyncMessage(`${specialSyncTargetCount} 件のシナリオへ特別支出前提を反映しました。実行前の状態は履歴に保存されています。`);
+    setSpecialSyncMessage(
+      `${specialSyncTargetCount} 件のシナリオへ特別支出前提を反映しました: ${formatScenarioNamesForMessage(specialSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+    );
   };
   const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
+  const timeBucketSpecialExpenseIds = useMemo(
+    () => new Set(scenario.timeBucketItems.map((item) => item.convertedSpecialExpenseId).filter((id): id is string => Boolean(id))),
+    [scenario.timeBucketItems],
+  );
   const add = () =>
     updateScenario((s) =>
       s.specialExpenses.push({
@@ -7227,6 +8286,16 @@ function SpecialSection({
         id: crypto.randomUUID(),
         name: source.name ? `${source.name} コピー` : "特別支出 コピー",
       });
+    });
+  const deleteSpecialExpense = (index: number) =>
+    updateScenario((s) => {
+      const [removed] = s.specialExpenses.splice(index, 1);
+      if (!removed) return;
+      for (const item of s.timeBucketItems) {
+        if (item.convertedSpecialExpenseId === removed.id) {
+          item.convertedSpecialExpenseId = undefined;
+        }
+      }
     });
   const moveSpecialExpense = (fromIndex: number, toIndex: number) =>
     updateScenario((s) => {
@@ -7264,13 +8333,33 @@ function SpecialSection({
             </ul>
           </div>
         )}
-        {scenario.specialExpenses.map((event, index) => (
+        {scenario.specialExpenses.map((event, index) => {
+          const isEnjoyment = (event.category ?? "lifeMaintenance") === "enjoyment";
+          const linkedTimeBucketItem = scenario.timeBucketItems.find((item) => item.convertedSpecialExpenseId === event.id);
+          const isFromTimeBucket = Boolean(linkedTimeBucketItem) || timeBucketSpecialExpenseIds.has(event.id);
+          return (
           <EventEditor
             key={event.id}
             title={event.name || "特別支出"}
-            onDelete={() => updateScenario((s) => void s.specialExpenses.splice(index, 1))}
+            className={isEnjoyment ? "border-rose-200 bg-rose-50/40 shadow-sm" : undefined}
+            onDelete={() => deleteSpecialExpense(index)}
             actions={
               <>
+                {isEnjoyment && (
+                  <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-medium text-rose-800">
+                    楽しみ
+                  </span>
+                )}
+                {isFromTimeBucket && (
+                  <>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                      タイムバケット由来{linkedTimeBucketItem ? `: ${linkedTimeBucketItem.title}` : ""}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={onOpenTimeBucket}>
+                      タイムバケットへ
+                    </Button>
+                  </>
+                )}
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   順番
                   <Select
@@ -7444,7 +8533,8 @@ function SpecialSection({
               )}
             </FormGrid>
           </EventEditor>
-        ))}
+          );
+        })}
         <ScenarioSyncDetails
           title="他シナリオへ反映（必要時のみ）"
           description="特別支出リストをまとめてコピーする時だけ開きます。"
@@ -7486,6 +8576,12 @@ function SpecialSection({
           targetMode={specialSyncTargetMode}
           setTargetMode={setSpecialSyncTargetMode}
           targetCount={specialSyncTargetCount}
+          targetNames={specialSyncTargetNames}
+          allScenarios={scenarios}
+          sourceScenarioId={specialSyncSourceScenario.id}
+          excludedScenarioIds={specialSyncExcludedScenarioIds}
+          selectedTargetIds={specialSyncSelectedTargetIdSet}
+          toggleSelectedTarget={toggleSpecialSyncTarget}
           targetSummary={
             `コピー元「${specialSyncSourceScenario.name}」自身を除く ${specialSyncTargetCount} 件に反映します。` +
             (!specialSyncSourceIsCurrentScenario && excludeCurrentScenarioFromSpecialSync
@@ -7885,7 +8981,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>所得税精算<br />全所得</Th>
                 <Th>住民税<br />全所得</Th>
                 {showSourceFreeDeferredCapitalGainsTax && <Th>源泉なし等<br />売却益税翌年分</Th>}
-                <Th>売却時控除税</Th>
+                <Th>売却時譲渡益税</Th>
                 <Th>iDeCo源泉<br />受取時</Th>
                 <Th>税金合計</Th>
                 <Th>国民年金</Th>
@@ -8510,10 +9606,18 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
 function CompareSection({
   items,
+  scenarios,
+  baselineScenario,
+  baselineScenarioId,
+  setBaselineScenarioId,
   periodSourceScenario,
   updateScenario,
 }: {
   items: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }[];
+  scenarios: ScenarioData[];
+  baselineScenario: ScenarioData;
+  baselineScenarioId: string;
+  setBaselineScenarioId: (id: string) => void;
   periodSourceScenario: ScenarioData;
   updateScenario: SectionProps["updateScenario"];
 }) {
@@ -8521,7 +9625,9 @@ function CompareSection({
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashPeriod);
   const compareRows = items.map(({ scenario, result }) => {
     const flexibleFreeCash = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
+    const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
     const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
+    const scenarioDiff = buildScenarioDiffSummary(baselineScenario, scenario);
     const yearCount = Math.max(1, result.annual.length);
     const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
     const sourceAssetIncome = result.annual.reduce((sum, row) => sum + row.sourceAssetIncomeWithdrawalAmount, 0);
@@ -8588,7 +9694,9 @@ function CompareSection({
       afterLivingCapacity,
       investmentIncludedNeed,
       flexibleFreeCash,
+      specialExpenseCategoryTotals,
       targetBalanceAnalysis,
+      scenarioDiff,
     };
   });
   const longevityChartData = compareRows.map(({ scenario, result, deficitAssetSale, sourceAssetIncome, plannedDrawdown, livingAndTaxNeed }) => ({
@@ -8604,7 +9712,7 @@ function CompareSection({
     taxSocialAverage: taxSocial / yearCount,
     afterLivingCapacityAverage: afterLivingCapacity / yearCount,
   }));
-  const baselineCompareRow = compareRows[0];
+  const baselineCompareRow = compareRows.find((row) => row.scenario.id === baselineScenario.id) ?? compareRows[0];
   const optionTaxSocialImpactRows = compareRows.map((row) => {
     const baselineTaxSocial = baselineCompareRow?.taxSocial ?? 0;
     const baselineOptionToLiquid = baselineCompareRow?.optionToLiquid ?? 0;
@@ -8646,25 +9754,11 @@ function CompareSection({
   };
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
-        <div className="rounded-md border bg-slate-50 px-4 py-3">
-          <div className="font-medium">このタブで見ること</div>
-          <p className="mt-1 text-muted-foreground">シナリオごとの差です。個別シナリオの詳細原因は、結果タブや税・社会保険タブで確認します。</p>
-        </div>
-        <div className="rounded-md border bg-slate-50 px-4 py-3">
-          <div className="font-medium">最初に見る列</div>
-          <p className="mt-1 text-muted-foreground">資産寿命、目標残高との差額、資産活用額、年平均余力を先に見ます。</p>
-        </div>
-        <div className="rounded-md border bg-slate-50 px-4 py-3">
-          <div className="font-medium">原因を見る時</div>
-          <p className="mt-1 text-muted-foreground">普通口座利益、税社保増分、NISA未実行は下の詳細比較で確認します。</p>
-        </div>
-      </div>
       <Card>
         <CardHeader>
           <CardTitle>複数シナリオ比較表</CardTitle>
           <CardDescription>
-            まず資産が持つかを見ます。次に、生活費・税社保を現金収入と普通口座から現金・普通預金へ戻した資金でどこまで賄えたか、税社保負担とNISA未実行を確認します。
+            まず資産寿命、目標残高との差額、資産活用額、楽しみ支出、NISA実行額を横並びで見ます。現在の比較基準は「{baselineScenario.name}」です。
           </CardDescription>
         </CardHeader>
         <CardContent className="border-b">
@@ -8672,29 +9766,24 @@ function CompareSection({
             <FlexibleFreeCashPeriodFields period={flexibleFreeCashPeriod} updateScenario={updateScenario} />
           </div>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            比較表の資産活用額は、ここで指定した同じ年齢範囲で全シナリオを集計します。追加投資は差し引かず、NISA未実行・追加投資列と分けて確認します。
+            比較表の資産活用額は、ここで指定した同じ年齢範囲で全シナリオを集計します。この入力欄は基本情報の資産活用集計期間と同期します。
+            基準シナリオの変更と入力差分の確認は、表の下の「比較基準と入力差分」で行います。
           </p>
         </CardContent>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1320px]">
+          <Table className="min-w-[1040px]">
             <thead>
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
-                <Th>指定年齢残高</Th>
-                <Th>指定年齢<br />目標残高</Th>
+                <Th>{periodSourceScenario.userProfile.targetBalanceAge}歳<br />残高</Th>
                 <Th>目標残高<br />との差額</Th>
-                <Th>判定</Th>
                 <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
-                <Th>{flexibleFreeCashLabel}<br />年平均余力</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
-                <Th>不足補填売却</Th>
-                <Th>収入化した原資</Th>
-                <Th>計画取り崩し</Th>
-                <Th>普通口座から<br />現金・普通預金へ</Th>
-                <Th>NISA未実行</Th>
-                <Th>追加投資</Th>
+                <Th>{flexibleFreeCashLabel}<br />楽しみ支出</Th>
+                <Th>NISA実行額</Th>
+                <Th>NISA残り枠</Th>
               </Tr>
             </thead>
             <tbody>
@@ -8702,13 +9791,10 @@ function CompareSection({
                 ({
                   scenario,
                   result,
-                  deficitAssetSale,
-                  sourceAssetIncome,
-                  plannedDrawdown,
-                  optionToLiquid,
-                  nisaSkipped,
-                  additionalInvestment,
+                  nisaExecuted,
+                  finalNisaRemainingLifetimeLimit,
                   flexibleFreeCash,
+                  specialExpenseCategoryTotals,
                   targetBalanceAnalysis,
                 }) => (
                 <Tr key={scenario.id}>
@@ -8716,29 +9802,76 @@ function CompareSection({
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
-                  <Td>{compactYen(targetBalanceAnalysis.targetAmount)}</Td>
                   <Td className={targetBalanceStatusClassNames[targetBalanceAnalysis.status]}>{compactYen(targetBalanceAnalysis.gap)}</Td>
-                  <Td className={targetBalanceStatusClassNames[targetBalanceAnalysis.status]}>{targetBalanceStatusLabels[targetBalanceAnalysis.status]}</Td>
                   <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
-                  <Td className={flexibleFreeCash.averageAnnualFreeCash < 0 ? "text-red-600" : "text-teal-700"}>{compactYen(flexibleFreeCash.averageAnnualFreeCash)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
-                  <Td>{compactYen(deficitAssetSale)}</Td>
-                  <Td>{compactYen(sourceAssetIncome)}</Td>
-                  <Td>{compactYen(plannedDrawdown)}</Td>
-                  <Td>{compactYen(optionToLiquid)}</Td>
-                  <Td className={nisaSkipped > 0 ? "text-red-600" : ""}>{compactYen(nisaSkipped)}</Td>
-                  <Td>{compactYen(additionalInvestment)}</Td>
+                  <Td>{compactYen(specialExpenseCategoryTotals.enjoyment)}</Td>
+                  <Td>{compactYen(nisaExecuted)}</Td>
+                  <Td>{compactLimitYen(finalNisaRemainingLifetimeLimit)}</Td>
                 </Tr>
                 ),
               )}
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            資産活用額、年平均余力、期間末残高は上で指定した年齢範囲で集計します。不足補填売却、収入化した原資、計画取り崩し、NISA未実行、追加投資は全シミュレーション期間の補助指標です。
-            年齢範囲内の収支感は「資産活用額」と「年平均余力」を主に見てください。
+            資産活用額、期間末残高、楽しみ支出は上で指定した年齢範囲で集計します。不足補填売却、収入化した原資、計画取り崩し、NISA未実行、追加投資は下の詳細比較や結果タブで確認します。
+            年齢範囲内の収支感は「資産活用額」を主に見て、追加投資やNISA未実行とは分けて確認してください。
           </p>
         </CardContent>
       </Card>
+      <ScenarioSyncDetails
+        title={`比較基準と入力差分（基準: ${baselineScenario.name}）`}
+        description="基準シナリオの変更と、各シナリオの入力条件差分を必要な時だけ確認します。"
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>比較基準</CardTitle>
+            <CardDescription>
+              ここで選んだシナリオを基準に、詳細比較の差分を計算します。シナリオを一番上に移動する必要はありません。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field label="基準シナリオ">
+              <Select value={baselineScenarioId} onChange={(event) => setBaselineScenarioId(event.target.value)} className="max-w-xl">
+                {scenarios.map((scenario) => (
+                  <option key={scenario.id} value={scenario.id}>
+                    {scenario.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              {compareRows.map((row) => (
+                <div key={`diff-${row.scenario.id}`} className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6">
+                  <div className="font-medium">{row.scenario.name}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    {row.scenario.id === baselineScenario.id ? "比較基準です。" : formatScenarioDiffHeadline(row.scenarioDiff)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </ScenarioSyncDetails>
+      <ScenarioSyncDetails
+        title="このタブの読み方"
+        description="表で先に見る列と、原因調査へ進む時の確認先を開きます。"
+      >
+        <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">このタブで見ること</div>
+            <p className="mt-1 text-muted-foreground">シナリオごとの差です。個別シナリオの詳細原因は、結果タブや税・社会保険タブで確認します。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">最初に見る列</div>
+            <p className="mt-1 text-muted-foreground">資産寿命、目標残高との差額、資産活用額、楽しみ支出、NISA実行額を先に見ます。</p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="font-medium">原因を見る時</div>
+            <p className="mt-1 text-muted-foreground">普通口座利益、税社保増分、NISA未実行は下の詳細比較で確認します。</p>
+          </div>
+        </div>
+      </ScenarioSyncDetails>
       <ScenarioSyncDetails
         title="普通口座オプション・税社保・NISAの詳細比較"
         description="基準シナリオとの差分原因を確認する時だけ開きます。"
@@ -8747,7 +9880,7 @@ function CompareSection({
         <CardHeader>
           <CardTitle>普通口座オプション利益と税社保増分</CardTitle>
           <CardDescription>
-            先頭シナリオを基準に、普通口座オプションの申告対象損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
+            選択した基準シナリオ「{baselineScenario.name}」に対して、普通口座オプションの申告対象損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
@@ -8890,7 +10023,7 @@ function ManualSection() {
             <li>収入で、給与、年金、iDeCo受取などのイベントと、対象メンバーを入れます。</li>
             <li>税・社会保険は、変化する年度だけ入力し、他年度は直近値を引き継ぎます。</li>
             <li>必要なら特別支出、シナリオ複製、比較を使います。</li>
-            <li>資産を有効に使う余地は、資産活用ビューで安全余力、クイック試算、入金力別診断の順に確認します。</li>
+            <li>資産を有効に使う余地は、資産活用ビューでタイムバケット、クイック試算、資産レビュー、入金力診断の順に確認します。</li>
           </ol>
         </CardContent>
       </Card>
@@ -8902,9 +10035,9 @@ function ManualSection() {
         </CardHeader>
         <CardContent className="grid gap-4 text-sm leading-7 md:grid-cols-2">
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <p className="font-medium">1. 資産活用レビュー</p>
+            <p className="font-medium">1. タイムバケット</p>
             <p className="mt-1 text-muted-foreground">
-              90歳目標との差額、資産活用中かどうか、楽しみ比率を先に見ます。ここで安全余力が不足している場合は、追加支出より先に安全性側を直します。
+              旅行・趣味・家族イベントなど、何をしたいかを先に整理します。計算に入れるものだけ特別支出へ変換します。
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
@@ -8914,15 +10047,15 @@ function ManualSection() {
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <p className="font-medium">3. 入金力別診断</p>
+            <p className="font-medium">3. 資産レビュー</p>
             <p className="mt-1 text-muted-foreground">
-              普通口座オプション収入を仮に月0〜50万円へ置き換え、税・社会保険を引いた実質手残りと、楽しみに増やせる年額の分岐点を見ます。
+              90歳目標との差額、資産活用中かどうか、楽しみ比率を見ます。安全余力が不足している場合は、追加支出より先に安全性側を直します。
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <p className="font-medium">4. 支出内訳</p>
+            <p className="font-medium">4. 入金力診断</p>
             <p className="mt-1 text-muted-foreground">
-              健康寿命期の支出が、生活維持だけでなく旅行・趣味・家族イベントなどの楽しみに向いているかを確認します。
+              普通口座オプション収入を仮に月0〜50万円へ置き換え、税・社会保険を引いた実質手残りと、楽しみに増やせる年額の分岐点を見ます。
             </p>
           </div>
         </CardContent>
@@ -9028,7 +10161,7 @@ function ManualSection() {
           <CardContent className="space-y-3 text-sm leading-7 text-muted-foreground">
             <p>入力内容はブラウザ内の LocalStorage に自動保存されます。</p>
             <p>「履歴に保存」で手動バックアップを残し、「JSONバックアップ作成」でファイルとしても保存できます。</p>
-            <p>デスクトップのショートカットからアプリを開き、上部タブの「マニュアル」をクリックするとこの画面を開けます。</p>
+            <p>デスクトップのショートカットからアプリを開き、画面右上の「マニュアル」をクリックするとこの画面を開けます。</p>
           </CardContent>
         </Card>
       </div>
@@ -9044,7 +10177,7 @@ function ManualSection() {
           </div>
           <div>
             <p className="font-medium">資産活用ビュー</p>
-            <p className="text-muted-foreground">健康寿命期に使える楽しみ支出、入金力別の手残り、分岐点を確認します。</p>
+            <p className="text-muted-foreground">やりたいことの整理、年額試算、安全余力、入金力別の手残りを順に確認します。</p>
           </div>
           <div>
             <p className="font-medium">比較</p>
@@ -9078,7 +10211,7 @@ function ManualSection() {
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <p className="font-medium">使い方を探す</p>
             <p className="mt-1 text-muted-foreground">
-              資産活用ビューで、健康寿命期に楽しみに使える余地、追加支出クイック試算、入金力別診断を確認します。
+              資産活用ビューで、やりたいことの整理、追加支出クイック試算、資産レビュー、入金力診断を確認します。
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
@@ -9452,14 +10585,16 @@ function EventEditor({
   onDelete,
   children,
   actions,
+  className,
 }: {
   title: string;
   onDelete: () => void;
   children: React.ReactNode;
   actions?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
+    <div className={`rounded-lg border bg-white p-4 ${className ?? ""}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">{title}</h3>
         <div className="flex flex-wrap items-center justify-end gap-2">

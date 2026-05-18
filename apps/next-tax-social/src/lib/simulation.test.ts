@@ -157,6 +157,7 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
       specificAccountWithholding: "withholding",
     },
     ...overrides,
+    timeBucketItems: overrides.timeBucketItems ?? [],
   };
 }
 
@@ -1073,6 +1074,17 @@ describe("simulation", () => {
     expect(result.monthly[0].capitalGainsTaxTotal).toBeGreaterThan(0);
     expect(result.monthly[0].withdrawalAmount).toBe(100_000);
     expect(result.monthly[0].grossAssetWithdrawalAmount).toBeGreaterThan(100_000);
+    expect(result.monthly[0].realizedGainDetails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKey: "specificAccount",
+          accountName: "特定口座",
+          reason: "deficitFunding",
+          taxTreatment: "withheldAtSale",
+        }),
+      ]),
+    );
+    expect(result.monthly[0].realizedGainDetails[0]?.taxWithheld).toBe(result.monthly[0].capitalGainsTaxTotal);
   });
 
   it("評価損益の推移用に口座別の評価額と取得原価を返す", () => {
@@ -6535,6 +6547,8 @@ describe("simulation", () => {
 
     expect(result.monthly[0].capitalGainsTaxTotal).toBe(0);
     expect(result.monthly[0].deferredCapitalGainsTaxTotal).toBeGreaterThan(0);
+    expect(result.monthly[0].realizedGainDetails[0]?.taxTreatment).toBe("deferredToNextYear");
+    expect(result.monthly[0].realizedGainDetails[0]?.deferredTax).toBe(result.monthly[0].deferredCapitalGainsTaxTotal);
     expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal).toBeGreaterThan(0);
   });
 
@@ -6654,6 +6668,15 @@ describe("simulation", () => {
 
     expect(result.monthly[0].capitalGainsTaxTotal).toBe(0);
     expect(result.annual.find((row) => row.year === 2026)?.declaredCapitalGainsIncomeTotal).toBeGreaterThan(0);
+    expect(result.monthly[0].realizedGainDetails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKey: "ordinaryAccountForOptions",
+          reason: "deficitFunding",
+          taxTreatment: "declaredIncome",
+        }),
+      ]),
+    );
     expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal ?? 0).toBeGreaterThan(
       noGainResult.monthly.find((row) => row.yearMonth === "2027-01")?.taxInsuranceTotal ?? 0,
     );

@@ -23,10 +23,13 @@ import type {
   RetirementIncomeEvent,
   TaxDeductionByFiscalYear,
   SpecialExpenseEvent,
+  TimeBucketBucketId,
+  TimeBucketItem,
 } from "@/types";
 
 type PlanStore = RetirementPlanState & {
   setActiveScenario: (id: string) => void;
+  setBaselineScenario: (id: string) => void;
   updateActiveScenario: (updater: (scenario: ScenarioData) => ScenarioData) => void;
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
   duplicateScenario: (id: string) => void;
@@ -75,6 +78,7 @@ const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] =
   "medicalCare",
   "familySupport",
 ];
+const timeBucketIds: TimeBucketBucketId[] = ["todo", "20s", "30s", "40s", "50s", "60s", "70s", "80s"];
 
 function normalizeExpenseKeys(source: unknown, fallback: (keyof MonthlyExpenseProfile)[]) {
   if (!Array.isArray(source)) return fallback;
@@ -111,14 +115,26 @@ function normalizeSpecialExpenses(source: LegacySpecialExpenseEvent[] | undefine
   }));
 }
 
+function normalizeTimeBucketItems(source: TimeBucketItem[] | undefined): TimeBucketItem[] {
+  return (source ?? []).map((item, index) => ({
+    id: item.id ?? `time-bucket-${index}`,
+    title: typeof item.title === "string" && item.title.trim() ? item.title : "やりたいこと",
+    bucketId: timeBucketIds.includes(item.bucketId) ? item.bucketId : "todo",
+    convertedSpecialExpenseId:
+      typeof item.convertedSpecialExpenseId === "string" && item.convertedSpecialExpenseId ? item.convertedSpecialExpenseId : undefined,
+    note: item.note,
+  }));
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
 
-function createSnapshot(state: Pick<RetirementPlanState, "version" | "activeScenarioId" | "scenarios" | "lastSavedAt">): RetirementPlanSnapshot {
+function createSnapshot(state: Pick<RetirementPlanState, "version" | "activeScenarioId" | "baselineScenarioId" | "scenarios" | "lastSavedAt">): RetirementPlanSnapshot {
   return {
     version: 1,
     activeScenarioId: state.activeScenarioId,
+    baselineScenarioId: state.baselineScenarioId,
     scenarios: structuredClone(state.scenarios),
     lastSavedAt: state.lastSavedAt,
   };
@@ -509,6 +525,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
         ? source.withdrawalOrder
         : structuredClone(baseScenario.withdrawalOrder),
     specialExpenses: normalizeSpecialExpenses(source.specialExpenses),
+    timeBucketItems: normalizeTimeBucketItems(source.timeBucketItems),
     taxInsurance: source.taxInsurance ?? [],
     taxDeductionEvents: normalizeTaxDeductionEvents(source),
     assetGrowthSettings: {
@@ -575,10 +592,14 @@ export function normalizePlanState(input: Partial<RetirementPlanState> | undefin
   const activeScenarioId = scenarios.some((scenario) => scenario.id === input?.activeScenarioId)
     ? input!.activeScenarioId!
     : scenarios[0].id;
+  const baselineScenarioId = scenarios.some((scenario) => scenario.id === input?.baselineScenarioId)
+    ? input!.baselineScenarioId!
+    : scenarios.find((scenario) => scenario.compare)?.id ?? scenarios[0].id;
 
   return {
     version: 1,
     activeScenarioId,
+    baselineScenarioId,
     scenarios,
     lastSavedAt: input?.lastSavedAt,
     backups: Array.isArray(input?.backups) ? input.backups.slice(0, maxBackups) : [],
@@ -590,6 +611,7 @@ export const usePlanStore = create<PlanStore>()(
     (set) => ({
       ...sampleState,
       setActiveScenario: (id) => set(touch({ activeScenarioId: id })),
+      setBaselineScenario: (id) => set(touch({ baselineScenarioId: id })),
       updateActiveScenario: (updater) =>
         set((state) => ({
           scenarios: state.scenarios.map((scenario) =>
@@ -635,6 +657,7 @@ export const usePlanStore = create<PlanStore>()(
           return {
             scenarios,
             activeScenarioId: state.activeScenarioId === id ? scenarios[0].id : state.activeScenarioId,
+            baselineScenarioId: state.baselineScenarioId === id ? scenarios.find((scenario) => scenario.compare)?.id ?? scenarios[0].id : state.baselineScenarioId,
             lastSavedAt: nowIso(),
             backups: rotateBackups(state.backups, createBackupEntry(state, "シナリオ削除前")),
           };
@@ -706,6 +729,7 @@ export const usePlanStore = create<PlanStore>()(
       partialize: (state) => ({
         version: state.version,
         activeScenarioId: state.activeScenarioId,
+        baselineScenarioId: state.baselineScenarioId,
         scenarios: state.scenarios,
         lastSavedAt: state.lastSavedAt,
         backups: state.backups,

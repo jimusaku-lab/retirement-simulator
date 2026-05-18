@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateAssetUseWaterfallRows,
   calculateSpecialExpenseCategoryTotals,
   calculateFlexibleFreeCashSummary,
   getAnnualFlexibleFreeCash,
@@ -145,6 +146,40 @@ describe("flexible free cash", () => {
     expect(summary.averageAnnualFreeCash).toBe(750_000);
     expect(summary.periodEndBalance).toBe(6_000_000);
     expect(summary.minimumLiquidBuffer).toBe(500_000);
+  });
+
+  it("builds asset use waterfall without subtracting additional investments", () => {
+    const annual = [
+      annualRow({
+        year: 2027,
+        ageYears: 60,
+        incomeTotal: 1_000_000,
+        optionProfitSweepTotal: 200_000,
+        optionAccountReleaseTotal: 300_000,
+        livingExpenseTotal: 900_000,
+        taxInsuranceTotal: 150_000,
+        capitalGainsTaxTotal: 20_000,
+        idecoWithholdingTaxTotal: 30_000,
+        specialExpenseTotal: 400_000,
+        idecoFeeTotal: 10_000,
+        assetContributionTotal: 9_000_000,
+      }),
+      annualRow({
+        year: 2028,
+        ageYears: 61,
+        incomeTotal: 500_000,
+        livingExpenseTotal: 700_000,
+      }),
+    ];
+
+    const rows = calculateAssetUseWaterfallRows({ annual }, { startAge: 60, endAge: 61 });
+    const rowByKey = new Map(rows.map((row) => [row.key, row]));
+
+    expect(rowByKey.get("cashIncome")?.amount).toBe(1_500_000);
+    expect(rowByKey.get("optionToLiquid")?.amount).toBe(500_000);
+    expect(rowByKey.get("tax")?.amount).toBe(-200_000);
+    expect(rowByKey.get("net")?.amount).toBe(-210_000);
+    expect(rowByKey.get("assetUse")?.amount).toBe(210_000);
   });
 
   it("summarizes special expenses by explicit category inside the selected period", () => {

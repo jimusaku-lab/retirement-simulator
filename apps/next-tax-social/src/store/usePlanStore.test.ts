@@ -32,6 +32,37 @@ describe("normalizePlanState", () => {
     expect(event.monthlyAmount).toBe(300_000);
     expect(event.sourceOptionSubAccountId).toBe("option-us");
   });
+
+  it("保存データに比較基準がない場合は比較対象の先頭を基準にする", () => {
+    const first = structuredClone(sampleState.scenarios[0]);
+    const second = structuredClone(sampleState.scenarios[1]);
+    first.compare = false;
+    second.compare = true;
+
+    const normalized = normalizePlanState({
+      version: 1,
+      activeScenarioId: first.id,
+      scenarios: [first, second],
+      lastSavedAt: undefined,
+      backups: [],
+    });
+
+    expect(normalized.baselineScenarioId).toBe(second.id);
+  });
+
+  it("保存済みの比較基準が存在する場合は維持する", () => {
+    const first = structuredClone(sampleState.scenarios[0]);
+    const second = structuredClone(sampleState.scenarios[1]);
+
+    const normalized = normalizePlanState({
+      ...sampleState,
+      activeScenarioId: first.id,
+      baselineScenarioId: second.id,
+      scenarios: [first, second],
+    });
+
+    expect(normalized.baselineScenarioId).toBe(second.id);
+  });
 });
 
 describe("usePlanStore scenario ordering", () => {
@@ -46,6 +77,18 @@ describe("usePlanStore scenario ordering", () => {
     expect(scenarios[1].id).toBe(sourceId);
     expect(scenarios[2].name).toBe(`${sourceName} コピー`);
     expect(usePlanStore.getState().activeScenarioId).toBe(scenarios[2].id);
+  });
+
+  it("比較基準シナリオを削除した場合は次の比較対象へ切り替える", () => {
+    usePlanStore.setState(structuredClone(sampleState));
+    const state = usePlanStore.getState();
+    const baselineId = state.scenarios[0].id;
+    const nextCompareId = state.scenarios.find((scenario) => scenario.id !== baselineId && scenario.compare)?.id ?? state.scenarios[1].id;
+
+    usePlanStore.setState({ baselineScenarioId: baselineId });
+    usePlanStore.getState().deleteScenario(baselineId);
+
+    expect(usePlanStore.getState().baselineScenarioId).toBe(nextCompareId);
   });
 
   it("シナリオの順番を上下に移動できる", () => {

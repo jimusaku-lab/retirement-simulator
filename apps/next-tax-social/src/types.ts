@@ -237,6 +237,16 @@ export type SpecialExpenseEvent = {
   note?: string;
 };
 
+export type TimeBucketBucketId = "todo" | "20s" | "30s" | "40s" | "50s" | "60s" | "70s" | "80s";
+
+export type TimeBucketItem = {
+  id: string;
+  title: string;
+  bucketId: TimeBucketBucketId;
+  convertedSpecialExpenseId?: string;
+  note?: string;
+};
+
 export type TaxInsuranceByFiscalYear = {
   id: string;
   fiscalYear: number;
@@ -363,6 +373,7 @@ export type ScenarioData = {
   assetTransferEvents: AssetTransferEvent[];
   withdrawalOrder: WithdrawalAssetKey[];
   specialExpenses: SpecialExpenseEvent[];
+  timeBucketItems: TimeBucketItem[];
   taxInsurance: TaxInsuranceByFiscalYear[];
   taxDeductionEvents: TaxDeductionByFiscalYear[];
   assetGrowthSettings: GrowthSettings;
@@ -401,6 +412,7 @@ export type MonthlyResult = {
   capitalGainsTaxTotal: number;
   deferredCapitalGainsTaxTotal: number;
   declaredCapitalGainsIncomeTotal: number;
+  realizedGainDetails: RealizedGainDetail[];
   idecoWithholdingTaxTotal: number;
   startingLiquidBuffer: number;
   endingLiquidBuffer: number;
@@ -420,6 +432,36 @@ export type MonthlyResult = {
   endingTrackedAssetBalances: GainTrackedAssetMap;
   endingTrackedAssetCostBasis: GainTrackedAssetMap;
   endingTrackedAssetUnrealizedGains: GainTrackedAssetMap;
+};
+
+export type RealizedGainReason =
+  | "deficitFunding"
+  | "sourceAssetIncome"
+  | "retainedSourceIncome"
+  | "optionSweep"
+  | "optionRelease"
+  | "plannedDrawdown";
+
+export type RealizedGainTaxTreatment =
+  | "withheldAtSale"
+  | "deferredToNextYear"
+  | "declaredIncome"
+  | "nonTaxable";
+
+export type RealizedGainDetail = {
+  yearMonth: YearMonth;
+  fiscalYear: number;
+  assetKey: "specificAccount" | "ordinaryAccountForOptions";
+  accountName: string;
+  grossWithdrawal: number;
+  costPortion: number;
+  realizedGain: number;
+  taxWithheld: number;
+  deferredTax: number;
+  declaredIncome: number;
+  netCashAdded: number;
+  reason: RealizedGainReason;
+  taxTreatment: RealizedGainTaxTreatment;
 };
 
 export type AnnualResult = {
@@ -498,6 +540,7 @@ export type SimulationResult = {
 export type RetirementPlanSnapshot = {
   version: 1;
   activeScenarioId: string;
+  baselineScenarioId: string;
   scenarios: ScenarioData[];
   lastSavedAt?: string;
 };

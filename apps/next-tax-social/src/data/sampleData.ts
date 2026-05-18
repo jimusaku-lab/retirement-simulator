@@ -131,6 +131,7 @@ const baseScenario: ScenarioData = {
     { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000, category: "enjoyment" },
     { id: "repair-2029", name: "住宅修繕", yearMonth: "2029-06", amount: 1_200_000, category: "housingCar" },
   ],
+  timeBucketItems: [],
   assetContributionEvents: [
     {
       id: "nisa-accumulate",
@@ -304,6 +305,7 @@ function scenarioWith(id: string, name: string, mutate: (scenario: ScenarioData)
 export const sampleState: RetirementPlanState = {
   version: 1,
   activeScenarioId: "base",
+  baselineScenarioId: "base",
   lastSavedAt: undefined,
   backups: [],
   scenarios: [
