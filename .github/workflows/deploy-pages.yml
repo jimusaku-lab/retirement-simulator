@@ -1,9 +1,6 @@
 name: Deploy retirement life planner
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
