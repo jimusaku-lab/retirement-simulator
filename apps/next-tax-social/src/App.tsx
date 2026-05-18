@@ -49,6 +49,7 @@ import {
   calculateAssetUseWaterfallRows,
   calculateSpecialExpenseCategoryTotals,
   calculateFlexibleFreeCashSummary,
+  getAnnualFlexibleFreeCash,
   normalizeFlexibleFreeCashPeriod,
   type SpecialExpenseCategory,
   type FlexibleFreeCashPeriod,
@@ -93,6 +94,7 @@ import {
 import { compactYen, downloadText, numberOrZero, yen } from "@/lib/utils";
 import {
   getBaseMonthlyExpense,
+  getSpecialExpenseAmountForMonth,
   getSimulationTargetAssets,
   getTotalAssets,
   isEventActive,
@@ -146,6 +148,7 @@ type TabKey = "dashboard" | "manual" | (typeof tabs)[number]["key"];
 type TabGroup = (typeof tabs)[number]["group"];
 type AppMode = "safety" | "assetUse";
 type AssetUseTab = "timeBucket" | "quickTrial" | "review" | "incomePower";
+type PrimaryNavKey = "dashboard" | "safety" | "assetUse" | "results" | "compare" | "data";
 type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
@@ -233,6 +236,33 @@ const tabGroupClassNames: Record<TabGroup, { active: string; inactive: string }>
 const enjoymentNavClassNames = {
   active: "border border-rose-400 bg-rose-100 text-rose-950 shadow-sm hover:bg-rose-100",
   inactive: "border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100",
+};
+
+const primarySectionClassNames: Record<PrimaryNavKey, { active: string; inactive: string }> = {
+  dashboard: {
+    active: primaryNavClassNames.dashboardActive,
+    inactive: primaryNavClassNames.dashboardInactive,
+  },
+  safety: {
+    active: primaryNavClassNames.safetyActive,
+    inactive: "border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100",
+  },
+  assetUse: {
+    active: primaryNavClassNames.assetActive,
+    inactive: "border border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100",
+  },
+  results: {
+    active: "border border-sky-700 bg-sky-700 text-white shadow-sm hover:bg-sky-800",
+    inactive: "border border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100",
+  },
+  compare: {
+    active: "border border-violet-700 bg-violet-700 text-white shadow-sm hover:bg-violet-800",
+    inactive: "border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100",
+  },
+  data: {
+    active: "border border-slate-700 bg-slate-700 text-white shadow-sm hover:bg-slate-800",
+    inactive: "border border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100",
+  },
 };
 
 const assetUseTabLabels: Record<AssetUseTab, string> = {
@@ -690,6 +720,27 @@ function App() {
     }, 80);
   };
 
+  const safetySubTabs = tabs.filter((tab) => !["results", "compare", "data"].includes(tab.key));
+  const safetySubTabKeys = new Set<TabKey>(safetySubTabs.map((tab) => tab.key));
+  const activePrimaryNav: PrimaryNavKey =
+    appMode === "assetUse"
+      ? "assetUse"
+      : activeTab === "dashboard"
+        ? "dashboard"
+        : activeTab === "results"
+          ? "results"
+          : activeTab === "compare"
+            ? "compare"
+            : activeTab === "data"
+              ? "data"
+              : "safety";
+  const primaryNavClass = (key: PrimaryNavKey) =>
+    `shrink-0 ${activePrimaryNav === key ? primarySectionClassNames[key].active : primarySectionClassNames[key].inactive}`;
+  const openSafetyNav = () => {
+    setAppModeHash("safety");
+    if (!safetySubTabKeys.has(activeTab)) setActiveTab("profile");
+  };
+
   return (
     <div className="min-h-screen">
       {restoreMessage && (
@@ -745,7 +796,7 @@ function App() {
             </Button>
           </div>
         </div>
-        <nav className="container flex gap-2 overflow-x-auto pb-3">
+        <nav className="container flex gap-2 overflow-x-auto pb-2">
           <Button
             variant="ghost"
             size="sm"
@@ -753,18 +804,15 @@ function App() {
               setAppModeHash("safety");
               setActiveTab("dashboard");
             }}
-            className={`shrink-0 ${appMode === "safety" && activeTab === "dashboard" ? primaryNavClassNames.dashboardActive : primaryNavClassNames.dashboardInactive}`}
+            className={primaryNavClass("dashboard")}
           >
             ダッシュボード
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              setAppModeHash("safety");
-              setActiveTab("dashboard");
-            }}
-            className={`shrink-0 ${appMode === "safety" && activeTab !== "dashboard" && activeTab !== "manual" ? primaryNavClassNames.safetyActive : primaryNavClassNames.safetyInactive}`}
+            onClick={openSafetyNav}
+            className={primaryNavClass("safety")}
           >
             安全性シミュレーション
           </Button>
@@ -775,11 +823,47 @@ function App() {
               setAssetUseTab("timeBucket");
               setAppModeHash("assetUse");
             }}
-            className={`shrink-0 ${appMode === "assetUse" ? primaryNavClassNames.assetActive : primaryNavClassNames.assetInactive}`}
+            className={primaryNavClass("assetUse")}
           >
             資産活用
           </Button>
-          {appMode === "safety" && activeTab !== "manual" && tabs.map((tab) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAppModeHash("safety");
+              setActiveTab("results");
+            }}
+            className={primaryNavClass("results")}
+          >
+            結果
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAppModeHash("safety");
+              setActiveTab("compare");
+            }}
+            className={primaryNavClass("compare")}
+          >
+            比較
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAppModeHash("safety");
+              setActiveTab("data");
+            }}
+            className={primaryNavClass("data")}
+          >
+            データ
+          </Button>
+        </nav>
+        {appMode === "safety" && activeTab !== "manual" && activePrimaryNav === "safety" && (
+          <nav className="container flex gap-2 overflow-x-auto pb-3">
+            {safetySubTabs.map((tab) => (
             <Button
               key={tab.key}
               variant="ghost"
@@ -789,9 +873,11 @@ function App() {
             >
               {tab.label}
             </Button>
-          ))}
-          {appMode === "assetUse" && (
-            <>
+            ))}
+          </nav>
+        )}
+        {appMode === "assetUse" && (
+          <nav className="container flex gap-2 overflow-x-auto pb-3">
               <Button
                 variant="ghost"
                 size="sm"
@@ -824,9 +910,8 @@ function App() {
               >
                 入金力診断
               </Button>
-            </>
-          )}
-        </nav>
+          </nav>
+        )}
       </header>
 
       <main className="container space-y-6 py-6">
@@ -2117,6 +2202,48 @@ function Dashboard({
     contribution: -row.assetContributionTotal,
     net: row.netCashFlow,
   }));
+  const annualEnjoymentChartData = result.annual
+    .filter((row) => row.ageYears >= flexibleFreeCashSummary.period.startAge && row.ageYears <= flexibleFreeCashSummary.period.endAge)
+    .map((annualRow) => {
+      const yearMonths = result.monthly
+        .filter((monthlyRow) => Number(monthlyRow.yearMonth.slice(0, 4)) === annualRow.year && monthlyRow.ageYears >= flexibleFreeCashSummary.period.startAge && monthlyRow.ageYears <= flexibleFreeCashSummary.period.endAge)
+        .map((monthlyRow) => monthlyRow.yearMonth);
+      const enjoyment = scenario.specialExpenses
+        .filter((event) => (event.category ?? "lifeMaintenance") === "enjoyment")
+        .reduce((eventSum, event) => {
+          return eventSum + yearMonths.reduce((monthSum, yearMonth) => {
+            return monthSum + (isSpecialExpenseActive(event, yearMonth) ? getSpecialExpenseAmountForMonth(scenario, event, yearMonth) : 0);
+          }, 0);
+        }, 0);
+      return {
+        label: yearEndAgeLabel(annualRow.year, annualRow.ageYears),
+        enjoyment,
+        assets: annualRow.endingAssets,
+      };
+    });
+  const annualAssetUseBreakdownChartData = result.annual
+    .filter((row) => row.ageYears >= flexibleFreeCashSummary.period.startAge && row.ageYears <= flexibleFreeCashSummary.period.endAge)
+    .map((row) => ({
+      label: yearEndAgeLabel(row.year, row.ageYears),
+      living: row.livingExpenseTotal,
+      tax: row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal,
+      special: row.specialExpenseTotal,
+      idecoFee: row.idecoFeeTotal,
+      assetUse: Math.max(0, -getAnnualFlexibleFreeCash(row)),
+    }));
+  const annualCapitalGainsChartData = result.annual
+    .filter(
+      (row) =>
+        row.ageYears >= flexibleFreeCashSummary.period.startAge &&
+        row.ageYears <= flexibleFreeCashSummary.period.endAge &&
+        (row.capitalGainsTaxTotal > 0 || row.deferredCapitalGainsTaxTotal > 0 || row.declaredCapitalGainsIncomeTotal > 0),
+    )
+    .map((row) => ({
+      label: yearEndAgeLabel(row.year, row.ageYears),
+      withheld: row.capitalGainsTaxTotal,
+      deferred: row.deferredCapitalGainsTaxTotal,
+      declaredIncome: row.declaredCapitalGainsIncomeTotal,
+    }));
   const assetUseWaterfallChartData = assetUseWaterfallRows.map((row) => ({
     ...row,
     displayAmount: row.amount,
@@ -2150,7 +2277,7 @@ function Dashboard({
         />
         <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="指定期間末の年末資産" />
         <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
-        <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="生活費、税社保、譲渡益税、iDeCo源泉の合計" />
+        <Metric title={`${flexibleFreeCashLabel} 生活・税社保支出`} value={compactYen(flexibleFreeCashSummary.livingExpenseTotal + flexibleFreeCashSummary.taxAndSocialTotal)} sub="判断用の要約。内訳は下のウォーターフォールで確認" />
         <Metric title={`${flexibleFreeCashLabel} その他特別支出`} value={compactYen(otherSpecialExpenseTotal)} sub="生活維持、住宅・車、医療、家族支援" />
         <Metric
           title="NISA実行額 / 残り枠"
@@ -2176,11 +2303,20 @@ function Dashboard({
         </CardContent>
       </Card>
 
+      {specialExpenseCategoryTotals.enjoyment === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="font-medium">楽しみ支出が未登録です</div>
+          <p className="mt-1 leading-6">
+            タイムバケットで候補を整理するか、資産活用タブのクイック試算で年額候補を試すと、健康寿命期に使えるお金を判断しやすくなります。
+          </p>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>{flexibleFreeCashLabel} 資産活用ウォーターフォール</CardTitle>
           <CardDescription>
-            現金収入と普通口座から流動資金へ戻した額で、生活費・税社保・特別支出をどこまで賄えたかを見ます。NISAなどの追加投資はここには含めません。
+            上の支出カードの根拠です。現金収入と普通口座から流動資金へ戻した額で、生活費・税社保・特別支出をどこまで賄えたかを見ます。NISAなどの追加投資はここには含めません。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -2248,6 +2384,97 @@ function Dashboard({
 
       <Card>
         <CardHeader>
+          <CardTitle>{flexibleFreeCashLabel} 楽しみ支出と資産残高</CardTitle>
+          <CardDescription>
+            健康寿命期に使う楽しみ支出を年齢別に見ます。棒は楽しみ支出、線は年末資産残高です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={annualEnjoymentChartData} barCategoryGap="32%" margin={{ top: 8, right: 18, bottom: 54, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+              <YAxis yAxisId="enjoyment" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <YAxis yAxisId="assets" orientation="right" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+              <Bar yAxisId="enjoyment" dataKey="enjoyment" name="楽しみ支出" fill="#e11d48" maxBarSize={22} />
+              <Line yAxisId="assets" type="monotone" dataKey="assets" name="年末資産残高" stroke="#0f766e" strokeWidth={3} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{flexibleFreeCashLabel} 資産活用額の年別内訳</CardTitle>
+          <CardDescription>
+            年ごとの支出要因と、現金収支で足りず資産で補った額を並べます。棒は支出要因、線は資産活用額です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={annualAssetUseBreakdownChartData} barCategoryGap="20%" barGap={2} margin={{ top: 8, right: 18, bottom: 54, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+              <YAxis yAxisId="spending" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <YAxis yAxisId="assetUse" orientation="right" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+              <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+              <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+              <Bar yAxisId="spending" dataKey="living" name="生活費" stackId="spending" fill="#475569" maxBarSize={24} />
+              <Bar yAxisId="spending" dataKey="tax" name="税社保・源泉/譲渡益税" stackId="spending" fill="#dc2626" maxBarSize={24} />
+              <Bar yAxisId="spending" dataKey="special" name="特別支出" stackId="spending" fill="#ea580c" maxBarSize={24} />
+              <Bar yAxisId="spending" dataKey="idecoFee" name="iDeCo手数料" stackId="spending" fill="#7c3aed" maxBarSize={24} />
+              <Line yAxisId="assetUse" type="monotone" dataKey="assetUse" name="資産活用額" stroke="#b45309" strokeWidth={3} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{flexibleFreeCashLabel} 譲渡益税と翌年申告利益</CardTitle>
+          <CardDescription>
+            棒は税額、紫の線は翌年の申告・税社保計算に入る普通口座オプション利益です。紫の線は税額ではありません。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-md border bg-red-50 px-4 py-3 text-red-950">
+              <div className="font-medium">棒: その年に直接見える税額</div>
+              <p className="mt-1 text-xs leading-5">売却時に差し引かれた譲渡益税、または源泉なし等で翌年扱いにする税額です。</p>
+            </div>
+            <div className="rounded-md border bg-violet-50 px-4 py-3 text-violet-950">
+              <div className="font-medium">紫の線: 翌年申告に入る利益額</div>
+              <p className="mt-1 text-xs leading-5">普通口座オプションの利益です。売却時に差し引かれる税額ではなく、翌年の所得税・住民税・国保等の計算に入ります。</p>
+            </div>
+          </div>
+          <div className="h-80">
+          {annualCapitalGainsChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={annualCapitalGainsChartData} barCategoryGap="24%" barGap={3} margin={{ top: 8, right: 18, bottom: 54, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={12} />
+                <YAxis yAxisId="tax" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                <YAxis yAxisId="income" orientation="right" tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
+                <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
+                <Bar yAxisId="tax" dataKey="withheld" name="売却時に差し引かれた譲渡益税" fill="#dc2626" maxBarSize={22} />
+                <Bar yAxisId="tax" dataKey="deferred" name="源泉なし等の翌年扱い税額" fill="#f97316" maxBarSize={22} />
+                <Line yAxisId="income" type="monotone" dataKey="declaredIncome" name="翌年申告に入る普通口座オプション利益" stroke="#7c3aed" strokeWidth={3} dot />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 text-sm text-muted-foreground">
+              {flexibleFreeCashLabel} に譲渡益課税・申告対象損益はありません。
+            </div>
+          )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>{flexibleFreeCashLabel} NISA実行・未実行・残り枠</CardTitle>
           <CardDescription>
             年ごとのNISA実行額と未実行額を棒で、残り生涯枠を線で見ます。左軸は年次額、右軸は残り枠です。
@@ -2294,12 +2521,15 @@ function Dashboard({
 
       <ScenarioDiffSummaryCard baselineScenario={baselineScenario} targetScenario={scenario} diffSummary={diffSummary} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>年別の流動資金（現金・普通預金）フロー</CardTitle>
-          <CardDescription>外部から入る現金収入と、普通口座から普通預金へ戻した利益移動、生活費・税社保・投資で出ていく金額を確認します。</CardDescription>
-        </CardHeader>
-        <CardContent className="h-[30rem]">
+      <details className="rounded-lg border bg-white px-4 py-3">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+          <span>
+            <span className="block font-medium">年別の流動資金（現金・普通預金）フロー</span>
+            <span className="text-sm text-muted-foreground">原因調査用の詳細チャートです。必要な時だけ開きます。</span>
+          </span>
+          <span className="rounded-md border bg-slate-50 px-3 py-1 text-sm text-muted-foreground">開く</span>
+        </summary>
+        <div className="mt-4 h-[30rem]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={cashflowChartData} barCategoryGap="18%" barGap={2} maxBarSize={14} margin={{ top: 8, right: 28, bottom: 72, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -2317,8 +2547,8 @@ function Dashboard({
               <Bar dataKey="net" name="純現金収支" fill="#2563eb" />
             </BarChart>
           </ResponsiveContainer>
-        </CardContent>
-      </Card>
+        </div>
+      </details>
     </div>
   );
 }
@@ -7049,8 +7279,18 @@ function joinLabels<T extends string>(values: Iterable<T>, labels: Record<T, str
   return [...values].map((value) => labels[value]).join(" / ");
 }
 
+function affectsTaxOrFiling(detail: RealizedGainDetail) {
+  return detail.taxWithheld > 0 || detail.deferredTax > 0 || detail.declaredIncome > 0;
+}
+
+function isNonTaxableCashMovement(detail: RealizedGainDetail) {
+  return detail.grossWithdrawal > 0 && detail.realizedGain === 0 && detail.taxWithheld === 0 && detail.deferredTax === 0 && detail.declaredIncome === 0;
+}
+
 function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[] }) {
-  const summaryRows = useMemo(() => summarizeRealizedGainDetails(details), [details]);
+  const taxableDetails = useMemo(() => details.filter(affectsTaxOrFiling), [details]);
+  const nonTaxableCashMovementDetails = useMemo(() => details.filter(isNonTaxableCashMovement), [details]);
+  const summaryRows = useMemo(() => summarizeRealizedGainDetails(taxableDetails), [taxableDetails]);
   const totals = useMemo(
     () =>
       details.reduce(
@@ -7112,7 +7352,7 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
               </thead>
               <tbody>
                 {summaryRows.map((row) => (
-                  <Tr key={`${row.fiscalYear}-${row.assetKey}-${row.accountName}`}>
+                  <Tr key={`${row.fiscalYear}-${row.assetKey}-${row.accountName}-${joinLabels(row.reasons, realizedGainReasonLabels)}-${joinLabels(row.treatments, realizedGainTreatmentLabels)}`}>
                     <Td>{row.fiscalYear}</Td>
                     <Td>
                       <div className="font-medium">{row.accountName}</div>
@@ -7153,7 +7393,7 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
                   </Tr>
                 </thead>
                 <tbody>
-                  {details.map((detail, index) => (
+                  {taxableDetails.map((detail, index) => (
                     <Tr key={`${detail.yearMonth}-${detail.accountName}-${index}`}>
                       <Td>{detail.yearMonth}</Td>
                       <Td>{detail.fiscalYear}</Td>
@@ -7173,6 +7413,46 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
             </div>
           </details>
         </div>
+      )}
+      {nonTaxableCashMovementDetails.length > 0 && (
+        <details className="rounded-lg border bg-white px-4 py-3">
+          <summary className="cursor-pointer list-none text-sm font-medium">
+            課税されない資金移動を開く ({nonTaxableCashMovementDetails.length}件)
+          </summary>
+          <p className="mt-2 text-sm text-muted-foreground">
+            すでに申告対象化済みの原資移動など、売却時譲渡益税や申告対象損益に影響しない移動です。
+          </p>
+          <div className="mt-3 overflow-x-auto rounded-lg border">
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>年月</Th>
+                  <Th>所得発生年度</Th>
+                  <Th>口座</Th>
+                  <Th>移動額</Th>
+                  <Th>取得原価部分</Th>
+                  <Th>手取り額</Th>
+                  <Th>理由</Th>
+                  <Th>扱い</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {nonTaxableCashMovementDetails.map((detail, index) => (
+                  <Tr key={`${detail.yearMonth}-${detail.accountName}-non-tax-${index}`}>
+                    <Td>{detail.yearMonth}</Td>
+                    <Td>{detail.fiscalYear}</Td>
+                    <Td>{detail.accountName}</Td>
+                    <Td>{yen(detail.grossWithdrawal)}</Td>
+                    <Td>{yen(detail.costPortion)}</Td>
+                    <Td>{yen(detail.netCashAdded)}</Td>
+                    <Td>{realizedGainReasonLabels[detail.reason]}</Td>
+                    <Td>{realizedGainTreatmentLabels[detail.taxTreatment]}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </details>
       )}
     </ScenarioSyncDetails>
   );

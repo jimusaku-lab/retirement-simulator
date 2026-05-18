@@ -23,7 +23,6 @@ import type {
   RetirementIncomeEvent,
   TaxDeductionByFiscalYear,
   SpecialExpenseEvent,
-  TimeBucketBucketId,
   TimeBucketItem,
 } from "@/types";
 
@@ -78,8 +77,6 @@ const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] =
   "medicalCare",
   "familySupport",
 ];
-const timeBucketIds: TimeBucketBucketId[] = ["todo", "20s", "30s", "40s", "50s", "60s", "70s", "80s"];
-
 function normalizeExpenseKeys(source: unknown, fallback: (keyof MonthlyExpenseProfile)[]) {
   if (!Array.isArray(source)) return fallback;
   const keys = source.filter((key): key is keyof MonthlyExpenseProfile => monthlyExpenseKeys.includes(key as keyof MonthlyExpenseProfile));
@@ -119,7 +116,7 @@ function normalizeTimeBucketItems(source: TimeBucketItem[] | undefined): TimeBuc
   return (source ?? []).map((item, index) => ({
     id: item.id ?? `time-bucket-${index}`,
     title: typeof item.title === "string" && item.title.trim() ? item.title : "やりたいこと",
-    bucketId: timeBucketIds.includes(item.bucketId) ? item.bucketId : "todo",
+    bucketId: typeof item.bucketId === "string" && item.bucketId ? item.bucketId : "todo",
     convertedSpecialExpenseId:
       typeof item.convertedSpecialExpenseId === "string" && item.convertedSpecialExpenseId ? item.convertedSpecialExpenseId : undefined,
     note: item.note,

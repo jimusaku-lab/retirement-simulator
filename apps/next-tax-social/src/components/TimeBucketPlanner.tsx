@@ -1,22 +1,35 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { DEFAULT_FLEXIBLE_FREE_CASH_PERIOD, normalizeFlexibleFreeCashPeriod } from "@/lib/flexibleFreeCash";
 import { compactYen, numberOrZero } from "@/lib/utils";
-import type { HouseholdMember, ScenarioData, SpecialExpenseEvent, TimeBucketBucketId, TimeBucketItem } from "@/types";
+import type { HouseholdMember, ScenarioData, SpecialExpenseEvent, TimeBucketBucket, TimeBucketBucketId, TimeBucketItem } from "@/types";
 
-const buckets: { id: TimeBucketBucketId; label: string; tone: string }[] = [
-  { id: "todo", label: "やりたいことリスト", tone: "bg-white text-slate-800" },
-  { id: "20s", label: "20代", tone: "bg-emerald-50 text-emerald-800" },
-  { id: "30s", label: "30代", tone: "bg-cyan-50 text-cyan-800" },
-  { id: "40s", label: "40代", tone: "bg-sky-50 text-sky-800" },
-  { id: "50s", label: "50代", tone: "bg-indigo-50 text-indigo-800" },
-  { id: "60s", label: "60代", tone: "bg-amber-50 text-amber-800" },
-  { id: "70s", label: "70代", tone: "bg-orange-50 text-orange-800" },
-  { id: "80s", label: "80代", tone: "bg-rose-50 text-rose-800" },
+type TimeBucketMode = "retirement" | "decade";
+
+const decadeBuckets: TimeBucketBucket[] = [
+  { id: "todo", label: "やりたいことリスト", kind: "todo", tone: "bg-white text-slate-800" },
+  { id: "20s", label: "20代", kind: "decade", startAge: 20, endAge: 29, defaultYearMonthAge: 20, tone: "bg-emerald-50 text-emerald-800" },
+  { id: "30s", label: "30代", kind: "decade", startAge: 30, endAge: 39, defaultYearMonthAge: 30, tone: "bg-cyan-50 text-cyan-800" },
+  { id: "40s", label: "40代", kind: "decade", startAge: 40, endAge: 49, defaultYearMonthAge: 40, tone: "bg-sky-50 text-sky-800" },
+  { id: "50s", label: "50代", kind: "decade", startAge: 50, endAge: 59, defaultYearMonthAge: 50, tone: "bg-indigo-50 text-indigo-800" },
+  { id: "60s", label: "60代", kind: "decade", startAge: 60, endAge: 69, defaultYearMonthAge: 60, tone: "bg-amber-50 text-amber-800" },
+  { id: "70s", label: "70代", kind: "decade", startAge: 70, endAge: 79, defaultYearMonthAge: 70, tone: "bg-orange-50 text-orange-800" },
+  { id: "80s", label: "80代", kind: "decade", startAge: 80, endAge: 89, defaultYearMonthAge: 80, tone: "bg-rose-50 text-rose-800" },
+];
+
+const retirementBucketTones = [
+  "bg-emerald-50 text-emerald-800",
+  "bg-cyan-50 text-cyan-800",
+  "bg-sky-50 text-sky-800",
+  "bg-indigo-50 text-indigo-800",
+  "bg-amber-50 text-amber-800",
+  "bg-orange-50 text-orange-800",
+  "bg-rose-50 text-rose-800",
 ];
 
 type ConversionDraft = {
@@ -43,7 +56,10 @@ type TimeBucketPlannerProps = {
 
 function ageFromBucket(bucketId: TimeBucketBucketId) {
   if (bucketId === "todo") return undefined;
-  return Number(bucketId.replace("s", ""));
+  if (/^\d0s$/.test(bucketId)) return Number(bucketId.replace("s", ""));
+  const ageRangeMatch = bucketId.match(/^age-(\d+)(?:-\d+|-plus)$/);
+  if (ageRangeMatch) return Number(ageRangeMatch[1]);
+  return undefined;
 }
 
 function ageAtYearMonth(birthDate: string, yearMonth: string) {
@@ -84,10 +100,63 @@ function yearMonthForAge(birthDate: string, age: number | undefined, fallback: s
   return `${birthYear + age}-${String(birthMonth).padStart(2, "0")}`;
 }
 
-function createDraft(scenario: ScenarioData, itemId: string, bucketId: TimeBucketBucketId): ConversionDraft {
+function hasFlexibleFreeCashPeriod(scenario: ScenarioData) {
+  return scenario.userProfile.flexibleFreeCashStartAge !== undefined || scenario.userProfile.flexibleFreeCashEndAge !== undefined;
+}
+
+function getScenarioFlexibleFreeCashPeriod(scenario: ScenarioData) {
+  return normalizeFlexibleFreeCashPeriod({
+    startAge: scenario.userProfile.flexibleFreeCashStartAge,
+    endAge: scenario.userProfile.flexibleFreeCashEndAge,
+  });
+}
+
+function defaultTimeBucketMode(scenario: ScenarioData): TimeBucketMode {
+  const currentAge = ageAtYearMonth(scenario.userProfile.birthDate, scenario.userProfile.simulationStartYearMonth);
+  return (currentAge !== undefined && currentAge >= 50) || hasFlexibleFreeCashPeriod(scenario) ? "retirement" : "decade";
+}
+
+function createRetirementBuckets(scenario: ScenarioData): TimeBucketBucket[] {
+  const period = getScenarioFlexibleFreeCashPeriod(scenario);
+  const buckets: TimeBucketBucket[] = [
+    { id: "todo", label: "やりたいことリスト", kind: "todo", tone: "bg-white text-slate-800" },
+    { id: "now", label: "今すぐ・準備中", kind: "relative", tone: "bg-teal-50 text-teal-800" },
+  ];
+
+  let toneIndex = 0;
+  for (let startAge = period.startAge; startAge <= period.endAge; startAge += 2) {
+    const endAge = Math.min(startAge + 1, period.endAge);
+    const label = startAge === endAge ? `${startAge}歳` : `${startAge}〜${endAge}歳`;
+    buckets.push({
+      id: `age-${startAge}-${endAge}`,
+      label,
+      kind: "ageRange",
+      startAge,
+      endAge,
+      defaultYearMonthAge: startAge,
+      tone: retirementBucketTones[toneIndex % retirementBucketTones.length],
+    });
+    toneIndex += 1;
+  }
+
+  const laterAge = period.endAge + 1;
+  buckets.push({
+    id: `age-${laterAge}-plus`,
+    label: `${laterAge}歳以降`,
+    kind: "later",
+    startAge: laterAge,
+    defaultYearMonthAge: laterAge,
+    tone: retirementBucketTones[toneIndex % retirementBucketTones.length],
+  });
+  buckets.push({ id: "hold", label: "保留・やらない", kind: "hold", tone: "bg-slate-100 text-slate-700" });
+  return buckets;
+}
+
+function createDraft(scenario: ScenarioData, itemId: string, bucket: TimeBucketBucket): ConversionDraft {
+  const defaultAge = bucket.kind === "relative" ? undefined : bucket.defaultYearMonthAge ?? bucket.startAge ?? ageFromBucket(bucket.id);
   return {
     itemId,
-    yearMonth: yearMonthForAge(scenario.userProfile.birthDate, ageFromBucket(bucketId), scenario.userProfile.simulationStartYearMonth),
+    yearMonth: yearMonthForAge(scenario.userProfile.birthDate, defaultAge, scenario.userProfile.simulationStartYearMonth),
     amount: 0,
     category: "enjoyment",
     schedule: "once",
@@ -166,6 +235,7 @@ function cloneTimeBucketSetForTarget(source: ScenarioData, includeLinkedSpecialE
 
 export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateScenarios, onOpenSpecialExpenses }: TimeBucketPlannerProps) {
   const [newTitle, setNewTitle] = useState("");
+  const [timeBucketMode, setTimeBucketMode] = useState<TimeBucketMode>(() => defaultTimeBucketMode(scenario));
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverBucketId, setDragOverBucketId] = useState<TimeBucketBucketId | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
@@ -179,7 +249,22 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
 
   const currentAge = ageAtYearMonth(scenario.userProfile.birthDate, scenario.userProfile.simulationStartYearMonth);
   const firstVisibleDecade = decadeStartForAge(currentAge);
-  const visibleBuckets = buckets.filter((bucket) => bucket.id === "todo" || (ageFromBucket(bucket.id) ?? 0) >= firstVisibleDecade);
+  const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
+  const retirementBuckets = useMemo(() => createRetirementBuckets(scenario), [scenario.userProfile.flexibleFreeCashStartAge, scenario.userProfile.flexibleFreeCashEndAge]);
+  const visibleBuckets = useMemo(() => {
+    if (timeBucketMode === "decade") {
+      return decadeBuckets.filter((bucket) => bucket.id === "todo" || (ageFromBucket(bucket.id) ?? 0) >= firstVisibleDecade);
+    }
+    const visibleBucketIds = new Set(retirementBuckets.map((bucket) => bucket.id));
+    const legacyBucketsWithItems = decadeBuckets
+      .filter((bucket) => bucket.id !== "todo" && scenario.timeBucketItems.some((item) => item.bucketId === bucket.id))
+      .map((bucket) => ({
+        ...bucket,
+        label: `${bucket.label}から移行`,
+        tone: "bg-slate-50 text-slate-700",
+      }));
+    return [...retirementBuckets, ...legacyBucketsWithItems.filter((bucket) => !visibleBucketIds.has(bucket.id))];
+  }, [firstVisibleDecade, retirementBuckets, scenario.timeBucketItems, timeBucketMode]);
   const convertingItem = scenario.timeBucketItems.find((item) => item.id === conversionDraft?.itemId);
   const syncSourceScenario = scenarios.find((item) => item.id === syncSourceScenarioId) ?? scenario;
   const syncSelectedTargetIdSet = new Set(syncSelectedTargetIds);
@@ -196,6 +281,10 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
   const syncLinkedExpenseCount = syncSourceScenario.timeBucketItems.filter((item) =>
     syncSourceScenario.specialExpenses.some((event) => event.id === item.convertedSpecialExpenseId),
   ).length;
+
+  useEffect(() => {
+    setTimeBucketMode(defaultTimeBucketMode(scenario));
+  }, [scenario.id]);
 
   const addItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -340,7 +429,7 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
       <Card>
         <CardHeader>
           <CardTitle>タイムバケット・プランナー</CardTitle>
-          <CardDescription>人生でやりたいことを年代ごとに整理し、必要なものだけ楽しみ支出へ変換します。</CardDescription>
+          <CardDescription>人生でやりたいことを実行時期ごとに整理し、必要なものだけ楽しみ支出へ変換します。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <form onSubmit={addItem} className="rounded-lg border bg-slate-50 p-4">
@@ -361,9 +450,38 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
             </div>
           </form>
           <div className="rounded-md border bg-white px-4 py-3 text-sm text-muted-foreground">
-            基本情報の生年月日とシミュレーション開始年月から、開始時点の年齢を
-            <span className="font-medium text-foreground"> {currentAge ?? "-"}歳 </span>
-            として扱い、{firstVisibleDecade}代以降のバケットだけを表示しています。
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                基本情報の生年月日とシミュレーション開始年月から、開始時点の年齢を
+                <span className="font-medium text-foreground"> {currentAge ?? "-"}歳 </span>
+                として扱います。
+                {timeBucketMode === "retirement"
+                  ? ` 退職後プランモードでは、資産活用期間の${flexibleFreeCashPeriod.startAge}〜${flexibleFreeCashPeriod.endAge}歳を2年単位で整理します。`
+                  : ` 年代モードでは、${firstVisibleDecade}代以降のバケットだけを表示します。`}
+              </div>
+              <div className="inline-flex rounded-md border bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setTimeBucketMode("retirement")}
+                  className={[
+                    "rounded px-3 py-1.5 text-sm transition",
+                    timeBucketMode === "retirement" ? "bg-white font-medium text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950",
+                  ].join(" ")}
+                >
+                  退職後プラン
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeBucketMode("decade")}
+                  className={[
+                    "rounded px-3 py-1.5 text-sm transition",
+                    timeBucketMode === "decade" ? "bg-white font-medium text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950",
+                  ].join(" ")}
+                >
+                  年代
+                </button>
+              </div>
+            </div>
           </div>
 
           {conversionDraft && convertingItem && (
@@ -526,13 +644,16 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] gap-4">
         {visibleBuckets.map((bucket) => {
           const bucketItems = scenario.timeBucketItems.filter((item) => item.bucketId === bucket.id);
           const ageLabels = bucketMemberAgeLabels(bucket.id, scenario);
+          const isTodoBucket = bucket.id === "todo";
+          const todoColumnCount = isTodoBucket ? Math.max(1, Math.ceil(bucketItems.length / 5)) : 1;
           return (
             <section
               key={bucket.id}
+              style={isTodoBucket ? { gridColumn: `span ${Math.min(todoColumnCount, 4)}` } : undefined}
               className={[
                 "flex min-h-64 flex-col rounded-lg border bg-white p-4 shadow-sm transition",
                 dragOverBucketId === bucket.id ? "border-blue-500 shadow-md ring-2 ring-blue-100" : "",
@@ -559,7 +680,12 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
                   <span className="mt-1 block text-xs font-medium text-slate-600">{ageLabels.join("、")}</span>
                 )}
               </h3>
-              <div className="mt-4 flex flex-1 flex-col gap-3">
+              <div
+                className={[
+                  "mt-4 flex-1 gap-3",
+                  isTodoBucket ? "grid grid-flow-col grid-rows-5 auto-cols-[minmax(14rem,1fr)] items-start" : "flex flex-col",
+                ].join(" ")}
+              >
                 {bucketItems.map((item) => {
                   const linkedSpecialExpense = scenario.specialExpenses.find((event) => event.id === item.convertedSpecialExpenseId);
                   const converted = Boolean(linkedSpecialExpense);
@@ -636,9 +762,17 @@ export function TimeBucketPlanner({ scenario, scenarios, updateScenario, updateS
                             </Button>
                           </>
                         ) : (
-                          <Button variant="outline" size="sm" onClick={() => setConversionDraft(createDraft(scenario, item.id, item.bucketId))}>
-                            楽しみ支出へ
-                          </Button>
+                          <>
+                            {bucket.kind === "hold" ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                                支出化しない候補
+                              </span>
+                            ) : (
+                              <Button variant="outline" size="sm" onClick={() => setConversionDraft(createDraft(scenario, item.id, bucket))}>
+                                楽しみ支出へ
+                              </Button>
+                            )}
+                          </>
                         )}
                       </div>
                     </article>

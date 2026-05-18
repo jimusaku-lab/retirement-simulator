@@ -237,7 +237,17 @@ export type SpecialExpenseEvent = {
   note?: string;
 };
 
-export type TimeBucketBucketId = "todo" | "20s" | "30s" | "40s" | "50s" | "60s" | "70s" | "80s";
+export type TimeBucketBucketId = string;
+
+export type TimeBucketBucket = {
+  id: TimeBucketBucketId;
+  label: string;
+  kind: "todo" | "decade" | "ageRange" | "relative" | "later" | "hold";
+  startAge?: number;
+  endAge?: number;
+  defaultYearMonthAge?: number;
+  tone?: string;
+};
 
 export type TimeBucketItem = {
   id: string;
