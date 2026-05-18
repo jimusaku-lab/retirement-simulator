@@ -36,6 +36,7 @@ type PlanStore = RetirementPlanState & {
   deleteScenario: (id: string) => void;
   moveScenario: (id: string, direction: "up" | "down") => void;
   toggleScenarioCompare: (id: string) => void;
+  loadState: (state: RetirementPlanState) => void;
   replaceState: (state: RetirementPlanState) => void;
   resetToSample: () => void;
   createBackup: (label?: string) => void;
@@ -681,6 +682,7 @@ export const usePlanStore = create<PlanStore>()(
           ),
           lastSavedAt: nowIso(),
         })),
+      loadState: (state) => set(normalizePlanState(state)),
       replaceState: (state) =>
         set((current) => {
           const normalized = normalizePlanState(state);

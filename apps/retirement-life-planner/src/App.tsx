@@ -153,6 +153,11 @@ type PrimaryNavKey = "dashboard" | "safety" | "assetUse" | "results" | "compare"
 type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
+type SharedSaveState = {
+  status: "checking" | "empty" | "synced" | "saving" | "unavailable" | "error";
+  message: string;
+  lastSyncedAt?: string;
+};
 
 const RESIDENT_TAX_BASIC_DEDUCTION_FOR_DISPLAY = 430_000;
 const RESIDENT_TAX_RATE_FOR_DISPLAY = 0.1;
@@ -528,12 +533,28 @@ function shouldIgnoreTaxExpenseField(scenario: ScenarioData) {
   return getEffectiveTaxRows(scenario).length > 0;
 }
 
+function isPlanState(value: unknown): value is RetirementPlanState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Partial<RetirementPlanState>).version === 1 &&
+    Array.isArray((value as Partial<RetirementPlanState>).scenarios) &&
+    ((value as Partial<RetirementPlanState>).scenarios?.length ?? 0) > 0
+  );
+}
+
 function App() {
   const [appMode, setAppMode] = useState<AppMode>(() => appModeFromHash());
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [assetUseTab, setAssetUseTab] = useState<AssetUseTab>("timeBucket");
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [sharedSave, setSharedSave] = useState<SharedSaveState>({
+    status: "checking",
+    message: "共有保存を確認中です。",
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sharedSaveEnabledRef = useRef(false);
+  const lastSharedPayloadRef = useRef<string | null>(null);
   const {
     scenarios,
     activeScenarioId,
@@ -546,6 +567,7 @@ function App() {
     deleteScenario,
     moveScenario,
     toggleScenarioCompare,
+    loadState,
     replaceState,
     resetToSample,
     lastSavedAt,
@@ -557,6 +579,11 @@ function App() {
 
   const activeScenario = scenarios.find((scenario) => scenario.id === activeScenarioId) ?? scenarios[0];
   const baselineScenario = scenarios.find((scenario) => scenario.id === baselineScenarioId) ?? scenarios.find((scenario) => scenario.compare) ?? scenarios[0];
+  const currentPlanState = useMemo<RetirementPlanState>(
+    () => ({ version: 1, activeScenarioId, baselineScenarioId, scenarios, lastSavedAt, backups }),
+    [activeScenarioId, baselineScenarioId, scenarios, lastSavedAt, backups],
+  );
+  const currentPlanPayload = useMemo(() => JSON.stringify(currentPlanState), [currentPlanState]);
   const deferredScenarios = useDeferredValue(scenarios);
   const result = useMemo(() => simulateScenario(activeScenario), [activeScenario]);
   const allResults = useMemo(
@@ -616,6 +643,105 @@ function App() {
     const timer = window.setTimeout(() => setRestoreMessage(null), 6000);
     return () => window.clearTimeout(timer);
   }, [restoreMessage]);
+
+  const saveSharedPlan = async (state: RetirementPlanState, options?: { enableAutoSave?: boolean; showMessage?: boolean }) => {
+    const payload = JSON.stringify(state, null, 2);
+    setSharedSave((current) => ({
+      ...current,
+      status: "saving",
+      message: "共有保存へ保存中です。",
+    }));
+    const response = await fetch("/api/plan", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    });
+    if (!response.ok) {
+      throw new Error(`共有保存に失敗しました。HTTP ${response.status}`);
+    }
+    lastSharedPayloadRef.current = JSON.stringify(state);
+    if (options?.enableAutoSave) sharedSaveEnabledRef.current = true;
+    const syncedAt = new Date().toISOString();
+    setSharedSave({
+      status: "synced",
+      message: "共有保存と同期済みです。",
+      lastSyncedAt: syncedAt,
+    });
+    if (options?.showMessage) {
+      setRestoreMessage("共有保存へ保存しました。今後はこのPCと奥様のPCで同じ共有データを読み書きできます。");
+    }
+  };
+
+  const saveCurrentPlanToShared = async () => {
+    try {
+      await saveSharedPlan(currentPlanState, { enableAutoSave: true, showMessage: true });
+    } catch (error) {
+      setSharedSave({
+        status: "error",
+        message: error instanceof Error ? error.message : "共有保存に失敗しました。",
+      });
+      setRestoreMessage(error instanceof Error ? error.message : "共有保存に失敗しました。");
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/plan", { cache: "no-store" })
+      .then(async (response) => {
+        if (response.status === 404) {
+          if (!cancelled) {
+            sharedSaveEnabledRef.current = false;
+            setSharedSave({
+              status: "empty",
+              message: "共有保存はまだ空です。最初にこのPCのデータを共有保存へ保存してください。",
+            });
+          }
+          return;
+        }
+        if (!response.ok) throw new Error(`共有保存を読み込めませんでした。HTTP ${response.status}`);
+        const plan = (await response.json()) as unknown;
+        if (!isPlanState(plan)) throw new Error("共有保存の形式が正しくありません。");
+        if (cancelled) return;
+        lastSharedPayloadRef.current = JSON.stringify(plan);
+        sharedSaveEnabledRef.current = true;
+        loadState(plan);
+        setSharedSave({
+          status: "synced",
+          message: "共有保存から読み込みました。",
+          lastSyncedAt: new Date().toISOString(),
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        sharedSaveEnabledRef.current = false;
+        setSharedSave({
+          status: "unavailable",
+          message: error instanceof Error ? error.message : "共有保存を利用できません。",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadState]);
+
+  useEffect(() => {
+    if (!sharedSaveEnabledRef.current) return undefined;
+    if (lastSharedPayloadRef.current === currentPlanPayload) return undefined;
+
+    const timer = window.setTimeout(() => {
+      saveSharedPlan(currentPlanState).catch((error: unknown) => {
+        sharedSaveEnabledRef.current = false;
+        setSharedSave({
+          status: "error",
+          message: error instanceof Error ? error.message : "共有保存に失敗しました。",
+        });
+      });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [currentPlanPayload, currentPlanState]);
 
   const updateScenario = (updater: (scenario: ScenarioData) => void) => {
     updateActiveScenario((scenario) => {
@@ -767,6 +893,17 @@ function App() {
             <span>{restoreMessage}</span>
             <Button variant="ghost" size="sm" onClick={() => setRestoreMessage(null)}>
               閉じる
+            </Button>
+          </div>
+        </div>
+      )}
+      {!restoreMessage && sharedSave.status === "empty" && (
+        <div className="border-b bg-sky-50 px-4 py-2 text-sm text-sky-950">
+          <div className="container flex flex-wrap items-center justify-between gap-2">
+            <span>共有保存はまだ空です。最初にこのPCの現在データをQNAPへ保存してください。</span>
+            <Button variant="outline" size="sm" onClick={saveCurrentPlanToShared}>
+              <Upload className="h-4 w-4" />
+              共有保存へ保存
             </Button>
           </div>
         </div>
@@ -1043,6 +1180,8 @@ function App() {
                 createBackup={createBackup}
                 restoreBackup={restoreBackup}
                 deleteBackup={deleteBackup}
+                sharedSave={sharedSave}
+                saveCurrentPlanToShared={saveCurrentPlanToShared}
               />
             )}
           </>
@@ -10555,7 +10694,19 @@ function DataSection(props: {
   createBackup: (label?: string) => void;
   restoreBackup: (id: string) => void;
   deleteBackup: (id: string) => void;
+  sharedSave: SharedSaveState;
+  saveCurrentPlanToShared: () => void;
 }) {
+  const sharedStatusLabel =
+    props.sharedSave.status === "checking"
+      ? "確認中"
+      : props.sharedSave.status === "empty"
+        ? "未作成"
+        : props.sharedSave.status === "synced"
+          ? "同期済み"
+          : props.sharedSave.status === "saving"
+            ? "保存中"
+            : "要確認";
   return (
     <Card>
       <CardHeader>
@@ -10590,6 +10741,10 @@ function DataSection(props: {
             <FileJson className="h-4 w-4" />
             履歴に保存
           </Button>
+          <Button variant="outline" onClick={props.saveCurrentPlanToShared}>
+            <Upload className="h-4 w-4" />
+            共有保存へ保存
+          </Button>
           <Button
             variant="secondary"
             onClick={() => {
@@ -10601,6 +10756,18 @@ function DataSection(props: {
             <RefreshCcw className="h-4 w-4" />
             サンプルに戻す
           </Button>
+        </div>
+
+        <div className="rounded-lg border bg-sky-50 px-4 py-3 text-sm text-sky-950">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-medium">共有保存: {sharedStatusLabel}</p>
+              <p className="mt-1 text-sky-900">{props.sharedSave.message}</p>
+            </div>
+            {props.sharedSave.lastSyncedAt && (
+              <p className="text-xs text-sky-800">最終同期: {formatSavedAt(props.sharedSave.lastSyncedAt)}</p>
+            )}
+          </div>
         </div>
 
         <div className="rounded-lg border bg-amber-50 px-4 py-3 text-sm text-amber-900">

@@ -12,6 +12,7 @@ RUNTIME_ROOT="${HOME}/.retirement-simulator"
 SITE_DIR="${RUNTIME_ROOT}/site-${APP_NAME}-${PORT}"
 LOG_DIR="${RUNTIME_ROOT}/logs"
 SERVER_SCRIPT="${RUNTIME_ROOT}/no-cache-static-server.py"
+SHARED_PLAN_FILE="${RUNTIME_ROOT}/shared-plan-${APP_NAME}.json"
 PLIST_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${PLIST_DIR}/${LABEL}.plist"
 URL="http://${HOST}:${PORT}/"
@@ -47,6 +48,8 @@ cat > "$PLIST_PATH" <<PLIST
     <string>${HOST}</string>
     <string>--directory</string>
     <string>${SITE_DIR}</string>
+    <string>--shared-plan-file</string>
+    <string>${SHARED_PLAN_FILE}</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
