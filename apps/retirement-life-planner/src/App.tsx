@@ -683,16 +683,33 @@ function App() {
     downloadText("monthly-results.csv", rows.map((row) => row.join(",")).join("\n"), "text/csv;charset=utf-8");
   };
 
+  const openJsonImportDialog = () => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = "";
+    fileInputRef.current.click();
+  };
+
   const importJson = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    const parsed = JSON.parse(text) as RetirementPlanState;
-    if (parsed.version !== 1 || !Array.isArray(parsed.scenarios) || parsed.scenarios.length === 0) {
-      throw new Error("未対応のJSON形式です。");
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const importedState =
+        typeof parsed === "object" && parsed !== null && "state" in parsed
+          ? ((parsed as { state?: unknown }).state as RetirementPlanState)
+          : (parsed as RetirementPlanState);
+      if (importedState.version !== 1 || !Array.isArray(importedState.scenarios) || importedState.scenarios.length === 0) {
+        throw new Error("未対応のJSON形式です。");
+      }
+      replaceState(importedState);
+      setActiveTab("dashboard");
+      setRestoreMessage(`JSONを読み込みました: ${importedState.scenarios.length}件 / ${importedState.scenarios[0]?.name ?? "シナリオ"}`);
+    } catch (error) {
+      setRestoreMessage(error instanceof Error ? `JSON読み込みに失敗しました: ${error.message}` : "JSON読み込みに失敗しました。");
+    } finally {
+      event.target.value = "";
     }
-    replaceState(parsed);
-    event.target.value = "";
   };
 
   const restoreBundledRecovery = async () => {
@@ -1017,7 +1034,7 @@ function App() {
                 exportJson={exportJson}
                 createBackupAndExport={createBackupAndExport}
                 exportCsv={exportCsv}
-                importJson={() => fileInputRef.current?.click()}
+                importJson={openJsonImportDialog}
                 resetToSample={resetToSample}
                 restoreBundledRecovery={restoreBundledRecovery}
                 lastSavedAt={lastSavedAt}
