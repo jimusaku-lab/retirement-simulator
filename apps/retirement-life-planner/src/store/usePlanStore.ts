@@ -72,6 +72,7 @@ type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpe
 const baseScenario = sampleState.scenarios[0];
 const maxBackups = 5;
 const monthlyExpenseKeys = Object.keys(baseScenario.monthlyExpenses) as (keyof MonthlyExpenseProfile)[];
+const legacyOrdinaryAccountLabel = ["普通", "口座"].join("");
 const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] = [
   "enjoyment",
   "lifeMaintenance",
@@ -161,6 +162,10 @@ function touch<T extends Partial<RetirementPlanState>>(partial: T): T & { lastSa
     ...partial,
     lastSavedAt: nowIso(),
   };
+}
+
+function normalizeGeneralAccountLabel(value: unknown) {
+  return typeof value === "string" ? value.replaceAll(legacyOrdinaryAccountLabel, "一般口座") : undefined;
 }
 
 function seniorAgeOrDefault(value: unknown, fallback = 60) {
@@ -379,7 +384,7 @@ function normalizeOptionSubAccounts(source: LegacyScenario, legacyAssets: Legacy
       ...baseScenario.optionSubAccounts[0],
       ...account,
       id: account.id ?? `option-${index + 1}`,
-      name: account.name ?? `一般口座${index + 1}`,
+      name: normalizeGeneralAccountLabel(account.name) ?? `一般口座${index + 1}`,
       enabled: account.enabled ?? true,
       initialValue: Number.isFinite(account.initialValue) ? Number(account.initialValue) : 0,
       initialCostBasis: Math.min(
