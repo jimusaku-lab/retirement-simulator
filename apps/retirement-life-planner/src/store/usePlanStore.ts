@@ -379,7 +379,7 @@ function normalizeOptionSubAccounts(source: LegacyScenario, legacyAssets: Legacy
       ...baseScenario.optionSubAccounts[0],
       ...account,
       id: account.id ?? `option-${index + 1}`,
-      name: account.name ?? `普通口座${index + 1}`,
+      name: account.name ?? `一般口座${index + 1}`,
       enabled: account.enabled ?? true,
       initialValue: Number.isFinite(account.initialValue) ? Number(account.initialValue) : 0,
       initialCostBasis: Math.min(
@@ -403,7 +403,7 @@ function normalizeOptionSubAccounts(source: LegacyScenario, legacyAssets: Legacy
   return [
     {
       id: "option-default",
-      name: "普通口座（オプション用）",
+      name: "一般口座（オプション用）",
       initialValue: Number(value) || 0,
       initialCostBasis: Math.min(Number(basis) || 0, Number(value) || 0),
       startYearMonth: source.userProfile?.simulationStartYearMonth ?? baseScenario.userProfile.simulationStartYearMonth,

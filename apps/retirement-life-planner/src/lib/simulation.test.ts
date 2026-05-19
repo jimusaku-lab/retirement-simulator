@@ -3723,7 +3723,7 @@ describe("simulation", () => {
     expect(result.monthly[0].grossAssetWithdrawalAmount).toBe(0);
   });
 
-  it("将来月の原資移動で現金から普通口座へ証拠金を移せる", () => {
+  it("将来月の原資移動で現金から一般口座へ証拠金を移せる", () => {
     const result = simulateScenario(
       simpleScenario({
         userProfile: {
@@ -3838,7 +3838,7 @@ describe("simulation", () => {
     expect(result.monthly[0].withdrawalSourceBreakdown.timeDeposit).toBe(0);
   });
 
-  it("普通口座の最低維持額を下回る取り崩しはしない", () => {
+  it("一般口座の最低維持額を下回る取り崩しはしない", () => {
     const result = simulateScenario(
       simpleScenario({
         userProfile: {
@@ -3905,7 +3905,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(300_000);
   });
 
-  it("普通口座が最低維持額未満ならオプション収益を停止する", () => {
+  it("一般口座が最低維持額未満ならオプション収益を停止する", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -3958,7 +3958,7 @@ describe("simulation", () => {
     expect(result.monthly[0].retainedSourceAssetIncomeTotal).toBe(0);
   });
 
-  it("普通口座の目標残高超過分を普通預金へ移す", () => {
+  it("一般口座の目標残高超過分を普通預金へ移す", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -4014,13 +4014,13 @@ describe("simulation", () => {
 
     expect(result.monthly[0].optionProfitSweepTotal).toBe(100_000);
     expect(result.monthly[0].optionProfitSweepDetails).toEqual([
-      "普通口座（オプション用） -> 普通預金 10万円",
+      "一般口座（オプション用） -> 普通預金 10万円",
     ]);
     expect(result.monthly[0].declaredCapitalGainsIncomeTotal).toBe(100_000);
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
   });
 
-  it("普通口座利益移動は同月の資金不足を減らし、不足補填売却を先に発生させない", () => {
+  it("一般口座利益移動は同月の資金不足を減らし、不足補填売却を先に発生させない", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -4081,7 +4081,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(500_000);
   });
 
-  it("普通口座利益移動は同月のNISA追加投資原資として使える", () => {
+  it("一般口座利益移動は同月のNISA追加投資原資として使える", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -4602,7 +4602,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(480_000);
   });
 
-  it("普通口座の口座内積上は現金化せず申告対象損益と取引原価を増やす", () => {
+  it("一般口座の口座内積上は現金化せず申告対象損益と取引原価を増やす", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -4667,7 +4667,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetUnrealizedGains.ordinaryAccountForOptions).toBe(0);
   });
 
-  it("普通口座の口座内積上利益を同月に利益移動しても二重に申告対象へ入れない", () => {
+  it("一般口座の口座内積上利益を同月に利益移動しても二重に申告対象へ入れない", () => {
     const result = simulateScenario(
       simpleScenario({
         initialAssets: {
@@ -6071,7 +6071,7 @@ describe("simulation", () => {
     expect(result.monthly.find((row) => row.yearMonth === "2027-01")?.specialExpenseTotal).toBe(112_000);
   });
 
-  it("普通口座サブ口座ごとの最低維持額を取り崩し時に守る", () => {
+  it("一般口座サブ口座ごとの最低維持額を取り崩し時に守る", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6138,7 +6138,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetBalances.ordinaryAccountForOptions).toBe(350_000);
   });
 
-  it("原資移動は指定した普通口座サブ口座へ入り、取得原価も増える", () => {
+  it("原資移動は指定した一般口座サブ口座へ入り、取得原価も増える", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6190,7 +6190,7 @@ describe("simulation", () => {
     expect(result.monthly[0].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(400_000);
   });
 
-  it("開始年月が将来の普通口座サブ口座は開始月に現金・普通預金から自動で原資移動する", () => {
+  it("開始年月が将来の一般口座サブ口座は開始月に現金・普通預金から自動で原資移動する", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6247,7 +6247,7 @@ describe("simulation", () => {
     expect(result.monthly[1].endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(300_000);
   });
 
-  it("開始年月が将来で評価額0の普通口座サブ口座は最低維持証拠金を開始時原資として移す", () => {
+  it("開始年月が将来で評価額0の一般口座サブ口座は最低維持証拠金を開始時原資として移す", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6383,7 +6383,7 @@ describe("simulation", () => {
     ]);
   });
 
-  it("終了翌月に普通口座サブ口座残高を普通預金へ戻す", () => {
+  it("終了翌月に一般口座サブ口座残高を普通預金へ戻す", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6441,7 +6441,7 @@ describe("simulation", () => {
     expect(releaseMonth?.endingTrackedAssetCostBasis.ordinaryAccountForOptions).toBe(0);
   });
 
-  it("終了後に普通預金へ戻した普通口座資金は同月のNISA未実行分に充当できる", () => {
+  it("終了後に普通預金へ戻した一般口座資金は同月のNISA未実行分に充当できる", () => {
     const base = simpleScenario();
     const result = simulateScenario(
       simpleScenario({
@@ -6599,7 +6599,7 @@ describe("simulation", () => {
     );
   });
 
-  it("普通口座オプション収入は申告対象損益と収入イベントで二重計上しない", () => {
+  it("一般口座オプション収入は申告対象損益と収入イベントで二重計上しない", () => {
     const declaredIncome = new Map([[2026, new Map([["member-self", 900_000]])]]);
     const withOptionIncomeEvent = simpleScenario({
       householdProfile: {
@@ -6634,7 +6634,7 @@ describe("simulation", () => {
     expect(withEventTax?.nationalHealthInsuranceAnnual).toBe(withoutEventTax?.nationalHealthInsuranceAnnual);
   });
 
-  it("普通口座オプションの実現益は申告所得として翌年の税社保に反映する", () => {
+  it("一般口座オプションの実現益は申告所得として翌年の税社保に反映する", () => {
     const base = simpleScenario({
       userProfile: {
         ...simpleScenario().userProfile,

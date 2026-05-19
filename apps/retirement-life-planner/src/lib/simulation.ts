@@ -74,7 +74,7 @@ const assetDetailLabels: Record<GrowthAssetKey, string> = {
   timeDeposit: "定期預金",
   nisa: "NISA非課税口座",
   specificAccount: "特定口座",
-  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ordinaryAccountForOptions: "一般口座（オプション用）",
   ideco: "iDeCo",
 };
 
@@ -589,7 +589,7 @@ function getEffectiveOptionSubAccounts(scenario: ScenarioData): OptionSubAccount
   return [
     {
       id: "option-default",
-      name: "普通口座（オプション用）",
+      name: "一般口座（オプション用）",
       initialValue: scenario.initialAssets.ordinaryAccountForOptions,
       initialCostBasis: Math.min(
         scenario.initialAssetCostBasis.ordinaryAccountForOptions,
@@ -1496,7 +1496,7 @@ function simulateScenarioCore(
           supportsRetainedSourceAssetIncome(event.sourceAssetKey)
         ) {
           if (event.sourceAssetKey === "ordinaryAccountForOptions" && optionSourceAccount) {
-            // 普通口座オプションの月次利益は、口座内に残しても実現済みの申告対象損益として扱う。
+            // 一般口座オプションの月次利益は、口座内に残しても実現済みの申告対象損益として扱う。
             // 同じ利益を後で普通預金へ移すだけで再課税しないよう、取得原価にも加算する。
             optionSourceAccount.balance += desiredAmount;
             optionSourceAccount.costBasis += desiredAmount;
@@ -1635,7 +1635,7 @@ function simulateScenarioCore(
       }
       assetTransferTotal += transferAmount;
       const targetLabel = event.toAssetKey === "ordinaryAccountForOptions" && event.toOptionSubAccountId
-        ? optionSubAccounts.find((account) => account.id === event.toOptionSubAccountId)?.name ?? "普通口座（オプション用）"
+        ? optionSubAccounts.find((account) => account.id === event.toOptionSubAccountId)?.name ?? "一般口座（オプション用）"
         : assetDetailLabels[event.toAssetKey];
       assetTransferDetails.push(
         `${assetDetailLabels[event.fromAssetKey]} -> ${targetLabel} ${formatCompactYenForDetail(transferAmount)}`,
@@ -1693,7 +1693,7 @@ function simulateScenarioCore(
       optionProfitSweepTotal += transferredAmount;
       if (transferredAmount > 0) {
         optionProfitSweepDetails.push(
-          `普通口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
+          `一般口座（オプション用） -> ${scenario.optionAccountRules.profitSweepDestination === "cash" ? "現金" : "普通預金"} ${formatCompactYenForDetail(transferredAmount)}`,
         );
       }
     }

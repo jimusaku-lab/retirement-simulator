@@ -95,7 +95,7 @@ function incomeChangeSummary(label: string, baselineEvent: IncomeEvent, targetEv
     changes.push(`反映先 ${baselineMode} → ${targetMode}`);
   }
   if (baselineEvent.sourceOptionSubAccountId !== targetEvent.sourceOptionSubAccountId) {
-    changes.push("普通口座サブ口座の紐付け変更");
+    changes.push("一般口座サブ口座の紐付け変更");
   }
   if (baselineEvent.idecoPensionYears !== targetEvent.idecoPensionYears) {
     changes.push(`受取年数 ${baselineEvent.idecoPensionYears ?? "-"}年 → ${targetEvent.idecoPensionYears ?? "-"}年`);
@@ -270,7 +270,7 @@ function compareOptionSubAccounts(baseline: OptionSubAccount[], target: OptionSu
   for (const key of keys) {
     const baselineAccount = baselineAccounts.get(key);
     const targetAccount = targetAccounts.get(key);
-    const label = targetAccount?.name || baselineAccount?.name || "普通口座オプション";
+    const label = targetAccount?.name || baselineAccount?.name || "一般口座オプション";
     if (!baselineAccount && targetAccount) {
       items.push({
         id: `option-added-${key}`,

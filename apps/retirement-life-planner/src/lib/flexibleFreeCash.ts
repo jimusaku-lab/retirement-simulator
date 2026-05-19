@@ -149,11 +149,11 @@ export function calculateAssetUseWaterfallRows(
     },
     {
       key: "optionToLiquid",
-      label: "普通口座から流動資金へ",
+      label: "一般口座から流動資金へ",
       amount: optionToLiquidTotal,
       kind: "inflow",
       section: "breakdown",
-      description: "普通口座オプション利益や終了後戻しで現金・普通預金へ移った額",
+      description: "一般口座オプション利益や終了後戻しで現金・普通預金へ移った額",
     },
     {
       key: "living",

@@ -437,7 +437,7 @@ const assetLabels: Record<AssetKey, string> = {
   timeDeposit: "定期預金",
   nisa: "NISA非課税口座",
   specificAccount: "特定口座",
-  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ordinaryAccountForOptions: "一般口座（オプション用）",
   ideco: "iDeCo",
   excludedAssets: "取り崩し対象外資産",
   debt: "負債残高",
@@ -450,7 +450,7 @@ const costBasisKeys = ["nisa", "specificAccount", "ordinaryAccountForOptions", "
 const gainTrackedAssets = [
   { key: "nisa", label: "NISA非課税口座" },
   { key: "specificAccount", label: "特定口座" },
-  { key: "ordinaryAccountForOptions", label: "普通口座（オプション用）" },
+  { key: "ordinaryAccountForOptions", label: "一般口座（オプション用）" },
   { key: "ideco", label: "iDeCo" },
 ] as const;
 
@@ -460,7 +460,7 @@ const growthAssetLabels: Record<GrowthAssetKey, string> = {
   timeDeposit: "定期預金",
   nisa: "NISA非課税口座",
   specificAccount: "特定口座",
-  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ordinaryAccountForOptions: "一般口座（オプション用）",
   ideco: "iDeCo",
 };
 
@@ -493,7 +493,7 @@ const assetTransferTargetLabels: Record<AssetTransferTargetKey, string> = {
   timeDeposit: "定期預金",
   nisa: "NISA非課税口座",
   specificAccount: "特定口座",
-  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ordinaryAccountForOptions: "一般口座（オプション用）",
   ideco: "iDeCo",
 };
 
@@ -501,7 +501,7 @@ const withdrawalOrderLabels: Record<WithdrawalAssetKey, string> = {
   bankDeposit: "普通預金",
   timeDeposit: "定期預金",
   specificAccount: "特定口座",
-  ordinaryAccountForOptions: "普通口座（オプション用）",
+  ordinaryAccountForOptions: "一般口座（オプション用）",
   ideco: "iDeCo",
   nisa: "NISA非課税口座",
 };
@@ -772,8 +772,8 @@ function App() {
         "現金収入",
         "口座内積上",
         "原資移動",
-        "普通口座から流動資金へ",
-        "普通口座終了戻し",
+        "一般口座から流動資金へ",
+        "一般口座終了戻し",
         "証拠金不足停止",
         "NISA未実行",
         "NISA枠超過",
@@ -1327,10 +1327,10 @@ function AssetUseWorkspace({
     optionLiquidityAnalysis.optionToLiquidTotal <= 0 && optionLiquidityAnalysis.declaredOptionProfitTotal > 0
       ? "期間内に申告対象利益はありますが、現金・普通預金へ回った額はありません。楽しみ支出に使える資金としては増えていません。"
       : optionLiquidityAnalysis.optionToLiquidTotal <= 0
-        ? "期間内に普通口座オプションから現金・普通預金へ回った資金はありません。"
+        ? "期間内に一般口座オプションから現金・普通預金へ回った資金はありません。"
         : optionLiquidityAnalysis.suspendedIncomeTotal > 0
-          ? "普通口座から流動資金へ回った額はありますが、最低維持額不足で停止された予定利益もあります。"
-          : "普通口座オプションから流動資金へ回った額を、健康寿命期の使える資金として確認できます。";
+          ? "一般口座から流動資金へ回った額はありますが、最低維持額不足で停止された予定利益もあります。"
+          : "一般口座オプションから流動資金へ回った額を、健康寿命期の使える資金として確認できます。";
   const ordinaryOptionIncomeEvents = scenario.incomeEvents.filter(
     (event) =>
       event.sourceAssetKey === "ordinaryAccountForOptions" &&
@@ -1365,7 +1365,7 @@ function AssetUseWorkspace({
       const resolvedAccountName = resolvedAccount?.name ?? configuredAccountName;
       return {
         id: event.id,
-        name: event.name || "普通口座オプション収入",
+        name: event.name || "一般口座オプション収入",
         monthlyAmount,
         scenarioNameAmount,
         activeMonthsInPeriod,
@@ -1508,7 +1508,7 @@ function AssetUseWorkspace({
   const targetBalanceImpact = additionalSpendingTrial.targetBalance.actualAmount - targetBalanceAnalysis.actualAmount;
   const incomePowerFocusText =
     !hasOrdinaryOptionIncomeEvents
-      ? "普通口座オプション収入イベントがないため、入金力別診断はまだ使えません。収入タブで普通口座オプション由来の収入イベントを登録してください。"
+      ? "一般口座オプション収入イベントがないため、入金力別診断はまだ使えません。収入タブで一般口座オプション由来の収入イベントを登録してください。"
       : !incomePowerDiagnostics
         ? "重い診断のため自動計算はしません。期間を確認してから診断を実行してください。"
       : incomePowerDiagnostics.firstUsefulMonthlyIncomePower === undefined
@@ -1771,7 +1771,7 @@ function AssetUseWorkspace({
         <CardHeader>
           <CardTitle>入金力別診断</CardTitle>
           <CardDescription>
-            普通口座オプション収入を月0〜50万円で仮置きし、税・社会保険を引いた実質効果と、楽しみに増やせる年額の目安を横並びで見ます。
+            一般口座オプション収入を月0〜50万円で仮置きし、税・社会保険を引いた実質効果と、楽しみに増やせる年額の目安を横並びで見ます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1794,7 +1794,7 @@ function AssetUseWorkspace({
                     <div className="rounded-md border bg-slate-50 px-4 py-3">
                       <div className="text-sm text-muted-foreground">診断対象</div>
                       <div className="mt-1 text-xl font-semibold">{incomePowerDiagnostics.sourceEventCount}件</div>
-                      <div className="mt-1 text-xs text-muted-foreground">普通口座オプション収入イベント</div>
+                      <div className="mt-1 text-xs text-muted-foreground">一般口座オプション収入イベント</div>
                     </div>
                     <div className="rounded-md border bg-slate-50 px-4 py-3">
                       <div className="text-sm text-muted-foreground">現在の入金力</div>
@@ -1924,7 +1924,7 @@ function AssetUseWorkspace({
                       </Table>
                     </div>
                     <p className="text-xs leading-6 text-muted-foreground">
-                      「仮の入金力」は普通口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
+                      「仮の入金力」は一般口座オプション収入イベント全体の合計月額として扱います。複数イベントがある場合も、合計が月10万円、月20万円になるよう配分します。
                       イベントごとに有効期間が違う場合、入金総額は単純な「月額×延べ月数」ではなく、配分後の各イベント月額×対象月数の合計です。
                       税・社保増は月0円入金ケースとの差分で、保存データには反映しません。
                     </p>
@@ -1972,21 +1972,21 @@ function AssetUseWorkspace({
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              収入タブで、原資資産が「普通口座（オプション用）」の収入イベントを登録すると、ここに入金力別の診断表が表示されます。
+              収入タブで、原資資産が「一般口座（オプション用）」の収入イベントを登録すると、ここに入金力別の診断表が表示されます。
             </p>
           )}
         </CardContent>
       </Card>
 
       <ScenarioSyncDetails
-        title="普通口座オプションの流動資金化"
+        title="一般口座オプションの流動資金化"
         description="オプション利益や運用終了後の資金が、使える現金へどれだけ回ったかを確認します。"
       >
       <Card>
         <CardHeader>
-          <CardTitle>普通口座オプションの流動資金化</CardTitle>
+          <CardTitle>一般口座オプションの流動資金化</CardTitle>
           <CardDescription>
-            {flexibleFreeCashLabel} に、オプション利益や運用終了後の普通口座資金がどれだけ現金・普通預金へ回ったかを確認します。
+            {flexibleFreeCashLabel} に、オプション利益や運用終了後の一般口座資金がどれだけ現金・普通預金へ回ったかを確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2002,14 +2002,14 @@ function AssetUseWorkspace({
             </Field>
             <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6 text-muted-foreground">
               現在は「{scenario.name}」の {flexibleFreeCashLabel} を表示しています。
-              この期間内の普通口座オプション設定が同じシナリオでは、数値も同じになります。
+              この期間内の一般口座オプション設定が同じシナリオでは、数値も同じになります。
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <div className="text-sm text-muted-foreground">申告対象利益</div>
               <div className="mt-1 text-xl font-semibold">{compactYen(optionLiquidityAnalysis.declaredOptionProfitTotal)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">普通口座オプション等の申告対象損益</div>
+              <div className="mt-1 text-xs text-muted-foreground">一般口座オプション等の申告対象損益</div>
             </div>
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <div className="text-sm text-muted-foreground">利益の現金化</div>
@@ -2019,7 +2019,7 @@ function AssetUseWorkspace({
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <div className="text-sm text-muted-foreground">終了後の戻し</div>
               <div className="mt-1 text-xl font-semibold">{compactYen(optionLiquidityAnalysis.accountReleasedToLiquidTotal)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">運用終了後に普通口座から戻した額</div>
+              <div className="mt-1 text-xs text-muted-foreground">運用終了後に一般口座から戻した額</div>
             </div>
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <div className="text-sm text-muted-foreground">使える資金へ回った額</div>
@@ -2047,7 +2047,7 @@ function AssetUseWorkspace({
           <div className="rounded-md border bg-white px-4 py-3">
             <div className="text-sm font-medium">入金力の計算入力チェック</div>
             <p className="mt-1 text-xs leading-6 text-muted-foreground">
-              このシナリオで計算に使っている普通口座オプション収入です。10万・20万・30万シナリオを切り替えた時、ここが変わらなければ入力差分が計算に入っていません。
+              このシナリオで計算に使っている一般口座オプション収入です。10万・20万・30万シナリオを切り替えた時、ここが変わらなければ入力差分が計算に入っていません。
             </p>
             {optionIncomeAuditRows.length > 0 ? (
               <div className="table-scroll mt-3 overflow-auto">
@@ -2089,7 +2089,7 @@ function AssetUseWorkspace({
               </div>
             ) : (
               <p className="mt-3 text-sm text-muted-foreground">
-                このシナリオには普通口座オプションを原資にした定期入金がありません。
+                このシナリオには一般口座オプションを原資にした定期入金がありません。
               </p>
             )}
           </div>
@@ -2404,7 +2404,7 @@ function Dashboard({
   const assetUseWaterfallChartData = assetUseWaterfallRows.map((row) => ({
     ...row,
     displayAmount: row.amount,
-    shortLabel: row.label === "普通口座から流動資金へ" ? "普通口座→流動資金" : row.label,
+    shortLabel: row.label === "一般口座から流動資金へ" ? "一般口座→流動資金" : row.label,
   }));
   const nisaProgressChartData = result.annual
     .filter((row) => row.ageYears >= flexibleFreeCashSummary.period.startAge && row.ageYears <= flexibleFreeCashSummary.period.endAge)
@@ -2473,7 +2473,7 @@ function Dashboard({
         <CardHeader>
           <CardTitle>{flexibleFreeCashLabel} 資産活用ウォーターフォール</CardTitle>
           <CardDescription>
-            上の支出カードの根拠です。現金収入と普通口座から流動資金へ戻した額で、生活費・税社保・特別支出をどこまで賄えたかを見ます。NISAなどの追加投資はここには含めません。
+            上の支出カードの根拠です。現金収入と一般口座から流動資金へ戻した額で、生活費・税社保・特別支出をどこまで賄えたかを見ます。NISAなどの追加投資はここには含めません。
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -2592,7 +2592,7 @@ function Dashboard({
         <CardHeader>
           <CardTitle>{flexibleFreeCashLabel} 譲渡益税と翌年申告利益</CardTitle>
           <CardDescription>
-            棒は税額、紫の線は翌年の申告・税社保計算に入る普通口座オプション利益です。紫の線は税額ではありません。
+            棒は税額、紫の線は翌年の申告・税社保計算に入る一般口座オプション利益です。紫の線は税額ではありません。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -2603,7 +2603,7 @@ function Dashboard({
             </div>
             <div className="rounded-md border bg-violet-50 px-4 py-3 text-violet-950">
               <div className="font-medium">紫の線: 翌年申告に入る利益額</div>
-              <p className="mt-1 text-xs leading-5">普通口座オプションの利益です。売却時に差し引かれる税額ではなく、翌年の所得税・住民税・国保等の計算に入ります。</p>
+              <p className="mt-1 text-xs leading-5">一般口座オプションの利益です。売却時に差し引かれる税額ではなく、翌年の所得税・住民税・国保等の計算に入ります。</p>
             </div>
           </div>
           <div className="h-80">
@@ -2618,7 +2618,7 @@ function Dashboard({
                 <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
                 <Bar yAxisId="tax" dataKey="withheld" name="売却時に差し引かれた譲渡益税" fill="#dc2626" maxBarSize={22} />
                 <Bar yAxisId="tax" dataKey="deferred" name="源泉なし等の翌年扱い税額" fill="#f97316" maxBarSize={22} />
-                <Line yAxisId="income" type="monotone" dataKey="declaredIncome" name="翌年申告に入る普通口座オプション利益" stroke="#7c3aed" strokeWidth={3} dot />
+                <Line yAxisId="income" type="monotone" dataKey="declaredIncome" name="翌年申告に入る一般口座オプション利益" stroke="#7c3aed" strokeWidth={3} dot />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -2695,7 +2695,7 @@ function Dashboard({
               <Tooltip formatter={(value) => yen(Number(value))} wrapperStyle={{ zIndex: 20 }} />
               <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: 18 }} />
               <Bar dataKey="income" name="現金収入" fill="#0f766e" />
-              <Bar dataKey="optionSweep" name="普通口座から現金・普通預金へ" fill="#14b8a6" />
+              <Bar dataKey="optionSweep" name="一般口座から現金・普通預金へ" fill="#14b8a6" />
               <Bar dataKey="living" name="生活費" fill="#334155" />
               <Bar dataKey="tax" name="税社保支払" fill="#dc2626" />
               <Bar dataKey="special" name="特別支出" fill="#ea580c" />
@@ -4151,7 +4151,7 @@ function AssetsSection({
     assetSyncOptions.liquidAssets ? "現金・預金・対象外資産" : "",
     assetSyncOptions.marketAssets ? "証券・iDeCo評価額" : "",
     assetSyncOptions.costBasis ? "取得原価" : "",
-    assetSyncOptions.optionSubAccounts ? "普通口座サブ口座" : "",
+    assetSyncOptions.optionSubAccounts ? "一般口座サブ口座" : "",
   ].filter(Boolean);
   const applyAssetSync = () => {
     if (assetSyncTargetCount === 0 || !hasAssetSyncSelection) return;
@@ -4177,7 +4177,7 @@ function AssetsSection({
     updateScenario((s) => {
       s.optionSubAccounts.push({
         id: createId(),
-        name: `普通口座${s.optionSubAccounts.length + 1}`,
+        name: `一般口座${s.optionSubAccounts.length + 1}`,
         initialValue: 0,
         initialCostBasis: 0,
         startYearMonth: s.userProfile.simulationStartYearMonth,
@@ -4203,7 +4203,7 @@ function AssetsSection({
       s.optionSubAccounts.splice(index + 1, 0, {
         ...structuredClone(source),
         id: createId(),
-        name: source.name ? `${source.name} コピー` : "普通口座 コピー",
+        name: source.name ? `${source.name} コピー` : "一般口座 コピー",
         withdrawalPriority: s.optionSubAccounts.length + 1,
       });
       syncOptionInitialAssets(s);
@@ -4305,7 +4305,7 @@ function AssetsSection({
           <CardHeader>
             <CardTitle>証券・iDeCoの評価額と評価損益</CardTitle>
             <CardDescription>
-              マネーフォワードの `評価額` と `評価損益` を入れてください。取得原価は自動計算し、特定口座と普通口座の取り崩し課税に使います。
+              マネーフォワードの `評価額` と `評価損益` を入れてください。取得原価は自動計算し、特定口座と一般口座の取り崩し課税に使います。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -4370,7 +4370,7 @@ function AssetsSection({
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>普通口座（オプション用）のサブ口座</CardTitle>
+                <CardTitle>一般口座（オプション用）のサブ口座</CardTitle>
                 <CardDescription>
                   CFD、米国株オプションなどを別口座として管理します。最低維持額、利益移動、取り崩し優先順位を口座ごとに設定できます。
                 </CardDescription>
@@ -4396,7 +4396,7 @@ function AssetsSection({
               return (
                 <EventEditor
                   key={account.id}
-                  title={account.name || "普通口座"}
+                  title={account.name || "一般口座"}
                   onDelete={() => deleteOptionSubAccount(index)}
                   actions={
                     <Button variant="ghost" size="sm" onClick={() => duplicateOptionSubAccount(index)}>
@@ -4591,7 +4591,7 @@ function AssetsSection({
         {scenario.optionSubAccounts.length === 0 && (
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle>普通口座（オプション用）の運用ルール</CardTitle>
+              <CardTitle>一般口座（オプション用）の運用ルール</CardTitle>
               <CardDescription>サブ口座がない旧形式データ用の一括ルールです。</CardDescription>
             </CardHeader>
             <CardContent>
@@ -5044,7 +5044,7 @@ function AssetsSection({
             { key: "liquidAssets", label: "現金・預金・対象外資産", description: "現金、普通預金、定期預金、対象外資産、負債" },
             { key: "marketAssets", label: "証券・iDeCo評価額", description: "NISA、特定口座、iDeCoの評価額" },
             { key: "costBasis", label: "取得原価", description: "譲渡益税の前提。評価額更新時は通常一緒に反映" },
-            { key: "optionSubAccounts", label: "普通口座サブ口座", description: "口座構成、評価額、取得原価、運用ルールも反映" },
+            { key: "optionSubAccounts", label: "一般口座サブ口座", description: "口座構成、評価額、取得原価、運用ルールも反映" },
           ]}
           selectedOptions={assetSyncOptions}
           toggleOption={updateAssetSyncOption}
@@ -6937,7 +6937,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <p className="mt-1 text-xs text-muted-foreground">所得税・住民税の概算、国保は大田区、後期高齢者医療は東京都の概算ルールです。</p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <div className="text-muted-foreground">普通口座オプション</div>
+            <div className="text-muted-foreground">一般口座オプション</div>
             <div className="mt-1 font-semibold text-slate-900">
               {ordinaryOptionIncomeEventCount === 0 ? "対象イベントなし" : `${ordinaryOptionIncomeEventCount}件`}
             </div>
@@ -6961,7 +6961,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             </p>
           )}
           <p className="mt-2">
-            特定口座と普通口座（オプション用）の取り崩しでは、譲渡益部分に 20.315% の課税を掛けて差し引きます。NISA には掛けません。
+            特定口座と一般口座（オプション用）の取り崩しでは、譲渡益部分に 20.315% の課税を掛けて差し引きます。NISA には掛けません。
           </p>
           <p className="mt-2">
             反復計算が収束しない年度が出た場合は、このタブの詳細根拠で警告として扱います。現時点の自動計算結果には未収束警告はありません。
@@ -7097,7 +7097,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
             <div>
               <h3 className="font-medium">自動計算結果</h3>
               <p className="text-sm text-muted-foreground">
-                現時点では、所得税・住民税・国民年金・大田区の国民健康保険・東京都の後期高齢者医療の概算に加え、特定口座と普通口座（オプション用）の取り崩し時の譲渡益課税を反映します。収入集計は暦年ベースです。通知書との差がある場合は補正してください。
+                現時点では、所得税・住民税・国民年金・大田区の国民健康保険・東京都の後期高齢者医療の概算に加え、特定口座と一般口座（オプション用）の取り崩し時の譲渡益課税を反映します。収入集計は暦年ベースです。通知書との差がある場合は補正してください。
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
@@ -7307,7 +7307,7 @@ function TaxRowsSummary({
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">
         この表は所得が発生した年度ベースの概算です。実際に現金が出ていく年は、結果タブの「税金・社会保険のキャッシュ支払タイミング」で確認します。
-        普通口座（オプション用）の申告対象損益は、売却時譲渡益税ではなく翌年の所得税・住民税・国保などに反映されます。
+        一般口座（オプション用）の申告対象損益は、売却時譲渡益税ではなく翌年の所得税・住民税・国保などに反映されます。
       </p>
     <div className="overflow-x-auto rounded-lg border">
       <Table>
@@ -7466,7 +7466,7 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
   return (
     <ScenarioSyncDetails
       title="譲渡益課税の根拠"
-      description="売却時譲渡益税や普通口座オプションの申告対象損益が、どの口座・年月から出たかを確認します。"
+      description="売却時譲渡益税や一般口座オプションの申告対象損益が、どの口座・年月から出たかを確認します。"
     >
       <div className="grid gap-3 text-sm md:grid-cols-3">
         <div className="rounded-md border bg-slate-50 px-4 py-3">
@@ -7475,7 +7475,7 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
           <p className="mt-1 text-xs text-muted-foreground">特定口座の売却時に、譲渡益部分から差し引く税額です。</p>
         </div>
         <div className="rounded-md border bg-slate-50 px-4 py-3">
-          <div className="text-muted-foreground">普通口座オプション申告損益</div>
+          <div className="text-muted-foreground">一般口座オプション申告損益</div>
           <div className="mt-1 text-lg font-semibold text-slate-900">{yen(totals.declaredIncome)}</div>
           <p className="mt-1 text-xs text-muted-foreground">売却時に差し引く税額ではなく、翌年の所得税・住民税・国保などの計算に入ります。</p>
         </div>
@@ -7514,7 +7514,7 @@ function RealizedGainDetailsSummary({ details }: { details: RealizedGainDetail[]
                     <Td>
                       <div className="font-medium">{row.accountName}</div>
                       <div className="text-xs text-muted-foreground">
-                        {row.assetKey === "specificAccount" ? "特定口座" : "普通口座オプション"}
+                        {row.assetKey === "specificAccount" ? "特定口座" : "一般口座オプション"}
                       </div>
                     </Td>
                     <Td>{yen(row.grossWithdrawal)}</Td>
@@ -7857,7 +7857,7 @@ function TaxSocialSensitivityTable({ scenario, details }: { scenario: ScenarioDa
         <div>
           <h3 className="font-medium">所得水準別の税・社会保険負担テーブル</h3>
           <p className="text-sm text-muted-foreground">
-            選んだ所得年に、世帯主へ普通口座申告所得が追加で発生した場合の試算です。本体シナリオには保存せず、負担の増え方を見るためだけに一時計算します。
+            選んだ所得年に、世帯主へ一般口座申告所得が追加で発生した場合の試算です。本体シナリオには保存せず、負担の増え方を見るためだけに一時計算します。
           </p>
         </div>
         <div className="w-40">
@@ -7934,7 +7934,7 @@ function TaxCalculationDetails({
         <p>社会保険料控除と医療費控除は、`所得控除入力` で入れた年度・メンバーごとの金額を所得税と住民税の課税ベースから差し引きます。</p>
         <p>国民年金は、国保加入が「加入」で20歳から59歳までの対象月数に年度額を掛けて月額換算します。</p>
         <p>国保は大田区の概算ルールで、世帯の国保加入者ごとの所得を集計して見ます。</p>
-        <p>譲渡益課税は、特定口座と普通口座（オプション用）の売却時に、売却額のうち含み益部分へ 20.315% を掛けて概算します。取得原価は初期資産タブの入力値を使い、積立分はそのまま取得原価へ加算します。</p>
+        <p>譲渡益課税は、特定口座と一般口座（オプション用）の売却時に、売却額のうち含み益部分へ 20.315% を掛けて概算します。取得原価は初期資産タブの入力値を使い、積立分はそのまま取得原価へ加算します。</p>
       </div>
 
       {details.map((detail) => {
@@ -9303,7 +9303,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         </div>
         <div className="rounded-md border bg-slate-50 px-4 py-3">
           <div className="font-medium">原因を深掘りする時</div>
-          <p className="mt-1 text-muted-foreground">投資計画、税支払タイミング、普通口座損益、月次診断を順に確認します。</p>
+          <p className="mt-1 text-muted-foreground">投資計画、税支払タイミング、一般口座損益、月次診断を順に確認します。</p>
         </div>
       </div>
       <ScenarioSyncDetails
@@ -9314,8 +9314,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <Metric title="累計現金収入" value={compactYen(annualIncome)} sub="源泉・手数料控除後" />
         <Metric title="累計口座内積上" value={compactYen(annualRetainedSourceIncome)} sub="現金化せず原資口座に残した利益" />
         <Metric title="累計原資移動" value={compactYen(annualAssetTransfer)} sub="現金・預金から運用口座へ移した額" />
-        <Metric title="累計普通口座利益移動" value={compactYen(annualOptionSweep)} sub="目標残高超過分などの移動" />
-        <Metric title="累計普通口座終了戻し" value={compactYen(annualOptionRelease)} sub="終了後に普通預金へ戻した残高" />
+        <Metric title="累計一般口座利益移動" value={compactYen(annualOptionSweep)} sub="目標残高超過分などの移動" />
+        <Metric title="累計一般口座終了戻し" value={compactYen(annualOptionRelease)} sub="終了後に普通預金へ戻した残高" />
         <Metric title="累計証拠金不足停止" value={compactYen(annualOptionSuspended)} sub="最低維持額未満で止めた収益" />
         <Metric title="累計NISA未実行" value={compactYen(annualNisaSkipped)} sub="原資不足で実行しなかった積立" />
         <Metric title="累計NISA枠超過" value={compactYen(annualNisaLimitExceeded)} sub="年間枠を超えた予定額" />
@@ -9341,7 +9341,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>投資計画チェック</CardTitle>
           <CardDescription>
-            NISAへ実際に入金できた額、未実行額、普通口座（オプション用）の運用制約に引っかかった年を確認します。
+            NISAへ実際に入金できた額、未実行額、一般口座（オプション用）の運用制約に引っかかった年を確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9353,7 +9353,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>NISA未実行</Th>
                 <Th>NISA枠超過</Th>
                 <Th>証拠金不足停止</Th>
-                <Th>普通口座利益移動</Th>
+                <Th>一般口座利益移動</Th>
                 <Th>確認ポイント</Th>
               </Tr>
             </thead>
@@ -9379,8 +9379,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                       {[
                         row.nisaContributionSkippedTotal > 0 ? "NISA積立の一部が原資不足で未実行です。" : "",
                         row.nisaAnnualLimitExceededTotal > 0 ? "NISA年間枠を超えた予定があります。" : "",
-                        row.optionIncomeSuspendedTotal > 0 ? "普通口座が最低維持額未満となり、予定収益を停止しています。" : "",
-                        row.optionProfitSweepTotal > 0 ? "普通口座の超過利益を流動資金へ移動しています。" : "",
+                        row.optionIncomeSuspendedTotal > 0 ? "一般口座が最低維持額未満となり、予定収益を停止しています。" : "",
+                        row.optionProfitSweepTotal > 0 ? "一般口座の超過利益を流動資金へ移動しています。" : "",
                       ]
                         .filter(Boolean)
                         .join(" ")}
@@ -9405,7 +9405,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
             実際に現金が出ていく年で、税金と社会保険等を分けて確認します。所得税精算・住民税・国保・介護は原則として前年所得に対する当年支払いです。
-            普通口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。申告分離の税相当額は目安として別表示します。
+            一般口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。申告分離の税相当額は目安として別表示します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9413,8 +9413,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className={resultStickyHeaderClass}>支払年</Th>
-                <Th>前年普通口座<br />申告対象損益</Th>
-                <Th>普通口座申告分<br />税相当目安</Th>
+                <Th>前年一般口座<br />申告対象損益</Th>
+                <Th>一般口座申告分<br />税相当目安</Th>
                 <Th>所得税精算<br />全所得</Th>
                 <Th>住民税<br />全所得</Th>
                 {showSourceFreeDeferredCapitalGainsTax && <Th>源泉なし等<br />売却益税翌年分</Th>}
@@ -9481,7 +9481,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           </Table>
           <p className="mt-3 text-sm text-muted-foreground">
             iDeCo源泉は年金受取時に 7.6575% を所得税の前払いとして差し引く扱いです。翌年の所得税精算では、前年の所得税額から前年に差し引かれたiDeCo源泉を控除しているため、
-            所得税として二重には引いていません。「普通口座申告分 税相当目安」は、普通口座オプションの申告対象損益に 20.315% を掛けた参考内訳です。
+            所得税として二重には引いていません。「一般口座申告分 税相当目安」は、一般口座オプションの申告対象損益に 20.315% を掛けた参考内訳です。
             実際の現金支払いは「所得税精算 全所得」「住民税 全所得」「国保」などに含まれるため、税金合計には二重加算していません。
             源泉なし等の売却益税が全期間0円の場合、その列は非表示にしています。
             国民年金は、世帯内で20歳以上60歳未満・国保加入・後期高齢者医療対象外のメンバー分を数えます。本人が60歳以降でも、配偶者や子どもが該当すれば表示されます。
@@ -9491,10 +9491,10 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>普通口座申告損益と翌年負担</CardTitle>
+          <CardTitle>一般口座申告損益と翌年負担</CardTitle>
           <CardDescription>
-            普通口座（オプション用）で申告対象になった損益を、翌年の税・社会保険支払と並べて確認します。
-            「申告分離税相当」は普通口座損益だけに20.315%を掛けた参考額です。翌年負担は公的年金・iDeCo・普通口座損益などを合算した全体額で、普通口座損益だけの増分ではありません。
+            一般口座（オプション用）で申告対象になった損益を、翌年の税・社会保険支払と並べて確認します。
+            「申告分離税相当」は一般口座損益だけに20.315%を掛けた参考額です。翌年負担は公的年金・iDeCo・一般口座損益などを合算した全体額で、一般口座損益だけの増分ではありません。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9502,7 +9502,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className={resultStickyHeaderClass}>所得年</Th>
-                <Th>普通口座申告対象損益</Th>
+                <Th>一般口座申告対象損益</Th>
                 <Th>申告分離税相当<br />20.315%目安</Th>
                 <Th>支払年</Th>
                 <Th>翌年所得税精算<br />全所得</Th>
@@ -9549,11 +9549,11 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             </tbody>
           </Table>
           {declaredGainImpactRows.length === 0 && (
-            <p className="text-sm text-muted-foreground">普通口座（オプション用）の申告対象損益はありません。</p>
+            <p className="text-sm text-muted-foreground">一般口座（オプション用）の申告対象損益はありません。</p>
           )}
           <p className="mt-3 text-sm text-muted-foreground">
-            ここでいう普通口座申告対象損益は、税・社会保険タブの自動計算に渡す所得年ベースの金額です。
-            申告分離税相当は「この損益だけなら税率上どの程度か」を見るための目安です。実際の翌年の税・社会保険は、普通口座損益だけでなく公的年金・iDeCo受取・各種控除を合算して計算します。
+            ここでいう一般口座申告対象損益は、税・社会保険タブの自動計算に渡す所得年ベースの金額です。
+            申告分離税相当は「この損益だけなら税率上どの程度か」を見るための目安です。実際の翌年の税・社会保険は、一般口座損益だけでなく公的年金・iDeCo受取・各種控除を合算して計算します。
           </p>
         </CardContent>
       </Card>
@@ -9572,7 +9572,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th className={resultStickyHeaderClass}>支払年</Th>
                 <Th>判定所得年</Th>
                 <Th>前年現金収入</Th>
-                <Th>前年普通口座<br />申告損益</Th>
+                <Th>前年一般口座<br />申告損益</Th>
                 <Th>参考所得合計</Th>
                 <Th>所得税精算</Th>
                 <Th>住民税</Th>
@@ -9608,7 +9608,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
             <p className="text-sm text-muted-foreground">所得水準別の目安を表示できる年がありません。</p>
           )}
           <p className="mt-3 text-sm text-muted-foreground">
-            「参考所得合計」は、この表で比較しやすいように前年現金収入と前年普通口座申告損益を足した補助値です。実際の課税計算では、公的年金等控除、基礎控除、扶養控除、社会保険料控除などを別途反映します。
+            「参考所得合計」は、この表で比較しやすいように前年現金収入と前年一般口座申告損益を足した補助値です。実際の課税計算では、公的年金等控除、基礎控除、扶養控除、社会保険料控除などを別途反映します。
           </p>
         </CardContent>
       </Card>
@@ -9666,7 +9666,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>流動資金（現金・普通預金）フロー内訳</CardTitle>
           <CardDescription>
             チャートの区分を年ごとに分解します。受取収入は公的年金・iDeCo年金・家族からの入金などが普通預金へ入る扱いです。
-            運用口座から普通預金へは、普通口座利益移動と終了後戻しを合算しています。年始・年末の流動資金は「現金 + 普通預金」です。
+            運用口座から普通預金へは、一般口座利益移動と終了後戻しを合算しています。年始・年末の流動資金は「現金 + 普通預金」です。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9746,9 +9746,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>普通口座終了後の戻し履歴</CardTitle>
+          <CardTitle>一般口座終了後の戻し履歴</CardTitle>
           <CardDescription>
-            運用終了後に普通口座サブ口座から普通預金へ戻した残高だけを表示します。戻した資金は同月以降の生活費やNISA未実行分の原資に使えます。
+            運用終了後に一般口座サブ口座から普通預金へ戻した残高だけを表示します。戻した資金は同月以降の生活費やNISA未実行分の原資に使えます。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9774,7 +9774,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               </tbody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">このシナリオでは普通口座終了後の戻しは発生していません。</p>
+            <p className="text-sm text-muted-foreground">このシナリオでは一般口座終了後の戻しは発生していません。</p>
           )}
         </CardContent>
       </Card>
@@ -9784,7 +9784,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <CardTitle>評価損益の推移</CardTitle>
           <CardDescription>
             積立、利回り、取り崩しのあとで、各口座の評価損益がどう動くかを年ごとに確認します。
-            普通口座オプションの月次利益は実現損益として扱うため、評価損益には出ません。下の「普通口座オプション損益」で確認します。
+            一般口座オプションの月次利益は実現損益として扱うため、評価損益には出ません。下の「一般口座オプション損益」で確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="h-96">
@@ -9798,7 +9798,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               <Line dataKey="total" name="合計評価損益" stroke="#0f766e" strokeWidth={3} dot={false} />
               <Line dataKey="nisa" name="NISA" stroke="#2563eb" dot={false} />
               <Line dataKey="specificAccount" name="特定口座" stroke="#dc2626" dot={false} />
-              <Line dataKey="ordinaryAccountForOptions" name="普通口座（オプション用）" stroke="#7c3aed" dot={false} />
+              <Line dataKey="ordinaryAccountForOptions" name="一般口座（オプション用）" stroke="#7c3aed" dot={false} />
               <Line dataKey="ideco" name="iDeCo" stroke="#ea580c" dot={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -9807,7 +9807,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>普通口座（オプション用）の証拠金推移</CardTitle>
+          <CardTitle>一般口座（オプション用）の証拠金推移</CardTitle>
           <CardDescription>
             口座残高、取引原価、含み損益を年ごとに確認します。口座内積上を選ぶと、残高と取引原価が同時に増えるため、評価損益は0のままになることがあります。
             月次利益は実現損益なので、このチャートではなく下の実現損益で確認します。
@@ -9831,9 +9831,9 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
       <Card>
         <CardHeader>
-          <CardTitle>普通口座オプション損益の見える化</CardTitle>
+          <CardTitle>一般口座オプション損益の見える化</CardTitle>
           <CardDescription>
-            普通口座（オプション用）の利益は、評価損益ではなく実現損益・申告対象所得として扱います。
+            一般口座（オプション用）の利益は、評価損益ではなく実現損益・申告対象所得として扱います。
             口座内に積み上げた利益、普通預金へ移した利益、終了後に戻した残高を分けて確認します。
           </CardDescription>
         </CardHeader>
@@ -9893,7 +9893,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
               </Table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">普通口座（オプション用）の実現損益はありません。</p>
+            <p className="text-sm text-muted-foreground">一般口座（オプション用）の実現損益はありません。</p>
           )}
         </CardContent>
       </Card>
@@ -9948,7 +9948,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
         <CardHeader>
           <CardTitle>2036年前後の月次診断</CardTitle>
           <CardDescription>
-            2035年12月から2038年1月までを、年次集計ではなく月次内部値のまま抜き出します。不足補填・流動資金補充・NISA未実行・普通口座戻しの発生月を切り分けるための表です。
+            2035年12月から2038年1月までを、年次集計ではなく月次内部値のまま抜き出します。不足補填・流動資金補充・NISA未実行・一般口座戻しの発生月を切り分けるための表です。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -9959,8 +9959,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>年齢</Th>
                 <Th>当月開始流動資金<br />（現金・普通預金）</Th>
                 <Th>現金収入</Th>
-                <Th>普通口座利益移動</Th>
-                <Th>普通口座終了戻し</Th>
+                <Th>一般口座利益移動</Th>
+                <Th>一般口座終了戻し</Th>
                 <Th>生活費</Th>
                 <Th>税社保</Th>
                 <Th>譲渡益税</Th>
@@ -9975,7 +9975,7 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
                 <Th>月末流動資金<br />（現金・普通預金）</Th>
                 <Th>月末総資産</Th>
                 <Th>特定口座</Th>
-                <Th>普通口座<br />オプション</Th>
+                <Th>一般口座<br />オプション</Th>
                 <Th>NISA</Th>
                 <Th>iDeCo</Th>
               </Tr>
@@ -10178,7 +10178,7 @@ function CompareSection({
       return "比較基準です。";
     }
     if (row.declaredOptionProfit <= 0 && row.optionToLiquidDelta <= 0) {
-      return "普通口座オプション利益はありません。";
+      return "一般口座オプション利益はありません。";
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta && row.nisaSkippedDelta > 0) {
       return row.nisaExecutedDelta > 0
@@ -10186,14 +10186,14 @@ function CompareSection({
         : "利益移動より税社保増分と投資資金需要の影響が大きく、NISA未実行が増えています。";
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta) {
-      return "普通口座利益はありますが、税社保増分が利益移動増分を上回っています。";
+      return "一般口座利益はありますが、税社保増分が利益移動増分を上回っています。";
     }
     if (row.nisaSkippedDelta > 0) {
       return row.nisaExecutedDelta > 0
         ? "利益移動とNISA実行額は増えていますが、未実行差も増えています。資金不足か枠上限かは残り生涯枠も確認してください。"
         : "利益移動は増えていますが、NISA未実行も増えています。生活費・税社保・投資枠の配分を確認してください。";
     }
-    return "普通口座利益により流動資金が増え、税社保増分を上回っています。";
+    return "一般口座利益により流動資金が増え、税社保増分を上回っています。";
   };
   return (
     <div className="space-y-6">
@@ -10311,19 +10311,19 @@ function CompareSection({
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="font-medium">原因を見る時</div>
-            <p className="mt-1 text-muted-foreground">普通口座利益、税社保増分、NISA未実行は下の詳細比較で確認します。</p>
+            <p className="mt-1 text-muted-foreground">一般口座利益、税社保増分、NISA未実行は下の詳細比較で確認します。</p>
           </div>
         </div>
       </ScenarioSyncDetails>
       <ScenarioSyncDetails
-        title="普通口座オプション・税社保・NISAの詳細比較"
+        title="一般口座オプション・税社保・NISAの詳細比較"
         description="基準シナリオとの差分原因を確認する時だけ開きます。"
       >
       <Card>
         <CardHeader>
-          <CardTitle>普通口座オプション利益と税社保増分</CardTitle>
+          <CardTitle>一般口座オプション利益と税社保増分</CardTitle>
           <CardDescription>
-            選択した基準シナリオ「{baselineScenario.name}」に対して、普通口座オプションの申告対象損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
+            選択した基準シナリオ「{baselineScenario.name}」に対して、一般口座オプションの申告対象損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
@@ -10331,9 +10331,9 @@ function CompareSection({
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
-                <Th>普通口座<br />申告対象損益</Th>
+                <Th>一般口座<br />申告対象損益</Th>
                 <Th>参考税額<br />20.315%</Th>
-                <Th>普通口座から<br />現金・普通預金へ</Th>
+                <Th>一般口座から<br />現金・普通預金へ</Th>
                 <Th>税社保増分<br />基準比</Th>
                 <Th>税社保<br />負担率</Th>
                 <Th>生活後余力</Th>
@@ -10386,7 +10386,7 @@ function CompareSection({
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            ここは「普通口座オプション利益だけの税額」ではなく、シナリオ全体の差分です。普通口座利益は翌年の所得税精算・住民税・国保等に合算されるため、
+            ここは「一般口座オプション利益だけの税額」ではなく、シナリオ全体の差分です。一般口座利益は翌年の所得税精算・住民税・国保等に合算されるため、
             税社保増分として見ます。参考税額20.315%は申告対象損益だけに税率を掛けた目安で、実際の所得税・住民税・国保等の増分とは一致しない場合があります。
             NISA未実行差は基準シナリオに対する未実行額の差で、NISA実行額そのものの増減ではありません。資金不足と枠上限を切り分けるため、NISA実行額とNISA残り生涯枠を併せて確認します。
           </p>
@@ -10420,7 +10420,7 @@ function CompareSection({
         <CardHeader>
           <CardTitle>税社保と手取り効率</CardTitle>
           <CardDescription>
-            年平均で、現金収入・普通口座から流動資金へ戻した資金・税社保負担・生活費等を払った後の余力を比較します。
+            年平均で、現金収入・一般口座から流動資金へ戻した資金・税社保負担・生活費等を払った後の余力を比較します。
             税社保負担は支出額なのでプラス表示、生活費・税社保後余力は不足するとマイナス表示です。
           </CardDescription>
         </CardHeader>
@@ -10432,7 +10432,7 @@ function CompareSection({
               <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
               <Tooltip formatter={(value) => yen(Number(value))} />
               <Bar dataKey="cashIncomeAverage" name="年平均現金収入" fill="#0f766e" />
-              <Bar dataKey="optionToLiquidAverage" name="年平均 普通口座から流動資金へ" fill="#14b8a6" />
+              <Bar dataKey="optionToLiquidAverage" name="年平均 一般口座から流動資金へ" fill="#14b8a6" />
               <Bar dataKey="taxSocialAverage" name="年平均税社保負担（支出）" fill="#dc2626" />
               <Bar dataKey="afterLivingCapacityAverage" name="生活費・税社保後余力" fill="#2563eb" />
             </BarChart>
@@ -10511,7 +10511,7 @@ function ManualSection() {
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <p className="font-medium">4. 入金力診断</p>
             <p className="mt-1 text-muted-foreground">
-              普通口座オプション収入を仮に月0〜50万円へ置き換え、税・社会保険を引いた実質手残りと、楽しみに増やせる年額の分岐点を見ます。
+              一般口座オプション収入を仮に月0〜50万円へ置き換え、税・社会保険を引いた実質手残りと、楽しみに増やせる年額の分岐点を見ます。
             </p>
           </div>
         </CardContent>
@@ -10526,7 +10526,7 @@ function ManualSection() {
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <p className="font-medium">診断対象</p>
             <p className="mt-1 text-muted-foreground">
-              収入タブで原資資産を「普通口座（オプション用）」にしている収入イベント数です。ここが0件なら、入金力別診断は計算できません。
+              収入タブで原資資産を「一般口座（オプション用）」にしている収入イベント数です。ここが0件なら、入金力別診断は計算できません。
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
@@ -10584,7 +10584,7 @@ function ManualSection() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm leading-7 text-muted-foreground">
             <p>不足分は、まず現金と普通預金の流動資金で吸収し、流動資金が最低保持額を下回る場合に定期預金や投資資産から補います。</p>
-            <p>現在の実装では、流動資金の次に 定期預金 → 特定口座 → 普通口座（オプション用） → NISA → iDeCo の順です。</p>
+            <p>現在の実装では、流動資金の次に 定期預金 → 特定口座 → 一般口座（オプション用） → NISA → iDeCo の順です。</p>
             <p>取り崩し対象外資産と負債は、この取り崩し順の対象外です。</p>
           </CardContent>
         </Card>
@@ -10947,9 +10947,9 @@ function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows:
           <Th>口座内積上</Th>
           <Th>原資移動</Th>
           <Th className="min-w-[320px]">原資移動内訳</Th>
-          <Th>普通口座利益移動</Th>
+          <Th>一般口座利益移動</Th>
           <Th className="min-w-[320px]">利益移動内訳</Th>
-          <Th>普通口座終了戻し</Th>
+          <Th>一般口座終了戻し</Th>
           <Th className="min-w-[320px]">終了戻し内訳</Th>
           <Th>証拠金不足停止</Th>
           <Th>iDeCo源泉</Th>

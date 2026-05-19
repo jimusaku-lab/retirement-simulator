@@ -5,7 +5,7 @@ type OptionAccountNameSource = Pick<OptionSubAccount, "id" | "name">;
 function normalizeOptionAccountName(value: string) {
   return value
     .toLowerCase()
-    .replace(/普通口座/g, "")
+    .replace(/一般口座/g, "")
     .replace(/式/g, "")
     .replace(/[\s\u3000（）()・_-]/g, "");
 }
