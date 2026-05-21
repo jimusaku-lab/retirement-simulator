@@ -324,8 +324,11 @@ export function OnboardingWizard({
                     <option value="retired">退職済み</option>
                   </Select>
                 </Field>
-                <Field label="開始年月">
+                <Field label="試算を始める年月">
                   <Input type="month" value={draft.startYearMonth} onChange={(event) => update("startYearMonth", event.target.value)} />
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    この月から将来の収入・支出・資産残高を計算します。迷ったら来月か、退職後すぐの月にしてください。
+                  </p>
                 </Field>
                 <NumberField label="何歳まで見るか" value={draft.simulationEndAge} min={draft.selfAge} onChange={(value) => update("simulationEndAge", value)} />
                 <NumberField label="残高確認年齢" value={draft.targetBalanceAge} min={draft.selfAge} onChange={(value) => update("targetBalanceAge", value)} />
