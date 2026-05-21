@@ -174,7 +174,7 @@ const OTA_NHI_RATES_FOR_DISPLAY = {
   carePerCapita: 17_800,
   careCap: 170_000,
 };
-const ONBOARDING_COMPLETED_KEY = "retirement-life-planner-public-onboarding-completed-v1";
+const ONBOARDING_COMPLETED_KEY = "retirement-life-planner-public-onboarding-completed-v2";
 const TRUST_EXPLAINED_KEY = "retirement-life-planner-public-trust-explained-v1";
 const TOKYO_LATE_ELDERLY_MEDICAL_FOR_DISPLAY = {
   medicalIncomeRate: 0.0988,
@@ -629,6 +629,9 @@ function App() {
   const closeDataTrustModal = () => {
     window.localStorage.setItem(TRUST_EXPLAINED_KEY, "true");
     setShowDataTrustModal(false);
+    if (window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) !== "true") {
+      setShowOnboarding(true);
+    }
   };
 
   const confirmJsonFileHandling = (actionLabel: string) =>
@@ -1068,7 +1071,7 @@ function App() {
         )}
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={importJson} />
       </main>
-      {showOnboarding && (
+      {showOnboarding && !showDataTrustModal && (
         <OnboardingWizard
           scenario={activeScenario}
           onApply={completeOnboarding}
