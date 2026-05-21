@@ -204,7 +204,7 @@ const baseScenario: ScenarioData = {
       cash: 0,
       bankDeposit: 0.001,
       timeDeposit: 0.002,
-      nisa: 0.04,
+      nisa: 0.05,
       specificAccount: 0.03,
       ordinaryAccountForOptions: 0,
       ideco: 0.035,
@@ -212,7 +212,7 @@ const baseScenario: ScenarioData = {
   },
   inflationSettings: {
     enabled: true,
-    livingCostAnnualInflationRate: 0.015,
+    livingCostAnnualInflationRate: 0.02,
     medicalAnnualInflationRate: 0.025,
     pensionAnnualAdjustmentRate: 0.015,
     livingCostInflationTargets: [
@@ -327,10 +327,10 @@ export const sampleState: RetirementPlanState = {
         cash: 0,
         bankDeposit: 0.001,
         timeDeposit: 0.0015,
-        nisa: 0.02,
-        specificAccount: 0.015,
+        nisa: 0.03,
+        specificAccount: 0.02,
         ordinaryAccountForOptions: 0,
-        ideco: 0.02,
+        ideco: 0.025,
       };
     }),
   ],

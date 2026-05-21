@@ -73,16 +73,16 @@ const steps: { key: OnboardingStep; label: string }[] = [
 const DEFAULT_ONBOARDING_MONTHLY_LIVING_COST = 320_000;
 
 const inflationPresetLabels: Record<InflationPreset, string> = {
-  low: "低め（年1.0%）",
-  standard: "標準（年1.5%）",
+  low: "低め（年1.5%）",
+  standard: "標準（年2.0%）",
   high: "高め（年2.5%）",
   custom: "個別入力",
 };
 
 const returnPresetLabels: Record<ReturnPreset, string> = {
-  low: "低め（預金0.1〜0.2% / NISA2.0% / 課税1.5% / iDeCo2.0%）",
-  standard: "標準（預金0.1〜0.2% / NISA4.0% / 課税3.0% / iDeCo3.5%）",
-  high: "高め（預金0.2〜0.4% / NISA6.0% / 課税4.5% / iDeCo5.0%）",
+  low: "低め（預金0.1〜0.2% / NISA3.0% / 課税2.0% / iDeCo2.5%）",
+  standard: "標準（預金0.1〜0.2% / NISA5.0% / 課税3.0% / iDeCo3.5%）",
+  high: "高め（預金0.2〜0.4% / NISA6.5% / 課税4.5% / iDeCo5.0%）",
   custom: "後で個別入力",
 };
 
@@ -117,7 +117,7 @@ export function createOnboardingDraft(scenario: ScenarioData): OnboardingDraft {
   const workEvent = scenario.incomeEvents.find((event) => event.type === "salary");
   const totalLiving = expenseKeys.reduce((sum, key) => sum + (scenario.monthlyExpenses[key] ?? 0), 0);
   const livingWithoutTax = Math.max(0, totalLiving - (scenario.monthlyExpenses.taxSocialInsurance ?? 0));
-  const inflationRate = scenario.inflationSettings.livingCostAnnualInflationRate ?? 0.015;
+  const inflationRate = scenario.inflationSettings.livingCostAnnualInflationRate ?? 0.02;
 
   return {
     selfAge: Math.max(20, currentYear - birthYear),
@@ -147,7 +147,7 @@ export function createOnboardingDraft(scenario: ScenarioData): OnboardingDraft {
     medicalMonthly: scenario.monthlyExpenses.healthMedical ?? 0,
     plannedLargeExpense: 0,
     ageExpensePreset: scenario.ageExpenseAdjustments.length > 0 ? "standard" : "none",
-    inflationPreset: inflationRate <= 0.01 ? "low" : inflationRate >= 0.025 ? "high" : "standard",
+    inflationPreset: inflationRate <= 0.015 ? "low" : inflationRate >= 0.025 ? "high" : "standard",
     customInflationRate: inflationRate,
     returnPreset: "standard",
     taxMode: scenario.householdProfile.taxCalculationMode,
@@ -232,7 +232,7 @@ export function applyOnboardingDraftToScenario(scenario: ScenarioData, draft: On
     enabled: true,
     livingCostAnnualInflationRate: inflationRateForDraft(draft),
     medicalAnnualInflationRate: Math.max(inflationRateForDraft(draft), 0.02),
-    pensionAnnualAdjustmentRate: inflationRateForDraft(draft),
+    pensionAnnualAdjustmentRate: 0.015,
   };
   scenario.optionAccountRules.enabled = false;
   scenario.optionSubAccounts = [];
@@ -338,14 +338,35 @@ export function OnboardingWizard({
           )}
 
           {step.key === "assets" && (
-            <WizardPanel title="資産" description="現在の資産を大まかに入れます。課税口座の取得原価などは後から詳細設定できます。">
+            <WizardPanel title="資産" description="現在の資産を大まかに入れます。証券口座の取得原価などは後から詳細設定できます。">
               <FormGrid>
                 <NumberField label="現金・預金" value={draft.cashAndDeposits} min={0} step={100_000} onChange={(value) => update("cashAndDeposits", value)} />
                 <NumberField label="NISA" value={draft.nisa} min={0} step={100_000} onChange={(value) => update("nisa", value)} />
                 <NumberField label="iDeCo" value={draft.ideco} min={0} step={100_000} onChange={(value) => update("ideco", value)} />
-                <NumberField label="課税口座" value={draft.taxableAccount} min={0} step={100_000} onChange={(value) => update("taxableAccount", value)} />
-                <NumberField label="その他運用資産" value={draft.otherInvestments} min={0} step={100_000} onChange={(value) => update("otherInvestments", value)} />
-                <NumberField label="その他資産" value={draft.otherAssets} min={0} step={100_000} onChange={(value) => update("otherAssets", value)} />
+                <NumberField
+                  label="証券の課税口座"
+                  value={draft.taxableAccount}
+                  min={0}
+                  step={100_000}
+                  onChange={(value) => update("taxableAccount", value)}
+                  helpText="証券会社の特定口座・一般口座など、利益に税金がかかる投資口座です。"
+                />
+                <NumberField
+                  label="その他運用資産"
+                  value={draft.otherInvestments}
+                  min={0}
+                  step={100_000}
+                  onChange={(value) => update("otherInvestments", value)}
+                  helpText="NISA、iDeCo、証券の課税口座以外で、値動きや利回りを見たい運用資産です。"
+                />
+                <NumberField
+                  label="その他資産"
+                  value={draft.otherAssets}
+                  min={0}
+                  step={100_000}
+                  onChange={(value) => update("otherAssets", value)}
+                  helpText="自宅以外の不動産、車、売却予定のない資産など、生活費の取り崩しに使わない資産です。"
+                />
                 <NumberField label="負債" value={draft.debt} min={0} step={100_000} onChange={(value) => update("debt", value)} />
               </FormGrid>
             </WizardPanel>
@@ -380,6 +401,10 @@ export function OnboardingWizard({
 
           {step.key === "expenses" && (
             <WizardPanel title="支出" description="毎月の生活費と、年齢による変化を設定します。">
+              <div className="rounded-md border bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+                ここでは毎月の生活費の合計を先に入れます。「うち住宅費」「うち医療・介護費」を入れると、その分を除いた残りが「その他」として自動で入ります。
+                後で生活費入力タブの費目を細かく直すと、その費目別合計が試算に使われます。
+              </div>
               <FormGrid>
                 <NumberField label="毎月の生活費" value={draft.monthlyLivingCost} min={0} step={10_000} onChange={(value) => update("monthlyLivingCost", value)} />
                 <NumberField label="うち住宅費" value={draft.housingMonthly} min={0} step={10_000} onChange={(value) => update("housingMonthly", value)} />
@@ -504,6 +529,7 @@ function NumberField({
   min,
   max,
   step = 1,
+  helpText,
 }: {
   label: string;
   value: number;
@@ -511,6 +537,7 @@ function NumberField({
   min?: number;
   max?: number;
   step?: number;
+  helpText?: string;
 }) {
   return (
     <Field label={label}>
@@ -522,6 +549,7 @@ function NumberField({
         value={value}
         onChange={(event) => onChange(Number(event.target.value) || 0)}
       />
+      {helpText && <p className="mt-1 text-xs leading-5 text-muted-foreground">{helpText}</p>}
     </Field>
   );
 }
@@ -677,10 +705,10 @@ function createTimeBucketItems(draft: OnboardingDraft): TimeBucketItem[] {
 function createAssetGrowthSettings(draft: OnboardingDraft): GrowthSettings {
   const rates =
     draft.returnPreset === "low"
-      ? { bankDeposit: 0.001, timeDeposit: 0.002, nisa: 0.02, specificAccount: 0.015, ideco: 0.02 }
+      ? { bankDeposit: 0.001, timeDeposit: 0.002, nisa: 0.03, specificAccount: 0.02, ideco: 0.025 }
       : draft.returnPreset === "high"
-        ? { bankDeposit: 0.002, timeDeposit: 0.004, nisa: 0.06, specificAccount: 0.045, ideco: 0.05 }
-        : { bankDeposit: 0.001, timeDeposit: 0.002, nisa: 0.04, specificAccount: 0.03, ideco: 0.035 };
+        ? { bankDeposit: 0.002, timeDeposit: 0.004, nisa: 0.065, specificAccount: 0.045, ideco: 0.05 }
+        : { bankDeposit: 0.001, timeDeposit: 0.002, nisa: 0.05, specificAccount: 0.03, ideco: 0.035 };
   return {
     enabled: true,
     rates: {
@@ -696,8 +724,8 @@ function createAssetGrowthSettings(draft: OnboardingDraft): GrowthSettings {
 }
 
 function inflationRateForDraft(draft: OnboardingDraft) {
-  if (draft.inflationPreset === "low") return 0.01;
+  if (draft.inflationPreset === "low") return 0.015;
   if (draft.inflationPreset === "high") return 0.025;
   if (draft.inflationPreset === "custom") return draft.customInflationRate;
-  return 0.015;
+  return 0.02;
 }

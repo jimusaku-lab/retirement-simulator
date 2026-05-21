@@ -2841,7 +2841,18 @@ function ProfileSection({
             <Input value={scenario.name} onChange={(event) => updateScenario((s) => void (s.name = event.target.value))} />
           </Field>
           <Field label="生年月日">
-            <Input type="date" value={scenario.userProfile.birthDate} onChange={(event) => updateScenario((s) => void (s.userProfile.birthDate = event.target.value))} />
+            <Input
+              type="date"
+              value={scenario.userProfile.birthDate}
+              onChange={(event) =>
+                updateScenario((s) => {
+                  s.userProfile.birthDate = event.target.value;
+                  const self = s.householdMembers.find((member) => member.relationship === "self") ?? s.householdMembers[0];
+                  if (self) self.birthDate = event.target.value;
+                })
+              }
+            />
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">ここを変えると、下の世帯メンバー「本人」の生年月日も同じ年月日にそろえます。</p>
           </Field>
           <Field label="開始年月">
             <Input type="month" value={scenario.userProfile.simulationStartYearMonth} onChange={(event) => updateScenario((s) => void (s.userProfile.simulationStartYearMonth = event.target.value))} />
@@ -2900,7 +2911,18 @@ function ProfileSection({
             <p className="mt-1 text-xs text-muted-foreground">予備・想定外に備えて保持したい安全資金もここに含めます。</p>
           </Field>
           <Field label="居住自治体">
-            <Input value={scenario.userProfile.municipality ?? ""} onChange={(event) => updateScenario((s) => void (s.userProfile.municipality = event.target.value))} />
+            <Input
+              value={scenario.userProfile.municipality ?? ""}
+              onChange={(event) =>
+                updateScenario((s) => {
+                  s.userProfile.municipality = event.target.value;
+                  s.householdProfile.municipality = event.target.value;
+                })
+              }
+            />
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              税金・社会保険の概算で参考にする自治体です。現在の自動計算は東京都大田区などの前提を中心にしています。
+            </p>
           </Field>
           <Field label="配偶者有無">
             <Select
@@ -3160,6 +3182,9 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                 })
               }
             />
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              税金・社会保険の概算で参考にする自治体です。現在の自動計算は東京都大田区などの前提を中心にしています。
+            </p>
           </Field>
           <Field label="世帯主">
             <Select
@@ -3184,9 +3209,10 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
             </Select>
           </Field>
           <Field label="世帯メモ">
-            <Input
+            <Textarea
               value={scenario.householdProfile.notes ?? ""}
               onChange={(event) => updateScenario((s) => void (s.householdProfile.notes = event.target.value))}
+              rows={3}
             />
           </Field>
         </FormGrid>
@@ -3269,7 +3295,14 @@ function HouseholdSection({ scenario, updateScenario }: SectionProps) {
                     <Input
                       type="date"
                       value={member.birthDate}
-                      onChange={(event) => updateScenario((s) => void (s.householdMembers[index].birthDate = event.target.value))}
+                      onChange={(event) =>
+                        updateScenario((s) => {
+                          s.householdMembers[index].birthDate = event.target.value;
+                          if (s.householdMembers[index].relationship === "self") {
+                            s.userProfile.birthDate = event.target.value;
+                          }
+                        })
+                      }
                     />
                   </Field>
                   <Field label="居住">
@@ -5275,6 +5308,11 @@ function ExpensesSection({
             税・社会保険は `税・社会保険` タブで計算するため、このタブの `税・社会保険` はシミュレーションでは使いません。
           </div>
         )}
+        <div className="rounded-lg border bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+          初回設定で入れた毎月の生活費は、この費目別入力に分けて保存されています。
+          住宅費や医療費として分けた分以外は「その他」に入っています。
+          ここで食費、日用品などを入力し直すと、下の「月平均生活費」は費目別の合計に変わり、その合計が試算に使われます。
+        </div>
         <FormGrid>
           {(Object.keys(expenseLabels) as ExpenseKey[]).map((key) => (
             <Field key={key} label={expenseLabels[key]}>
