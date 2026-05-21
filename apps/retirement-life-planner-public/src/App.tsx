@@ -808,9 +808,6 @@ function App() {
               <Copy className="h-4 w-4" />
               複製
             </Button>
-            <Button variant="outline" onClick={() => setShowOnboarding(true)}>
-              初回設定
-            </Button>
             <Button variant="outline" onClick={() => setShowDataTrustModal(true)}>
               データの扱い
             </Button>
@@ -1079,6 +1076,18 @@ function App() {
         />
       )}
       {showDataTrustModal && <DataTrustModal onClose={closeDataTrustModal} />}
+      {!showOnboarding && !showDataTrustModal && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="fixed bottom-5 left-5 z-50 bg-white/95 shadow-md"
+          onClick={() => setShowOnboarding(true)}
+          aria-label="初回設定を開く"
+        >
+          初回設定
+        </Button>
+      )}
       <Button
         type="button"
         variant="outline"
