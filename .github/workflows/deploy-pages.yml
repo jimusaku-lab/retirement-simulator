@@ -1,4 +1,4 @@
-name: Deploy retirement life planner
+name: Deploy public retirement life planner
 
 on:
   workflow_dispatch:
@@ -29,16 +29,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
-        run: npm test
+      - name: Test public app
+        run: npm run test:public
 
-      - name: Build
-        run: GITHUB_PAGES=true npm run build
+      - name: Build public app
+        run: GITHUB_PAGES=true npm run build:public
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/retirement-life-planner/dist
+          path: apps/retirement-life-planner-public/dist
 
   deploy:
     environment:
