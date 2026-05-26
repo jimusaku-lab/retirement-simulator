@@ -794,7 +794,7 @@ function App() {
         <div className="container flex flex-col gap-4 py-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">一般向け版</p>
-            <h1 className="text-2xl font-semibold tracking-normal">退職後生活シミュレーション</h1>
+            <h1 className="text-2xl font-semibold tracking-normal">人生資産シミュレーション</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={activeScenario.id} onChange={(event) => setActiveScenario(event.target.value)} className="w-64">
@@ -10960,7 +10960,7 @@ function ManualSection() {
             <BookOpen className="h-5 w-5" />
             このアプリは
           </CardTitle>
-          <CardDescription>退職後の生活資金を、税金・社会保険まで含めて見積もるためのシミュレーションアプリです。</CardDescription>
+          <CardDescription>生活費、税金・社会保険、資産形成と取り崩しをまとめて見積もるためのシミュレーションアプリです。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm leading-7 text-muted-foreground">
           <p>

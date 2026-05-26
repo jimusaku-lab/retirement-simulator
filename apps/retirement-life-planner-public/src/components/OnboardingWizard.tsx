@@ -285,7 +285,7 @@ export function OnboardingWizard({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle>初回設定</CardTitle>
-              <CardDescription>標準入力だけで、まず退職後資金の試算を作ります。詳細条件は後から開けます。</CardDescription>
+              <CardDescription>標準入力だけで、まず将来の資産と生活費の試算を作ります。詳細条件は後から開けます。</CardDescription>
             </div>
             <Button variant="ghost" size="sm" onClick={onClose}>
               閉じる
@@ -327,7 +327,7 @@ export function OnboardingWizard({
                 <Field label="試算を始める年月">
                   <Input type="month" value={draft.startYearMonth} onChange={(event) => update("startYearMonth", event.target.value)} />
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    この月から将来の収入・支出・資産残高を計算します。迷ったら来月か、退職後すぐの月にしてください。
+                    この月から将来の収入・支出・資産残高を計算します。迷ったら来月か、計画を始めたい月にしてください。
                   </p>
                 </Field>
                 <NumberField label="何歳まで見るか" value={draft.simulationEndAge} min={draft.selfAge} onChange={(value) => update("simulationEndAge", value)} />
@@ -373,7 +373,7 @@ export function OnboardingWizard({
           )}
 
           {step.key === "income" && (
-            <WizardPanel title="収入" description="年金と退職後の主な収入を設定します。退職金やiDeCo一時金の詳細は後から補正できます。">
+            <WizardPanel title="収入" description="年金、働く収入、退職金などの主な収入を設定します。細かい条件は後から補正できます。">
               <FormGrid>
                 <NumberField label="本人の年金見込み額（年額）" value={draft.selfPensionAnnual} min={0} step={10_000} onChange={(value) => update("selfPensionAnnual", value)} />
                 {draft.hasSpouse && (
