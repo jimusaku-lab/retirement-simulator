@@ -2805,6 +2805,18 @@ function AssetFormationDashboard({
         carryOverSkipped: false,
       }),
     );
+  const addFormationGoal = (name: string, category: SpecialExpenseCategory, amount: number) =>
+    updateScenario((s) =>
+      s.specialExpenses.push({
+        id: createId(),
+        name,
+        yearMonth: targetRow ? `${targetRow.year}-04` : s.userProfile.simulationStartYearMonth,
+        amount,
+        category,
+        schedule: "once",
+        inflationMode: "livingCost",
+      }),
+    );
   const targetAge = scenario.userProfile.targetBalanceAge;
   const targetAmount = scenario.userProfile.targetBalanceAmount ?? 0;
   const startMonth = scenario.userProfile.simulationStartYearMonth;
@@ -2825,6 +2837,7 @@ function AssetFormationDashboard({
   const liquidAssets = scenario.initialAssets.cash + scenario.initialAssets.bankDeposit + scenario.initialAssets.timeDeposit;
   const reserveTarget = Math.max(scenario.userProfile.cashReserve, sixMonthReserve);
   const reserveGap = reserveTarget - liquidAssets;
+  const formationGoalTotal = scenario.specialExpenses.reduce((sum, event) => sum + event.amount, 0);
   const chartData = result.annual.map((row) => ({
     age: `${row.ageYears}歳`,
     assets: Math.round(row.endingAssets / 10_000),
@@ -3029,6 +3042,85 @@ function AssetFormationDashboard({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>目的別ゴール</CardTitle>
+              <CardDescription>住宅購入、教育費、独立資金などの大きな予定を登録します。登録した金額は試算の特別支出として反映されます。</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => addFormationGoal("住宅購入・住み替え", "housingCar", 5_000_000)}>住宅</Button>
+              <Button variant="outline" onClick={() => addFormationGoal("教育費", "familySupport", 2_000_000)}>教育</Button>
+              <Button variant="outline" onClick={() => addFormationGoal("独立・起業準備", "lifeMaintenance", 3_000_000)}>独立</Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
+            登録済みゴール合計は {compactYen(formationGoalTotal)} です。ここでは単発の予定を扱います。毎年・毎月の支出にしたい場合は、特別支出タブで詳細設定できます。
+          </div>
+          {scenario.specialExpenses.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-slate-50 px-4 py-5 text-sm text-muted-foreground">
+              目的別ゴールはまだありません。上のボタンから候補を追加できます。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {scenario.specialExpenses.map((event, index) => (
+                <div key={event.id} className="rounded-lg border bg-white p-4">
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="font-medium">{event.name || "目的別ゴール"}</div>
+                      <p className="text-xs text-muted-foreground">
+                        {event.schedule && event.schedule !== "once" ? "繰り返し設定あり。詳細は特別支出タブで確認します。" : "単発ゴール"}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => updateScenario((s) => void s.specialExpenses.splice(index, 1))}>
+                      <Trash2 className="h-4 w-4" />
+                      削除
+                    </Button>
+                  </div>
+                  <FormGrid>
+                    <Field label="名称">
+                      <Input value={event.name} onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].name = e.target.value))} />
+                    </Field>
+                    <Field label="年月">
+                      <Input type="month" value={event.yearMonth} onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].yearMonth = e.target.value))} />
+                    </Field>
+                    <Field label="金額">
+                      <Input type="number" value={event.amount} onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].amount = numberOrZero(e.target.value)))} />
+                    </Field>
+                    <Field label="カテゴリ">
+                      <Select
+                        value={event.category ?? "lifeMaintenance"}
+                        onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].category = e.target.value as SpecialExpenseCategory))}
+                      >
+                        {Object.entries(specialExpenseCategoryLabels).map(([key, label]) => (
+                          <option key={key} value={key}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="インフレ反映">
+                      <Select
+                        value={event.inflationMode ?? "none"}
+                        onChange={(e) => updateScenario((s) => void (s.specialExpenses[index].inflationMode = e.target.value as NonNullable<SpecialExpenseEvent["inflationMode"]>))}
+                      >
+                        <option value="none">反映しない</option>
+                        <option value="livingCost">生活費インフレ率を使う</option>
+                        <option value="medical">医療インフレ率を使う</option>
+                        <option value="custom">個別指定</option>
+                      </Select>
+                    </Field>
+                  </FormGrid>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
