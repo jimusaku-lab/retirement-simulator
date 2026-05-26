@@ -32,13 +32,26 @@ jobs:
       - name: Test public app
         run: npm run test:public
 
+      - name: Test beta app
+        run: npm run test:beta
+
       - name: Build public app
         run: GITHUB_PAGES=true npm run build:public
+
+      - name: Build beta app
+        run: GITHUB_PAGES=true npm run build:beta
+
+      - name: Assemble Pages site
+        run: |
+          rm -rf pages-dist
+          mkdir -p pages-dist/life-asset-beta
+          cp -R apps/retirement-life-planner-public/dist/. pages-dist/
+          cp -R apps/life-asset-simulator-beta/dist/. pages-dist/life-asset-beta/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/retirement-life-planner-public/dist
+          path: pages-dist
 
   deploy:
     environment:
