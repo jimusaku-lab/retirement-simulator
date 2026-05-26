@@ -2792,6 +2792,19 @@ function AssetFormationDashboard({
   onOpenProfile: () => void;
   onOpenAssets: () => void;
 }) {
+  const addFormationContribution = () =>
+    updateScenario((s) =>
+      s.assetContributionEvents.push({
+        id: createId(),
+        assetKey: "nisa",
+        name: "資産形成の毎月積立",
+        startYearMonth: s.userProfile.simulationStartYearMonth,
+        monthlyAmount: 0,
+        nisaInvestmentSlot: "tsumitate",
+        contributionPriority: 1,
+        carryOverSkipped: false,
+      }),
+    );
   const targetAge = scenario.userProfile.targetBalanceAge;
   const targetAmount = scenario.userProfile.targetBalanceAmount ?? 0;
   const startMonth = scenario.userProfile.simulationStartYearMonth;
@@ -2922,33 +2935,101 @@ function AssetFormationDashboard({
 
       <Card>
         <CardHeader>
-          <CardTitle>現在有効な毎月積立</CardTitle>
-          <CardDescription>開始年月時点で有効な追加投資を表示します。ここは確認用で、編集は初期資産タブで行います。</CardDescription>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>毎月積立</CardTitle>
+              <CardDescription>資産形成の中心になる積立をここで直接編集します。詳細なNISA枠や優先順位は初期資産タブでも調整できます。</CardDescription>
+            </div>
+            <Button onClick={addFormationContribution}>
+              <Plus className="h-4 w-4" />
+              積立を追加
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
-          {activeContributionEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">現在有効な毎月積立はありません。</p>
+        <CardContent className="space-y-4">
+          {scenario.assetContributionEvents.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-slate-50 px-4 py-5 text-sm text-muted-foreground">
+              毎月積立はまだありません。「積立を追加」からNISA、iDeCo、課税口座などへの積立を登録できます。
+            </div>
           ) : (
-            <Table>
-              <thead>
-                <Tr>
-                  <Th>名称</Th>
-                  <Th>積立先</Th>
-                  <Th>月額</Th>
-                  <Th>期間</Th>
-                </Tr>
-              </thead>
-              <tbody>
-                {activeContributionEvents.map((event) => (
-                  <Tr key={event.id}>
-                    <Td>{event.name}</Td>
-                    <Td>{growthAssetLabels[event.assetKey]}</Td>
-                    <Td>{yen(event.monthlyAmount)}</Td>
-                    <Td>{event.startYearMonth}〜{event.endYearMonth ?? "終了なし"}</Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </Table>
+            <div className="space-y-3">
+              {scenario.assetContributionEvents.map((event, index) => {
+                const isActiveAtStart = isContributionActive(event, startMonth);
+                return (
+                  <div key={event.id} className="rounded-lg border bg-white p-4">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="font-medium">{event.name || "毎月積立"}</div>
+                        <p className="text-xs text-muted-foreground">
+                          {isActiveAtStart ? "開始年月時点で有効" : "開始年月時点では未開始または終了済み"}
+                        </p>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => updateScenario((s) => void s.assetContributionEvents.splice(index, 1))}>
+                        <Trash2 className="h-4 w-4" />
+                        削除
+                      </Button>
+                    </div>
+                    <FormGrid>
+                      <Field label="名称">
+                        <Input value={event.name} onChange={(e) => updateScenario((s) => void (s.assetContributionEvents[index].name = e.target.value))} />
+                      </Field>
+                      <Field label="積立先">
+                        <Select
+                          value={event.assetKey}
+                          onChange={(e) =>
+                            updateScenario((s) => {
+                              const assetKey = e.target.value as GrowthAssetKey;
+                              const target = s.assetContributionEvents[index];
+                              target.assetKey = assetKey;
+                              if (assetKey !== "nisa") {
+                                target.nisaInvestmentSlot = undefined;
+                                target.carryOverSkipped = false;
+                              } else {
+                                target.nisaInvestmentSlot = target.nisaInvestmentSlot ?? "tsumitate";
+                              }
+                            })
+                          }
+                        >
+                          <option value="nisa">NISA非課税口座</option>
+                          <option value="ideco">iDeCo</option>
+                          <option value="specificAccount">特定口座</option>
+                          <option value="bankDeposit">普通預金</option>
+                          <option value="timeDeposit">定期預金</option>
+                        </Select>
+                      </Field>
+                      <Field label="月額">
+                        <Input
+                          type="number"
+                          value={event.monthlyAmount}
+                          onChange={(e) => updateScenario((s) => void (s.assetContributionEvents[index].monthlyAmount = numberOrZero(e.target.value)))}
+                        />
+                      </Field>
+                      <Field label="開始年月">
+                        <Input type="month" value={event.startYearMonth} onChange={(e) => updateScenario((s) => void (s.assetContributionEvents[index].startYearMonth = e.target.value))} />
+                      </Field>
+                      <Field label="終了年月">
+                        <Input
+                          type="month"
+                          value={event.endYearMonth ?? ""}
+                          onChange={(e) => updateScenario((s) => void (s.assetContributionEvents[index].endYearMonth = e.target.value || undefined))}
+                        />
+                      </Field>
+                      {event.assetKey === "nisa" && (
+                        <Field label="NISA枠">
+                          <Select
+                            value={event.nisaInvestmentSlot ?? "tsumitate"}
+                            onChange={(e) => updateScenario((s) => void (s.assetContributionEvents[index].nisaInvestmentSlot = e.target.value as "tsumitate" | "growth"))}
+                          >
+                            <option value="tsumitate">積立投資枠</option>
+                            <option value="growth">成長投資枠</option>
+                          </Select>
+                        </Field>
+                      )}
+                    </FormGrid>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
