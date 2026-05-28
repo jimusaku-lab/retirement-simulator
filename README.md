@@ -6,7 +6,6 @@ This repository keeps the official retirement life planner and older reference a
 
 - `apps/retirement-life-planner`: official version with detailed tax, social-insurance, and asset-use planning logic
 - `apps/retirement-life-planner-public`: public-facing version under redesign
-- `apps/us-options-risk-planner`: public pilot for hand-entered US stock options position management
 - `apps/current`: old reference version
 
 ## Common commands

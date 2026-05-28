@@ -34,7 +34,7 @@ GitHubに置くのはアプリ本体の静的ファイルだけです。利用�
 GitHub Pagesでは以下のパスに配置します。
 
 ```text
-https://jimusaku-lab.github.io/retirement-simulator/us-options/
+https://jimusaku-lab.github.io/us-options-risk-planner/
 ```
 
 ## 注意

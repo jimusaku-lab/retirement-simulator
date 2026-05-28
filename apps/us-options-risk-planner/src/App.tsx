@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { CheckCircle2, ChevronUp, Download, FileJson, HelpCircle, JapaneseYen, Plus, TrendingUp, Upload } from "lucide-react";
+import { CheckCircle2, ChevronUp, Database, Download, FileJson, HelpCircle, JapaneseYen, Plus, TrendingUp, Upload } from "lucide-react";
 import { calculateNetInitialPremiumJPY } from "@/domain/calculations";
 import { calculateDenominators, getPrimaryDenominator } from "@/domain/denominators";
 import { calculatePayoffSeries } from "@/domain/payoff";
@@ -8,6 +8,8 @@ import { calculateScenarioResults } from "@/domain/scenarios";
 import { calculateNisaComparison, calculateTaxResult, taxProfiles } from "@/domain/tax";
 import { AccountOverview } from "@/components/dashboard/AccountOverview";
 import { Dashboard } from "@/components/dashboard/Dashboard";
+import { DataPanel } from "@/components/data/DataPanel";
+import { FirstRunNotice } from "@/components/help/FirstRunNotice";
 import { UserGuide } from "@/components/help/UserGuide";
 import { CloseDecisionCard } from "@/components/results/CloseDecisionCard";
 import { DenominatorChart, PayoffChart } from "@/components/results/Charts";
@@ -25,6 +27,10 @@ import { useOptionsStore } from "@/store/useOptionsStore";
 export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isDataOpen, setIsDataOpen] = useState(false);
+  const [hasAcceptedNotice, setHasAcceptedNotice] = useState(() =>
+    typeof window === "undefined" ? true : window.localStorage.getItem("us-options-first-run-notice-accepted") === "true",
+  );
   const [quoteStatus, setQuoteStatus] = useState("");
   const {
     activeWorkspace,
@@ -156,10 +162,15 @@ export default function App() {
     selectSimulation(id);
     setIsEditorOpen(false);
   };
+  const acceptFirstRunNotice = () => {
+    window.localStorage.setItem("us-options-first-run-notice-accepted", "true");
+    setHasAcceptedNotice(true);
+  };
 
   if (!selected) {
     return (
       <main className="min-h-screen bg-slate-100 text-slate-950">
+        {!hasAcceptedNotice ? <FirstRunNotice onAccept={acceptFirstRunNotice} /> : null}
         <AppHeader
           activeWorkspace={activeWorkspace}
           switchWorkspace={switchWorkspace}
@@ -168,6 +179,7 @@ export default function App() {
           onJson={downloadJson}
           onImportJson={() => importInputRef.current?.click()}
           onToggleGuide={() => setIsGuideOpen((current) => !current)}
+          onToggleData={() => setIsDataOpen((current) => !current)}
           onRefreshQuote={undefined}
           onRefreshFx={undefined}
           quoteStatus=""
@@ -175,6 +187,7 @@ export default function App() {
         <input ref={importInputRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importJson(event.target.files?.[0] ?? null)} />
         <div className="mx-auto grid max-w-[1440px] gap-5 px-4 py-5">
           {isGuideOpen ? <UserGuide onClose={() => setIsGuideOpen(false)} /> : null}
+          {isDataOpen ? <DataPanel onClose={() => setIsDataOpen(false)} /> : null}
           <Dashboard
             simulations={simulations}
             selectedId=""
@@ -253,6 +266,7 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
+      {!hasAcceptedNotice ? <FirstRunNotice onAccept={acceptFirstRunNotice} /> : null}
       <AppHeader
         activeWorkspace={activeWorkspace}
         switchWorkspace={switchWorkspace}
@@ -261,6 +275,7 @@ export default function App() {
         onJson={downloadJson}
         onImportJson={() => importInputRef.current?.click()}
         onToggleGuide={() => setIsGuideOpen((current) => !current)}
+        onToggleData={() => setIsDataOpen((current) => !current)}
         onRefreshQuote={refreshAllQuotes}
         onRefreshFx={refreshAllFx}
         quoteStatus={quoteStatus}
@@ -268,6 +283,7 @@ export default function App() {
       <input ref={importInputRef} className="hidden" type="file" accept="application/json,.json" onChange={(event) => void importJson(event.target.files?.[0] ?? null)} />
       <div className="mx-auto grid max-w-[1440px] gap-5 px-4 py-5">
         {isGuideOpen ? <UserGuide onClose={() => setIsGuideOpen(false)} /> : null}
+        {isDataOpen ? <DataPanel onClose={() => setIsDataOpen(false)} /> : null}
         <Dashboard
           simulations={simulations}
           selectedId={selected.id}
@@ -333,6 +349,7 @@ function AppHeader({
   onJson,
   onImportJson,
   onToggleGuide,
+  onToggleData,
   onRefreshQuote,
   onRefreshFx,
   quoteStatus,
@@ -344,6 +361,7 @@ function AppHeader({
   onJson: () => void;
   onImportJson: () => void;
   onToggleGuide: () => void;
+  onToggleData: () => void;
   onRefreshQuote?: () => void;
   onRefreshFx?: () => void;
   quoteStatus: string;
@@ -388,6 +406,14 @@ function AppHeader({
           >
             <HelpCircle size={16} />
             使い方
+          </button>
+          <button
+            className="inline-flex h-10 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-900"
+            onClick={onToggleData}
+            title="この端末に保存された入力データの説明と削除"
+          >
+            <Database size={16} />
+            データ
           </button>
           <button
             className="inline-flex h-10 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-900 disabled:opacity-40"
