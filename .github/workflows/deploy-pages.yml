@@ -2,6 +2,16 @@ name: Deploy public retirement life planner
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-pages.yml"
+      - "apps/retirement-life-planner-public/**"
+      - "apps/life-asset-simulator-beta/**"
+      - "apps/us-options-risk-planner/**"
+      - "package.json"
+      - "package-lock.json"
 
 permissions:
   contents: read
