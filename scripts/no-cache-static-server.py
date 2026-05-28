@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -19,8 +22,15 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] == "/api/plan":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/plan":
             self.handle_plan_get()
+            return
+        if path == "/api/quote":
+            self.handle_quote_get()
+            return
+        if path == "/api/fx":
+            self.handle_fx_get()
             return
         super().do_GET()
 
@@ -70,6 +80,67 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         tmp_path.write_bytes(json.dumps(parsed, ensure_ascii=False, indent=2).encode("utf-8"))
         os.replace(tmp_path, self.shared_plan_file)
         self.send_json(200, {"ok": True})
+
+    def handle_quote_get(self) -> None:
+        query = parse_qs(urlparse(self.path).query)
+        symbol = (query.get("symbol") or [""])[0].strip().lower()
+        if not symbol:
+            self.send_json(400, {"error": "symbol is required"})
+            return
+        stooq_symbol = symbol if "." in symbol else f"{symbol}.us"
+        url = f"https://stooq.com/q/l/?s={stooq_symbol}&f=sd2t2c&h&e=csv"
+        try:
+            rows = self.fetch_csv(url)
+            if len(rows) < 2:
+                raise ValueError("empty quote response")
+            record = {key.lower(): value for key, value in zip(rows[0], rows[1])}
+            close = float(record.get("close") or "0")
+            if close <= 0:
+                raise ValueError("invalid close")
+        except Exception as exc:
+            self.send_json(502, {"error": f"quote fetch failed: {exc}"})
+            return
+        self.send_json(
+            200,
+            {
+                "symbol": record.get("symbol", symbol.upper()),
+                "price": close,
+                "date": record.get("date", ""),
+                "time": record.get("time", ""),
+                "source": "stooq",
+            },
+        )
+
+    def handle_fx_get(self) -> None:
+        # Stooq's USDJPY pair is quoted as JPY per USD.
+        url = "https://stooq.com/q/l/?s=usdjpy&f=sd2t2c&h&e=csv"
+        try:
+            rows = self.fetch_csv(url)
+            if len(rows) < 2:
+                raise ValueError("empty fx response")
+            record = {key.lower(): value for key, value in zip(rows[0], rows[1])}
+            close = float(record.get("close") or "0")
+            if close <= 0:
+                raise ValueError("invalid close")
+        except Exception as exc:
+            self.send_json(502, {"error": f"fx fetch failed: {exc}"})
+            return
+        self.send_json(
+            200,
+            {
+                "pair": "USDJPY",
+                "rate": close,
+                "date": record.get("date", ""),
+                "time": record.get("time", ""),
+                "source": "stooq",
+            },
+        )
+
+    def fetch_csv(self, url: str) -> list[list[str]]:
+        request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=8) as response:
+            text = response.read().decode("utf-8")
+        return list(csv.reader(text.splitlines()))
 
     def send_json(self, status: int, payload: dict[str, object]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

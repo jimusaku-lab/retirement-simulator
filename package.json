@@ -10,6 +10,7 @@
     "dev:public": "npm --prefix apps/retirement-life-planner-public run dev",
     "dev:retirement-life-planner": "npm --prefix apps/retirement-life-planner run dev",
     "dev:time-bucket": "npm --prefix apps/time-bucket-planner run dev",
+    "dev:us-options": "npm --prefix apps/us-options-risk-planner run dev",
     "serve:local": "PORT=5175 bash scripts/ensure-local-server.sh retirement-life-planner",
     "serve:current": "bash scripts/ensure-local-server.sh current",
     "serve:beta": "PORT=5177 bash scripts/ensure-local-server.sh life-asset-simulator-beta",
@@ -21,12 +22,14 @@
     "build:public": "npm --prefix apps/retirement-life-planner-public run build",
     "build:retirement-life-planner": "npm --prefix apps/retirement-life-planner run build",
     "build:time-bucket": "npm --prefix apps/time-bucket-planner run build",
+    "build:us-options": "npm --prefix apps/us-options-risk-planner run build",
     "preview": "npm --prefix apps/retirement-life-planner run preview",
     "test": "npm --prefix apps/retirement-life-planner run test",
     "test:current": "npm --prefix apps/current run test",
     "test:beta": "npm --prefix apps/life-asset-simulator-beta run test",
     "test:public": "npm --prefix apps/retirement-life-planner-public run test",
     "test:retirement-life-planner": "npm --prefix apps/retirement-life-planner run test",
+    "test:us-options": "npm --prefix apps/us-options-risk-planner run test",
     "test:watch": "npm --prefix apps/current run test:watch"
   },
   "dependencies": {

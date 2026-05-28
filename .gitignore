@@ -12,3 +12,8 @@ public/recovered_retirement_5173_from_chrome.json
 private-materials/
 source-materials/
 backups/
+
+# User-entered local app backups / exports
+apps/us-options-risk-planner/us-options-*-positions.json
+apps/us-options-risk-planner/*.local.json
+apps/us-options-risk-planner/*.private.json
