@@ -25,7 +25,7 @@
     "build:retirement-life-planner": "npm --prefix apps/retirement-life-planner run build",
     "build:time-bucket": "npm --prefix apps/time-bucket-planner run build",
     "build:us-options": "npm --prefix apps/us-options-risk-planner run build",
-    "build:us-options:public": "GITHUB_PAGES=true VITE_DISABLE_EXTERNAL_QUOTES=true npm --prefix apps/us-options-risk-planner run build",
+    "build:us-options:public": "GITHUB_PAGES=true npm --prefix apps/us-options-risk-planner run build",
     "preview": "npm --prefix apps/retirement-life-planner run preview",
     "test": "npm --prefix apps/retirement-life-planner run test",
     "test:current": "npm --prefix apps/current run test",
