@@ -2792,6 +2792,51 @@ describe("simulation", () => {
     expect(adjustments[0]?.estimatedIncomeAfterAdjustment).toBe(4_000_000);
   });
 
+  it("収入イベントのiDeCo一時金は加入開始日と終了日があれば期間入力ベースで重複調整する", () => {
+    const scenario = simpleScenario({
+      retirementIncomeEvents: [
+        {
+          id: "company-retirement",
+          memberId: "member-self",
+          name: "会社退職金",
+          type: "companyRetirementAllowance",
+          paymentYearMonth: "2025-09",
+          grossAmount: 17_246_247,
+          serviceYears: 29,
+          serviceStartDate: "1997-05-26",
+          serviceEndDate: "2025-09-30",
+          alreadyReceived: true,
+          retirementIncomeDeductionUsed: true,
+          withholdingTaxPaid: 75_196,
+        },
+      ],
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2027-01",
+          monthlyAmount: 21_743_747,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumContributionYears: 8,
+          idecoLumpSumContributionStartDate: "2026-01-01",
+          idecoLumpSumContributionEndDate: "2026-12-31",
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const adjustments = getRetirementOverlapAdjustments(scenario);
+
+    expect(adjustments).toHaveLength(1);
+    expect(adjustments[0]?.precision).toBe("dateBased");
+    expect(adjustments[0]?.estimatedOverlapYears).toBe(0);
+    expect(adjustments[0]?.baseDeduction).toBe(3_200_000);
+    expect(adjustments[0]?.adjustedDeduction).toBe(3_200_000);
+  });
+
   it("公的年金等控除は年金以外の所得が1,000万円を超える場合の速算表を使う", () => {
     const scenario = simpleScenario({
       userProfile: {

@@ -171,8 +171,8 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
       paymentYearMonth: event.startYearMonth,
       grossAmount: Math.max(0, Math.round(event.monthlyAmount)),
       serviceYears: Math.max(0, Math.round(event.idecoLumpSumContributionYears ?? 20)),
-      serviceStartDate: undefined,
-      serviceEndDate: undefined,
+      serviceStartDate: event.idecoLumpSumContributionStartDate,
+      serviceEndDate: event.idecoLumpSumContributionEndDate,
       alreadyReceived: false,
       retirementIncomeDeductionUsed: true,
       withholdingTaxPaid: 0,
@@ -289,7 +289,7 @@ export function getRetirementOverlapAdjustments(scenario: ScenarioData): Retirem
         note: priorUnderUsed
           ? "前回の退職手当等が前回控除額未満のため、実際の調整額はこの概算より小さくなる可能性があります。"
           : dateBasedOverlapYears === null
-            ? "勤続/加入期間の日付が未入力のため、双方の年数の小さい方を重複候補として使った概算です。"
+            ? "勤続/加入年数は使っていますが、開始日・終了日が片方でも未入力のため、双方の年数の小さい方を重複年数として使った概算です。iDeCo一時金の加入開始日/終了日と、退職所得履歴の勤続開始日/終了日を入れると期間入力ベースになります。"
             : "勤続/加入期間の日付から重複期間を概算しています。",
       });
     }

@@ -192,6 +192,8 @@ export type IncomeEvent = {
   idecoPensionYears?: 5 | 10 | 15 | 20;
   idecoPensionPaymentsPerYear?: 1 | 2 | 4 | 6;
   idecoLumpSumContributionYears?: number;
+  idecoLumpSumContributionStartDate?: string;
+  idecoLumpSumContributionEndDate?: string;
   idecoLumpSumTaxMode?: "retirementIncomeDeclaration" | "noDeclaration";
   linkedHouseholdLivingArrangementEventId?: string;
   note?: string;

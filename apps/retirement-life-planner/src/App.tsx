@@ -91,7 +91,7 @@ import {
   yearMemberTurnsAge,
   yearMonthRangeForYear,
 } from "@/lib/pensionPlanner";
-import { compactYen, downloadText, numberOrZero, yen } from "@/lib/utils";
+import { cn, compactYen, downloadText, numberOrZero, yen } from "@/lib/utils";
 import {
   getBaseMonthlyExpense,
   getSpecialExpenseAmountForMonth,
@@ -150,6 +150,33 @@ type TabGroup = (typeof tabs)[number]["group"];
 type AppMode = "safety" | "assetUse";
 type AssetUseTab = "timeBucket" | "quickTrial" | "review" | "incomePower";
 type PrimaryNavKey = "dashboard" | "safety" | "assetUse" | "results" | "compare" | "data";
+type InputCardPriority = "required" | "recommended" | "detail" | "expert";
+type InputCardStatus = "not_started" | "incomplete" | "complete" | "review_recommended" | "not_applicable" | "inactive";
+type InputCardVisibility = "always" | "summary" | "collapsed" | "hidden";
+type InputCardHighlight = "none" | "current" | "next_required" | "review" | "blocked" | "targeted";
+type InputCardId =
+  | "profile-family-period"
+  | "assets-current"
+  | "assets-cost-basis"
+  | "expenses-monthly"
+  | "income-pension"
+  | "income-ideco"
+  | "income-ideco-lump"
+  | "tax-mode"
+  | "tax-retirement-overlap"
+  | "special-expenses";
+type InputCardDefinition = {
+  id: InputCardId;
+  title: string;
+  priority: InputCardPriority;
+  status: InputCardStatus;
+  visibility: InputCardVisibility;
+  highlight: InputCardHighlight;
+  summary: string;
+  missingItems: string[];
+  tab: Exclude<TabKey, "dashboard" | "manual" | "results" | "compare" | "data">;
+  nextCardId?: InputCardId;
+};
 type ExpenseKey = keyof MonthlyExpenseProfile;
 type AssetKey = keyof InitialAssets;
 type HouseholdRelationship = HouseholdMember["relationship"];
@@ -471,8 +498,29 @@ const incomeTypeLabels: Record<IncomeEventType, string> = {
   investmentIncome: "投資由来の定期入金",
   dividend: "配当・利息",
   other: "その他",
-  oneTime: "単発入金",
+  oneTime: "一時金・単発入金",
 };
+
+const incomeTypeOptionOrder: IncomeEventType[] = ["unemployment", "pension", "salary", "investmentIncome", "dividend", "other", "oneTime"];
+const idecoIncomeTypeOptionOrder: IncomeEventType[] = ["pension", "oneTime"];
+
+function isIdecoIncomeType(type: IncomeEventType) {
+  return type === "pension" || type === "oneTime";
+}
+
+function getIncomeTypeSelectOptions(sourceAssetKey: GrowthAssetKey | undefined, currentType: IncomeEventType) {
+  if (sourceAssetKey === "ideco") return idecoIncomeTypeOptionOrder;
+  const options = incomeTypeOptionOrder;
+  return options.includes(currentType) ? options : [currentType, ...options];
+}
+
+function getIncomeTypeSelectLabel(type: IncomeEventType, sourceAssetKey: GrowthAssetKey | undefined) {
+  if (sourceAssetKey === "ideco") {
+    if (type === "pension") return "iDeCo年金受取（雑所得）";
+    if (type === "oneTime") return "iDeCo一時金（一括受取・退職所得）";
+  }
+  return incomeTypeLabels[type];
+}
 
 const editableGrowthAssetKeys: GrowthAssetKey[] = [
   "timeDeposit",
@@ -548,6 +596,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [assetUseTab, setAssetUseTab] = useState<AssetUseTab>("timeBucket");
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [targetedInputCardId, setTargetedInputCardId] = useState<InputCardId | null>(null);
   const [sharedSave, setSharedSave] = useState<SharedSaveState>({
     status: "checking",
     message: "共有保存を確認中です。",
@@ -586,6 +635,7 @@ function App() {
   const currentPlanPayload = useMemo(() => JSON.stringify(currentPlanState), [currentPlanState]);
   const deferredScenarios = useDeferredValue(scenarios);
   const result = useMemo(() => simulateScenario(activeScenario), [activeScenario]);
+  const inputCards = useMemo(() => buildInputCards(activeScenario), [activeScenario]);
   const allResults = useMemo(
     () => {
       if (activeTab !== "compare") return [];
@@ -643,6 +693,12 @@ function App() {
     const timer = window.setTimeout(() => setRestoreMessage(null), 6000);
     return () => window.clearTimeout(timer);
   }, [restoreMessage]);
+
+  useEffect(() => {
+    if (!targetedInputCardId) return undefined;
+    const timer = window.setTimeout(() => setTargetedInputCardId(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [targetedInputCardId]);
 
   const saveSharedPlan = async (state: RetirementPlanState, options?: { enableAutoSave?: boolean; showMessage?: boolean }) => {
     const payload = JSON.stringify(state, null, 2);
@@ -884,6 +940,17 @@ function App() {
     setAppModeHash("safety");
     if (!safetySubTabKeys.has(activeTab)) setActiveTab("profile");
   };
+  const openInputCard = (cardId: InputCardId) => {
+    const card = inputCards.find((item) => item.id === cardId);
+    if (!card) return;
+    setAppModeHash("safety");
+    setActiveTab(card.tab);
+    setTargetedInputCardId(card.id);
+    window.setTimeout(() => {
+      document.getElementById(card.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  };
+  const nextInputCard = inputCards.find((card) => card.highlight === "next_required") ?? inputCards.find(isInputCardActionable);
 
   return (
     <div className="min-h-screen">
@@ -923,7 +990,7 @@ function App() {
         <div className="container flex flex-col gap-4 py-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">本人専用MVP</p>
-            <h1 className="text-2xl font-semibold tracking-normal">退職後生活シミュレーション</h1>
+            <h1 className="text-2xl font-semibold tracking-normal">人生資産シミュレーション</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select value={activeScenario.id} onChange={(event) => setActiveScenario(event.target.value)} className="w-64">
@@ -1024,9 +1091,12 @@ function App() {
               variant="ghost"
               size="sm"
               onClick={() => setActiveTab(tab.key)}
-              className={`shrink-0 ${activeTab === tab.key ? tabGroupClassNames[tab.group].active : tabGroupClassNames[tab.group].inactive}`}
+              className={`shrink-0 gap-1.5 ${activeTab === tab.key ? tabGroupClassNames[tab.group].active : tabGroupClassNames[tab.group].inactive}`}
             >
               {tab.label}
+              {nextInputCard?.tab === tab.key && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">次</span>
+              )}
             </Button>
             ))}
           </nav>
@@ -1089,12 +1159,22 @@ function App() {
         )}
         {appMode === "safety" && (
           <>
+            {activePrimaryNav === "safety" && safetySubTabKeys.has(activeTab) && (
+              <InputGuidanceSummary
+                cards={inputCards}
+                onOpenCard={openInputCard}
+                onOpenResults={() => setActiveTab("results")}
+                onOpenOnboarding={() => setActiveTab("profile")}
+                onOpenOnboardingLabel="基本情報を開く"
+              />
+            )}
             {activeTab === "dashboard" && (
               <Dashboard
                 scenario={activeScenario}
                 result={result}
                 baselineScenario={baselineScenario}
                 onOpenFlexibleFreeCashSettings={openFlexibleFreeCashSettings}
+                onOpenInputCard={openInputCard}
               />
             )}
             {activeTab === "profile" && (
@@ -1103,6 +1183,7 @@ function App() {
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
               />
             )}
             {activeTab === "assets" && (
@@ -1111,6 +1192,7 @@ function App() {
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
               />
             )}
             {activeTab === "expenses" && (
@@ -1119,6 +1201,7 @@ function App() {
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
               />
             )}
             {activeTab === "income" && (
@@ -1127,15 +1210,17 @@ function App() {
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
               />
             )}
-            {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} />}
+            {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} targetCardId={targetedInputCardId} />}
             {activeTab === "special" && (
               <SpecialSection
                 scenario={activeScenario}
                 scenarios={scenarios}
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
                 onOpenTimeBucket={() => {
                   setAssetUseTab("timeBucket");
                   setAppModeHash("assetUse");
@@ -1154,7 +1239,7 @@ function App() {
                 updateScenario={updateScenario}
               />
             )}
-            {activeTab === "results" && <ResultsSection result={result} />}
+            {activeTab === "results" && <ResultsSection result={result} onOpenInputCard={openInputCard} />}
             {activeTab === "compare" && (
               <CompareSection
                 items={allResults}
@@ -2326,11 +2411,13 @@ function Dashboard({
   result,
   baselineScenario,
   onOpenFlexibleFreeCashSettings,
+  onOpenInputCard,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
   baselineScenario: ScenarioData;
   onOpenFlexibleFreeCashSettings: () => void;
+  onOpenInputCard: (cardId: InputCardId) => void;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
@@ -2415,6 +2502,41 @@ function Dashboard({
       remaining: Number.isFinite(row.nisaRemainingLifetimeLimit) ? row.nisaRemainingLifetimeLimit : 0,
     }));
   const nisaSkippedTotal = nisaProgressChartData.reduce((sum, row) => sum + row.skipped, 0);
+  const targetBalanceAmount = scenario.userProfile.targetBalanceAmount ?? 0;
+  const targetBalance = result.targetAgeBalance ?? 0;
+  const targetBalanceGap = targetBalance - targetBalanceAmount;
+  const targetStatus =
+    targetBalanceGap >= 0
+      ? `${scenario.userProfile.targetBalanceAge}歳の目標残高を上回っています`
+      : `${scenario.userProfile.targetBalanceAge}歳の目標残高に不足しています`;
+  const periodMonthCount = Math.max(1, flexibleFreeCashSummary.yearCount * 12);
+  const monthlyAfterLivingAndTax =
+    (flexibleFreeCashSummary.cashLikeIncomeTotal - flexibleFreeCashSummary.livingExpenseTotal - flexibleFreeCashSummary.taxAndSocialTotal) /
+    periodMonthCount;
+  const monthlyAfterAllSpending = flexibleFreeCashSummary.averageAnnualFreeCash / 12;
+  const peakTaxYear = result.annual.reduce<AnnualResult | undefined>((peak, row) => {
+    const rowTax = row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal;
+    const peakTax = peak ? peak.taxInsuranceTotal + peak.capitalGainsTaxTotal + peak.idecoWithholdingTaxTotal : -1;
+    return rowTax > peakTax ? row : peak;
+  }, undefined);
+  const peakTaxTotal = peakTaxYear
+    ? peakTaxYear.taxInsuranceTotal + peakTaxYear.capitalGainsTaxTotal + peakTaxYear.idecoWithholdingTaxTotal
+    : 0;
+  const firstAnnualRow = result.annual[0];
+  const firstYearTaxTotal = firstAnnualRow
+    ? firstAnnualRow.taxInsuranceTotal + firstAnnualRow.capitalGainsTaxTotal + firstAnnualRow.idecoWithholdingTaxTotal
+    : 0;
+  const nextAnnualRow = result.annual[1];
+  const nextYearTaxTotal = nextAnnualRow
+    ? nextAnnualRow.taxInsuranceTotal + nextAnnualRow.capitalGainsTaxTotal + nextAnnualRow.idecoWithholdingTaxTotal
+    : 0;
+  const taxAttentionText =
+    peakTaxYear && peakTaxTotal > 0
+      ? `${peakTaxYear.year}年（年末${peakTaxYear.ageYears}歳）に ${compactYen(peakTaxTotal)}`
+      : "大きな税社保負担は見つかっていません";
+  const nextYearTaxText = nextAnnualRow
+    ? `${nextAnnualRow.year}年は ${compactYen(nextYearTaxTotal)}（初年度比 ${compactYen(nextYearTaxTotal - firstYearTaxTotal)}）`
+    : "翌年データなし";
   const assetUseWaterfallColors: Record<(typeof assetUseWaterfallRows)[number]["kind"], string> = {
     inflow: "#0f766e",
     outflow: "#dc2626",
@@ -2424,6 +2546,67 @@ function Dashboard({
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>まず見る結論</CardTitle>
+          <CardDescription>
+            資産寿命、税金・社会保険を払った後の余力、注意が必要な年を先に確認します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-md border bg-emerald-50 px-4 py-4">
+              <div className="text-sm font-medium text-emerald-900">資産寿命</div>
+              <div className="mt-2 text-3xl font-semibold text-emerald-950">{assetLifeValue}</div>
+              <p className="mt-2 text-sm leading-6 text-emerald-900">
+                {scenario.userProfile.targetBalanceAge}歳残高は {compactYen(targetBalance)}。目標との差は {compactYen(targetBalanceGap)} です。
+              </p>
+            </div>
+            <div className="rounded-md border bg-blue-50 px-4 py-4">
+              <div className="text-sm font-medium text-blue-900">生活費・税社保後の月次余力</div>
+              <div className={`mt-2 text-3xl font-semibold ${monthlyAfterLivingAndTax >= 0 ? "text-blue-950" : "text-red-700"}`}>
+                {compactYen(monthlyAfterLivingAndTax)}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-blue-900">
+                {flexibleFreeCashLabel} の現金収入等から生活費と税社保を引いた目安です。楽しみ支出や追加投資は別に見ます。
+              </p>
+            </div>
+            <div className="rounded-md border bg-amber-50 px-4 py-4">
+              <div className="text-sm font-medium text-amber-900">税社保の注意年</div>
+              <div className="mt-2 text-2xl font-semibold text-amber-950">{taxAttentionText}</div>
+              <p className="mt-2 text-sm leading-6 text-amber-900">
+                翌年負担: {nextYearTaxText}。所得が出た翌年に負担が増える年は税社保タブで確認します。
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 text-sm md:grid-cols-3">
+            <div className="rounded-md border bg-white px-4 py-3">
+              <div className="font-medium text-slate-900">{targetStatus}</div>
+              <p className="mt-1 leading-6 text-muted-foreground">目標残高は「残高確認年齢」と「その時点で残したい金額」で調整できます。</p>
+              <Button className="mt-3" variant="outline" size="sm" onClick={() => onOpenInputCard("profile-family-period")}>
+                目標を見直す
+              </Button>
+            </div>
+            <div className="rounded-md border bg-white px-4 py-3">
+              <div className={`font-medium ${monthlyAfterAllSpending >= 0 ? "text-slate-900" : "text-red-700"}`}>
+                楽しみ支出なども含めた月次収支: {compactYen(monthlyAfterAllSpending)}
+              </div>
+              <p className="mt-1 leading-6 text-muted-foreground">特別支出、iDeCo手数料、資産活用を含む期間平均です。</p>
+              <Button className="mt-3" variant="outline" size="sm" onClick={() => onOpenInputCard("expenses-monthly")}>
+                生活費を見直す
+              </Button>
+            </div>
+            <div className="rounded-md border bg-white px-4 py-3">
+              <div className="font-medium text-slate-900">楽しみ支出: {compactYen(specialExpenseCategoryTotals.enjoyment)}</div>
+              <p className="mt-1 leading-6 text-muted-foreground">{flexibleFreeCashLabel} に登録された旅行・趣味などの合計です。</p>
+              <Button className="mt-3" variant="outline" size="sm" onClick={() => onOpenInputCard("special-expenses")}>
+                特別支出を確認
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric title="現在資産" value={compactYen(getTotalAssets(scenario))} sub={`取り崩し対象 ${compactYen(getSimulationTargetAssets(scenario))}`} />
         <Metric title={`資産寿命 / ${scenario.userProfile.targetBalanceAge}歳残高`} value={assetLifeValue} sub={assetLifeSub} />
@@ -2843,7 +3026,7 @@ function ProfileSection({
     );
   };
   return (
-    <Card>
+    <Card id="profile-family-period" data-input-card-id="profile-family-period">
       <CardHeader>
           <CardTitle>基本情報入力</CardTitle>
           <CardDescription>年齢計算、シミュレーション期間、指定年齢残高に使います。</CardDescription>
@@ -3012,7 +3195,233 @@ function ProfileSection({
 type SectionProps = {
   scenario: ScenarioData;
   updateScenario: (updater: (scenario: ScenarioData) => void) => void;
+  targetCardId?: InputCardId | null;
 };
+
+function statusLabel(status: InputCardStatus) {
+  const labels: Record<InputCardStatus, string> = {
+    not_started: "未入力",
+    incomplete: "不足あり",
+    complete: "完了",
+    review_recommended: "確認推奨",
+    not_applicable: "対象外",
+    inactive: "計算対象外",
+  };
+  return labels[status];
+}
+
+function priorityLabel(priority: InputCardPriority) {
+  const labels: Record<InputCardPriority, string> = {
+    required: "必須",
+    recommended: "推奨",
+    detail: "詳細",
+    expert: "専門",
+  };
+  return labels[priority];
+}
+
+function inputCardStatusClass(status: InputCardStatus) {
+  if (status === "complete") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "review_recommended") return "border-amber-200 bg-amber-50 text-amber-950";
+  if (status === "not_applicable" || status === "inactive") return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-rose-200 bg-rose-50 text-rose-950";
+}
+
+function inputCardHighlightClass(highlight: InputCardHighlight) {
+  if (highlight === "next_required") return "ring-2 ring-amber-300";
+  if (highlight === "targeted" || highlight === "current") return "ring-2 ring-sky-300";
+  if (highlight === "blocked") return "ring-2 ring-rose-300";
+  if (highlight === "review") return "ring-1 ring-amber-200";
+  return "";
+}
+
+function isInputCardActionable(card: InputCardDefinition) {
+  return card.status === "not_started" || card.status === "incomplete" || card.status === "review_recommended";
+}
+
+function inputCardVisibilityFor(card: Omit<InputCardDefinition, "visibility" | "highlight">): InputCardVisibility {
+  if (card.status === "not_applicable") return card.priority === "expert" ? "hidden" : "summary";
+  if (card.status === "inactive") return "summary";
+  if (card.status === "incomplete" || card.status === "not_started") return "always";
+  if (card.priority === "detail" || card.priority === "expert") return "collapsed";
+  return "summary";
+}
+
+function withInputCardUiState(cards: Array<Omit<InputCardDefinition, "visibility" | "highlight">>): InputCardDefinition[] {
+  const nextRequiredCard = cards.find((card) => card.priority === "required" && isInputCardActionable(card as InputCardDefinition));
+  return cards.map((card) => ({
+    ...card,
+    visibility: inputCardVisibilityFor(card),
+    highlight:
+      card.id === nextRequiredCard?.id
+        ? "next_required"
+        : card.status === "incomplete" || card.status === "not_started"
+          ? "blocked"
+          : card.status === "review_recommended"
+            ? "review"
+            : "none",
+  }));
+}
+
+function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
+  const selfMember =
+    scenario.householdMembers.find((member) => member.relationship === "self") ??
+    scenario.householdMembers.find((member) => member.id === scenario.householdProfile.headMemberId) ??
+    scenario.householdMembers[0];
+  const spouseMember = scenario.householdMembers.find((member) => member.relationship === "spouse");
+  const profileMissing = [
+    !scenario.userProfile.birthDate && "生年月日",
+    !scenario.userProfile.simulationStartYearMonth && "開始年月",
+    scenario.userProfile.simulationEndMode === "yearMonth" && !scenario.userProfile.simulationEndYearMonth && "終了年月",
+    scenario.userProfile.simulationEndMode === "age" && !scenario.userProfile.simulationEndAge && "終了年齢",
+  ].filter(Boolean) as string[];
+  const totalAssets = getTotalAssets(scenario);
+  const simulationAssets = getSimulationTargetAssets(scenario);
+  const expenseTotal = getBaseMonthlyExpense(scenario.monthlyExpenses, shouldIgnoreTaxExpenseField(scenario));
+  const pensionSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
+  const pensionTotal =
+    pensionSettings.selfBasicAnnual +
+    pensionSettings.selfEmployeesAnnual +
+    pensionSettings.spouseBasicAnnual +
+    pensionSettings.spouseEmployeesAnnual;
+  const idecoBalance = Math.max(0, scenario.initialAssets.ideco);
+  const idecoEvents = scenario.incomeEvents.filter((event) => event.sourceAssetKey === "ideco");
+  const idecoLumpSumEvents = idecoEvents.filter((event) => event.type === "oneTime");
+  const idecoLumpMissing = Array.from(
+    new Set(
+      idecoLumpSumEvents.flatMap((event) => [
+        !event.startYearMonth && "受取年月",
+        event.monthlyAmount <= 0 && "一時金受取額",
+        !event.idecoLumpSumContributionYears && "加入年数",
+        !event.idecoLumpSumTaxMode && "退職所得の申告",
+      ]).filter(Boolean) as string[],
+    ),
+  );
+  const idecoLumpDateMissing = idecoLumpSumEvents.some(
+    (event) => !event.idecoLumpSumContributionStartDate || !event.idecoLumpSumContributionEndDate,
+  );
+  const taxableAssets = scenario.initialAssets.specificAccount + scenario.initialAssets.ordinaryAccountForOptions;
+  const costBasisMissing = taxableAssets > 0 && costBasisKeys.some((key) => {
+    if (scenario.initialAssets[key] <= 0) return false;
+    return scenario.initialAssetCostBasis[key] <= 0;
+  });
+  const specialMissing = scenario.specialExpenses.some((event) => !event.yearMonth || event.amount <= 0);
+  const retirementAdjustments = getRetirementOverlapAdjustments(scenario);
+
+  return withInputCardUiState([
+    {
+      id: "profile-family-period",
+      title: "家族・期間",
+      priority: "required",
+      status: profileMissing.length > 0 ? "incomplete" : "complete",
+      summary: `${selfMember?.name ?? "本人"} / ${spouseMember ? "配偶者あり" : "単身"} / ${scenario.userProfile.simulationEndMode === "age" ? `${scenario.userProfile.simulationEndAge ?? 95}歳まで` : `${scenario.userProfile.simulationEndYearMonth ?? "終了年月未設定"}まで`}`,
+      missingItems: profileMissing,
+      tab: "profile",
+      nextCardId: "assets-current",
+    },
+    {
+      id: "assets-current",
+      title: "現在資産",
+      priority: "required",
+      status: "complete",
+      summary: `現在資産 ${compactYen(totalAssets)} / 取り崩し対象 ${compactYen(simulationAssets)}`,
+      missingItems: [],
+      tab: "assets",
+      nextCardId: "expenses-monthly",
+    },
+    {
+      id: "assets-cost-basis",
+      title: "取得原価・評価損益",
+      priority: "detail",
+      status: costBasisMissing ? "review_recommended" : "complete",
+      summary: costBasisMissing ? "課税口座の取得原価が未設定です" : "取得原価の概算入力があります",
+      missingItems: costBasisMissing ? ["取得原価"] : [],
+      tab: "assets",
+      nextCardId: "expenses-monthly",
+    },
+    {
+      id: "expenses-monthly",
+      title: "毎月の生活費",
+      priority: "required",
+      status: expenseTotal > 0 ? "complete" : "incomplete",
+      summary: `月平均生活費 ${compactYen(expenseTotal)}`,
+      missingItems: expenseTotal > 0 ? [] : ["毎月生活費"],
+      tab: "expenses",
+      nextCardId: "income-pension",
+    },
+    {
+      id: "income-pension",
+      title: "公的年金",
+      priority: "required",
+      status: pensionTotal > 0 ? "complete" : "incomplete",
+      summary: `65歳標準年額 ${compactYen(pensionTotal)}`,
+      missingItems: pensionTotal > 0 ? [] : ["年金見込み額"],
+      tab: "income",
+      nextCardId: "tax-mode",
+    },
+    {
+      id: "income-ideco",
+      title: "iDeCo受取",
+      priority: "recommended",
+      status: idecoBalance <= 0 ? "not_applicable" : idecoEvents.length > 0 ? "complete" : "review_recommended",
+      summary: idecoBalance <= 0 ? "iDeCo残高なし" : idecoEvents.length > 0 ? `iDeCo受取 ${idecoEvents.length}件` : `iDeCo残高 ${compactYen(idecoBalance)} の受取方法を確認`,
+      missingItems: idecoBalance > 0 && idecoEvents.length === 0 ? ["iDeCo受取方法"] : [],
+      tab: "income",
+      nextCardId: "tax-mode",
+    },
+    {
+      id: "income-ideco-lump",
+      title: "iDeCo一時金",
+      priority: "required",
+      status:
+        idecoLumpSumEvents.length === 0
+          ? "not_applicable"
+          : idecoLumpMissing.length > 0
+            ? "incomplete"
+            : idecoLumpDateMissing
+              ? "review_recommended"
+              : "complete",
+      summary:
+        idecoLumpSumEvents.length === 0
+          ? "iDeCo一時金なし"
+          : idecoLumpDateMissing
+            ? "加入開始日/終了日を入れると期間入力ベースになります"
+            : `iDeCo一時金 ${idecoLumpSumEvents.length}件`,
+      missingItems: idecoLumpMissing.length > 0 ? idecoLumpMissing : idecoLumpDateMissing ? ["加入開始日/終了日"] : [],
+      tab: "income",
+      nextCardId: "tax-retirement-overlap",
+    },
+    {
+      id: "tax-mode",
+      title: "税金・社会保険の計算方法",
+      priority: "required",
+      status: scenario.householdProfile.taxCalculationMode ? "complete" : "incomplete",
+      summary: taxModeHelp[scenario.householdProfile.taxCalculationMode].label,
+      missingItems: scenario.householdProfile.taxCalculationMode ? [] : ["計算モード"],
+      tab: "tax",
+      nextCardId: "special-expenses",
+    },
+    {
+      id: "tax-retirement-overlap",
+      title: "退職所得控除の重複調整",
+      priority: "expert",
+      status: retirementAdjustments.length > 0 ? "review_recommended" : "not_applicable",
+      summary: retirementAdjustments.length > 0 ? `重複調整 ${retirementAdjustments.length}件を確認` : "対象イベントなし",
+      missingItems: retirementAdjustments.length > 0 ? ["退職所得控除の重複調整"] : [],
+      tab: "tax",
+      nextCardId: "special-expenses",
+    },
+    {
+      id: "special-expenses",
+      title: "特別支出・やりたいこと",
+      priority: "recommended",
+      status: scenario.specialExpenses.length === 0 ? "not_applicable" : specialMissing ? "incomplete" : "complete",
+      summary: scenario.specialExpenses.length === 0 ? "登録なし" : `特別支出 ${scenario.specialExpenses.length}件`,
+      missingItems: specialMissing ? ["金額または年月"] : [],
+      tab: "special",
+    },
+  ]);
+}
 
 function ensureSpouseMember(scenario: ScenarioData) {
   if (scenario.householdMembers.some((member) => member.relationship === "spouse")) return;
@@ -4091,11 +4500,152 @@ function ScenarioSyncDetails({
   );
 }
 
+function GuidedDetails({
+  id,
+  title,
+  description,
+  summary,
+  priority = "detail",
+  defaultOpen = false,
+  targetCardId,
+  children,
+}: {
+  id: InputCardId | string;
+  title: string;
+  description: string;
+  summary?: string;
+  priority?: InputCardPriority;
+  defaultOpen?: boolean;
+  targetCardId?: InputCardId | string | null;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const isTargeted = targetCardId === id;
+  useEffect(() => {
+    if (targetCardId === id) setIsOpen(true);
+  }, [id, targetCardId]);
+
+  return (
+    <details
+      id={id}
+      data-input-card-id={id}
+      className={cn(
+        "rounded-lg border bg-white px-4 py-3 transition-shadow",
+        isTargeted ? "border-sky-300 ring-2 ring-sky-200" : "",
+      )}
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{title}</span>
+            <span className="rounded-md border bg-slate-50 px-2 py-0.5 text-xs text-muted-foreground">{priorityLabel(priority)}</span>
+          </span>
+          <span className="mt-1 block text-sm leading-6 text-muted-foreground">{summary ?? description}</span>
+        </span>
+        <span className="rounded-md border bg-slate-50 px-3 py-1 text-sm text-muted-foreground">
+          {isOpen ? "閉じる" : "開く"}
+        </span>
+      </summary>
+      <div className="mt-4 space-y-4">
+        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function InputGuidanceSummary({
+  cards,
+  onOpenCard,
+  onOpenResults,
+  onOpenOnboarding,
+  onOpenOnboardingLabel = "初回設定を開く",
+}: {
+  cards: InputCardDefinition[];
+  onOpenCard: (cardId: InputCardId) => void;
+  onOpenResults: () => void;
+  onOpenOnboarding: () => void;
+  onOpenOnboardingLabel?: string;
+}) {
+  const requiredCards = cards.filter((card) => card.priority === "required");
+  const completedRequiredCount = requiredCards.filter((card) => card.status === "complete" || card.status === "not_applicable").length;
+  const nextCard = cards.find((card) => card.priority === "required" && isInputCardActionable(card)) ?? cards.find(isInputCardActionable);
+  const reviewCards = cards.filter((card) => card.status === "review_recommended");
+  const canShowResults = requiredCards.every((card) => card.status === "complete" || card.status === "not_applicable");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>入力状況サマリー</CardTitle>
+        <CardDescription>通常入力で次に確認するカードを絞り込みます。詳細入力は必要な時だけ開きます。</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 text-sm md:grid-cols-4">
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">必須入力</div>
+            <div className="mt-1 text-xl font-semibold">{completedRequiredCount}/{requiredCards.length} 完了</div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">次に入力</div>
+            <div className="mt-1 font-semibold">{nextCard?.title ?? "主要入力は完了"}</div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3">
+            <div className="text-muted-foreground">確認推奨</div>
+            <div className="mt-1 font-semibold">{reviewCards.length > 0 ? reviewCards.map((card) => card.title).join("、") : "なし"}</div>
+          </div>
+          <div className={`rounded-md border px-4 py-3 ${canShowResults ? "bg-emerald-50 text-emerald-950" : "bg-amber-50 text-amber-950"}`}>
+            <div className="text-sm">{canShowResults ? "結果は表示できます" : "主要入力が不足しています"}</div>
+            <div className="mt-1 text-xs leading-5">{canShowResults ? "必要なら詳細カードを確認してください。" : "結果を見る前に未入力カードを確認してください。"}</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => nextCard && onOpenCard(nextCard.id)} disabled={!nextCard}>
+            次の未入力へ
+          </Button>
+          <Button variant="outline" onClick={onOpenResults}>
+            結果を見る
+          </Button>
+          <Button variant="outline" onClick={onOpenOnboarding}>
+            {onOpenOnboardingLabel}
+          </Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {cards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => onOpenCard(card.id)}
+              className={cn(
+                "rounded-md border px-3 py-2 text-left text-sm transition hover:bg-white",
+                inputCardStatusClass(card.status),
+                inputCardHighlightClass(card.highlight),
+              )}
+            >
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{card.title}</span>
+                <span className="rounded bg-white/70 px-1.5 py-0.5 text-xs">{priorityLabel(card.priority)}</span>
+                <span className="rounded bg-white/70 px-1.5 py-0.5 text-xs">{statusLabel(card.status)}</span>
+                {card.highlight === "next_required" && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs">次に入力</span>}
+                {card.highlight === "review" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">確認推奨</span>}
+              </span>
+              <span className="mt-1 block text-xs leading-5">{card.summary}</span>
+              {card.missingItems.length > 0 && <span className="mt-1 block text-xs">未確認: {card.missingItems.join("、")}</span>}
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AssetsSection({
   scenario,
   scenarios,
   updateScenario,
   updateScenarios,
+  targetCardId,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
@@ -4284,7 +4834,7 @@ function AssetsSection({
     (scenario.nisaInvestmentRules.lifetimeLimitPerInvestor ?? 18_000_000) * Math.max(1, scenario.nisaInvestmentRules.investorCount);
   const nisaRemainingLifetimeLimit = Math.max(0, nisaLifetimeLimit - (scenario.nisaInvestmentRules.usedLifetimeLimitAtStart ?? 0));
   return (
-    <Card>
+    <Card id="assets-current" data-input-card-id="assets-current">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -4301,14 +4851,14 @@ function AssetsSection({
             </Field>
           ))}
         </FormGrid>
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>証券・iDeCoの評価額と評価損益</CardTitle>
-            <CardDescription>
-              マネーフォワードの `評価額` と `評価損益` を入れてください。取得原価は自動計算し、特定口座と一般口座の取り崩し課税に使います。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <GuidedDetails
+          id="assets-cost-basis"
+          title="証券・iDeCoの評価額と評価損益"
+          description="マネーフォワードの評価額と評価損益を入れてください。取得原価は自動計算し、特定口座と一般口座の取り崩し課税に使います。"
+          summary={`課税口座・iDeCoなどの取得原価を確認 / 含み損益対象 ${compactYen(scenario.initialAssets.specificAccount + scenario.initialAssets.ordinaryAccountForOptions + scenario.initialAssets.ideco)}`}
+          priority="detail"
+          targetCardId={targetCardId}
+        >
             {gainTrackedAssets.filter(({ key }) => key !== "ordinaryAccountForOptions").map(({ key, label }) => {
               const currentValue = scenario.initialAssets[key];
               const costBasis = scenario.initialAssetCostBasis[key];
@@ -4364,8 +4914,7 @@ function AssetsSection({
                 </div>
               );
             })}
-          </CardContent>
-        </Card>
+        </GuidedDetails>
         <Card className="border-dashed">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -5063,6 +5612,7 @@ function ExpensesSection({
   scenarios,
   updateScenario,
   updateScenarios,
+  targetCardId,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
@@ -5186,7 +5736,7 @@ function ExpensesSection({
     });
 
   return (
-    <Card>
+    <Card id="expenses-monthly" data-input-card-id="expenses-monthly">
       <CardHeader>
         <CardTitle>生活費入力</CardTitle>
         <CardDescription>月平均額を費目別に入力します。インフレON時は月次複利で反映します。</CardDescription>
@@ -5219,7 +5769,14 @@ function ExpensesSection({
           <RateField label="生活費インフレ率" value={scenario.inflationSettings.livingCostAnnualInflationRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.livingCostAnnualInflationRate = value))} />
           <RateField label="医療費上昇率" value={scenario.inflationSettings.medicalAnnualInflationRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.medicalAnnualInflationRate = value))} />
         </div>
-        <div className="rounded-lg border bg-white p-4">
+        <GuidedDetails
+          id="expenses-inflation-targets"
+          title="インフレ対象費目"
+          description="健康・医療は医療費上昇率、その他は生活費インフレ率を使う想定です。保険など上昇させない費目はチェックを外してください。"
+          summary={`生活費インフレ ${livingInflationTargets.length}費目 / 医療費上昇 ${medicalInflationTargets.length}費目`}
+          priority="detail"
+          targetCardId={targetCardId}
+        >
           <div className="mb-3">
             <h3 className="font-medium">インフレ対象費目</h3>
             <p className="text-sm text-muted-foreground">
@@ -5258,8 +5815,15 @@ function ExpensesSection({
               </div>
             </div>
           </div>
-        </div>
-        <div className="rounded-lg border bg-white">
+        </GuidedDetails>
+        <GuidedDetails
+          id="expenses-age-adjustments"
+          title="年齢別の生活費変更"
+          description="現在生活費基準、開始前年基準、前年同月比、月額指定を選べます。期間固定は開始前年基準、毎年変化は前年同月比を使います。"
+          summary={scenario.ageExpenseAdjustments.length === 0 ? "年齢別変更なし" : `${scenario.ageExpenseAdjustments.length}件の生活費変更を設定中`}
+          priority="detail"
+          targetCardId={targetCardId}
+        >
           <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
             <div>
               <h3 className="font-medium">年齢別の生活費変更</h3>
@@ -5393,7 +5957,7 @@ function ExpensesSection({
               ))
             )}
           </div>
-        </div>
+        </GuidedDetails>
         {scenario.householdLivingArrangementEvents.length > 0 && (
           <div className="rounded-lg border bg-white">
             <div className="border-b px-4 py-3">
@@ -5944,6 +6508,7 @@ function IncomeSection({
   scenarios,
   updateScenario,
   updateScenarios,
+  targetCardId,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
@@ -5971,6 +6536,15 @@ function IncomeSection({
   const incomeEventIdsKey = incomeEventIds.join("|");
   const [selectedIncomeEventIds, setSelectedIncomeEventIds] = useState<string[]>(() => incomeEventIds);
   const [incomeSyncMessage, setIncomeSyncMessage] = useState<string | null>(null);
+  const [targetedIncomeDetailId, setTargetedIncomeDetailId] = useState<string | null>(null);
+  const incomePlannerMembers = getPensionPlannerMembers(scenario);
+  const incomePlannerSettings = mergePensionPlannerSettings(scenario, incomePlannerMembers.selfMember, incomePlannerMembers.spouseMember);
+  const pensionPlannerAnnualTotal =
+    incomePlannerSettings.selfBasicAnnual +
+    incomePlannerSettings.selfEmployeesAnnual +
+    incomePlannerSettings.spouseBasicAnnual +
+    incomePlannerSettings.spouseEmployeesAnnual;
+  const pensionPlannerTargetId = targetCardId === "income-pension" ? "income-pension-planner" : targetedIncomeDetailId;
   useEffect(() => {
     if (!scenarios.some((item) => item.id === incomeSyncSourceScenarioId)) {
       setIncomeSyncSourceScenarioId(scenario.id);
@@ -5984,6 +6558,11 @@ function IncomeSection({
       return [...retainedIds, ...addedIds];
     });
   }, [incomeEventIdsKey]);
+  useEffect(() => {
+    if (!targetedIncomeDetailId) return undefined;
+    const timer = window.setTimeout(() => setTargetedIncomeDetailId(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [targetedIncomeDetailId]);
   const incomeSyncSelectedTargetIdSet = useMemo(() => new Set(incomeSyncSelectedTargetIds), [incomeSyncSelectedTargetIds]);
   const incomeSyncTargetCount = countAssetSyncTargets(
     scenarios,
@@ -6086,14 +6665,20 @@ function IncomeSection({
         name: source.name ? `${source.name} コピー` : "収入 コピー",
       });
     });
+  const openPensionPlanner = () => {
+    setTargetedIncomeDetailId("income-pension-planner");
+    window.setTimeout(() => {
+      document.getElementById("income-pension-planner")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
   return (
-    <Card>
+    <Card id="income-pension" data-input-card-id="income-pension">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle>収入イベント入力</CardTitle>
             <CardDescription>
-              開始月から終了月まで有効。公的年金は年金受給プランナーを正として使い、iDeCoなど資産からの年金型受取は原資資産を選んで登録します。
+              開始月から終了月まで有効。公的年金は年金受給プランナーを正として使い、iDeCoは原資資産を選ぶと年金受取・一時金（一括受取）を選べます。
             </CardDescription>
           </div>
           <Button onClick={add}>
@@ -6103,11 +6688,37 @@ function IncomeSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
+        <div id="income-ideco" data-input-card-id="income-ideco" className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+          <div className="font-medium">iDeCo受取</div>
+          <p className="mt-1">
+            原資資産を `iDeCo から受取` にすると、受取方法を `iDeCo年金受取（雑所得）` または `iDeCo一時金（一括受取・退職所得）` から選べます。
+            一時金は国保・後期高齢者医療の所得割には含めない前提で概算し、過去退職金がある場合は税・社会保険タブで重複調整を確認します。
+          </p>
+        </div>
+        {scenario.incomeEvents.some((event) => event.type === "oneTime" && event.sourceAssetKey === "ideco") && (
+          <div id="income-ideco-lump" data-input-card-id="income-ideco-lump" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+            <div className="font-medium">iDeCo一時金の確認</div>
+            <p className="mt-1">
+              受取年月、一時金受取額、加入年数、退職所得の申告を確認してください。加入開始日/終了日は任意ですが、入力すると退職所得控除の重複調整を期間入力ベースで確認できます。
+            </p>
+          </div>
+        )}
+        <GuidedDetails
+          id="income-pension-planner"
+          title="年金受給プランナー"
+          description="65歳標準年額を入れ、繰上げ・繰下げ後の年額と累計を確認します。反映する設定の場合、本人・配偶者の外部公的年金イベントは本計算から外れます。"
+          summary={`${incomePlannerSettings.applyToSimulation ? "本計算へ反映" : "試算のみ"} / 65歳標準年額 ${compactYen(pensionPlannerAnnualTotal)}`}
+          priority={incomePlannerSettings.applyToSimulation ? "required" : "detail"}
+          targetCardId={pensionPlannerTargetId}
+        >
+          <PensionPlannerSection scenario={scenario} updateScenario={updateScenario} />
+        </GuidedDetails>
         {scenario.incomeEvents.map((event, index) => {
           const replacedByPensionPlanner = isPensionPlannerReplacingEvent(scenario, event);
           const isExternalPublicPension = event.type === "pension" && !event.sourceAssetKey;
-          return (
+          const eventMember = scenario.householdMembers.find((member) => member.id === event.memberId);
+          const incomeTypeOptions = getIncomeTypeSelectOptions(event.sourceAssetKey, event.type);
+          const editor = (
             <EventEditor
               key={event.id}
               title={event.name || "収入"}
@@ -6144,7 +6755,7 @@ function IncomeSection({
                   ))}
                 </Select>
               </Field>
-              <Field label="種別">
+              <Field label={event.sourceAssetKey === "ideco" ? "iDeCo受取方法" : "種別"}>
                 <Select
                   value={event.type}
                   onChange={(e) =>
@@ -6162,13 +6773,11 @@ function IncomeSection({
                     })
                   }
                 >
-                  <option value="unemployment">失業手当</option>
-                  <option value="pension">年金</option>
-                  <option value="salary">就労収入</option>
-                  <option value="investmentIncome">投資由来の定期入金</option>
-                  <option value="dividend">配当・利息</option>
-                  <option value="other">その他</option>
-                  <option value="oneTime">単発入金</option>
+                  {incomeTypeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {getIncomeTypeSelectLabel(type, event.sourceAssetKey)}
+                    </option>
+                  ))}
                 </Select>
               </Field>
               <Field label="開始年月">
@@ -6190,6 +6799,9 @@ function IncomeSection({
                       }
                       if (nextValue === "ordinaryAccountForOptions") {
                         s.incomeEvents[index].sourceOptionSubAccountId ??= s.optionSubAccounts[0]?.id;
+                      }
+                      if (nextValue === "ideco" && !isIdecoIncomeType(s.incomeEvents[index].type)) {
+                        s.incomeEvents[index].type = "pension";
                       }
                       if (nextValue === "ideco" && s.incomeEvents[index].type === "pension") {
                         s.incomeEvents[index].sourceAssetPayoutMode = "cash";
@@ -6378,6 +6990,28 @@ function IncomeSection({
                       onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].idecoLumpSumContributionYears = numberOrZero(e.target.value)))}
                     />
                   </Field>
+                  <Field label="加入開始日（任意）">
+                    <Input
+                      type="date"
+                      value={event.idecoLumpSumContributionStartDate ?? ""}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          s.incomeEvents[index].idecoLumpSumContributionStartDate = e.target.value || undefined;
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="加入終了日（任意）">
+                    <Input
+                      type="date"
+                      value={event.idecoLumpSumContributionEndDate ?? ""}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          s.incomeEvents[index].idecoLumpSumContributionEndDate = e.target.value || undefined;
+                        })
+                      }
+                    />
+                  </Field>
                   <Field label="退職所得の申告">
                     <Select
                       value={event.idecoLumpSumTaxMode ?? "retirementIncomeDeclaration"}
@@ -6414,6 +7048,11 @@ function IncomeSection({
                 終了年月は同居状態変更イベントから自動設定しています。別居開始月の前月までを収入期間として扱います。
               </p>
             )}
+            {event.sourceAssetKey === "ideco" && (
+              <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                iDeCo年金受取は公的年金等の雑所得、一時金（一括受取）は退職所得として扱います。一時金は過去退職金との重複調整後の退職所得控除で概算し、国保・後期高齢者医療の所得割には含めません。加入開始日/終了日は任意です。未入力なら加入年数ベース、入力すると期間重複ベースで概算します。
+              </div>
+            )}
             {event.type === "pension" && event.sourceAssetKey === "ideco" && (event.idecoPensionPayoutMode ?? "monexSchedule") === "monexSchedule" && (
               <p className="mt-3 text-sm text-muted-foreground">
                 開始年月が偶数月でない場合、初回支給月は翌偶数月に自動補正します。受取期間と年間支給回数から、初回支給月と終了年月を自動生成します。
@@ -6422,6 +7061,26 @@ function IncomeSection({
             )}
             </EventEditor>
           );
+          if (replacedByPensionPlanner) {
+            return (
+              <GuidedDetails
+                key={event.id}
+                id={`inactive-income-${event.id}`}
+                title={`計算対象外: ${eventMember?.name ?? "世帯メンバー"}の公的年金イベント`}
+                description="年金受給プランナーを反映中のため、この外部公的年金イベントの年金額と受給開始年月は本計算では使いません。必要な場合だけ詳細を開いて内容を確認してください。"
+                summary={`${event.name || "公的年金イベント"} / 月額 ${compactYen(event.monthlyAmount)} は計算対象外`}
+                priority="detail"
+              >
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={openPensionPlanner}>
+                    プランナーを確認
+                  </Button>
+                </div>
+                {editor}
+              </GuidedDetails>
+            );
+          }
+          return editor;
         })}
         <div className="grid gap-4 md:grid-cols-2">
           <RateField label="年金改定率" value={scenario.inflationSettings.pensionAnnualAdjustmentRate} onChange={(value) => updateScenario((s) => void (s.inflationSettings.pensionAnnualAdjustmentRate = value))} />
@@ -6798,7 +7457,7 @@ function RetirementIncomeSection({ scenario, updateScenario }: SectionProps) {
   );
 }
 
-function TaxSection({ scenario, updateScenario }: SectionProps) {
+function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
   const mode = scenario.householdProfile.taxCalculationMode;
   const simulationResult = useMemo(() => simulateScenario(scenario), [scenario]);
   const autoDetails = useMemo(() => calculateAutoTaxDetails(scenario), [scenario]);
@@ -6882,7 +7541,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
   const copyLabel = isManual ? "前年度コピー" : "前年度補正コピー";
 
   return (
-    <Card>
+    <Card id="tax-mode" data-input-card-id="tax-mode">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -6968,7 +7627,14 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
           </p>
         </div>
 
-        <div className="space-y-5">
+        <GuidedDetails
+          id="tax-retirement-overlap"
+          title="詳細入力・専門補正"
+          description="退職所得履歴、所得控除、退職所得の重複ルール、申告確認メモは必要な時だけ開きます。"
+          summary={`退職所得 ${scenario.retirementIncomeEvents?.length ?? 0}件 / 所得控除 ${scenario.taxDeductionEvents.length}件 / 重複警告 ${retirementOverlapWarnings.length}件`}
+          priority={retirementOverlapWarnings.length > 0 ? "recommended" : "detail"}
+          targetCardId={targetCardId}
+        >
           <RetirementIncomeSection scenario={scenario} updateScenario={updateScenario} />
           <TaxDeductionSection scenario={scenario} updateScenario={updateScenario} />
           <div className="rounded-lg border bg-white px-4 py-3 space-y-3">
@@ -7090,7 +7756,7 @@ function TaxSection({ scenario, updateScenario }: SectionProps) {
               </div>
             )}
           </div>
-        </div>
+        </GuidedDetails>
 
         {(isAuto || mode === "autoWithAdjustment") && (
           <div className="space-y-4">
@@ -8744,7 +9410,7 @@ function SpecialSection({
       s.specialExpenses.splice(boundedToIndex, 0, event);
     });
   return (
-    <Card>
+    <Card id="special-expenses" data-input-card-id="special-expenses">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -9120,7 +9786,13 @@ function ScenariosSection(props: {
   );
 }
 
-function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario> }) {
+function ResultsSection({
+  result,
+  onOpenInputCard,
+}: {
+  result: ReturnType<typeof simulateScenario>;
+  onOpenInputCard: (cardId: InputCardId) => void;
+}) {
   const annualIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
   const annualRetainedSourceIncome = result.annual.reduce((sum, row) => sum + row.retainedSourceAssetIncomeTotal, 0);
   const annualAssetTransfer = result.annual.reduce((sum, row) => sum + row.assetTransferTotal, 0);
@@ -9292,6 +9964,26 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>次に確認すること</CardTitle>
+          <CardDescription>結果で気になる数字がある場合は、該当する入力カードや根拠へ戻れます。</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => onOpenInputCard("expenses-monthly")}>
+            生活費を見直す
+          </Button>
+          <Button variant="outline" onClick={() => onOpenInputCard("income-pension")}>
+            収入を確認する
+          </Button>
+          <Button variant="outline" onClick={() => onOpenInputCard("tax-mode")}>
+            税社保の根拠を見る
+          </Button>
+          <Button variant="outline" onClick={() => onOpenInputCard("assets-cost-basis")}>
+            取得原価を確認する
+          </Button>
+        </CardContent>
+      </Card>
       <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
         <div className="rounded-md border bg-slate-50 px-4 py-3">
           <div className="font-medium">このタブで見ること</div>
@@ -9337,6 +10029,11 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
       </div>
       </ScenarioSyncDetails>
 
+      <ScenarioSyncDetails
+        title="原因調査用の詳細表・チャート"
+        description="投資計画、税支払タイミング、NISA枠、月次・年次表などは必要な時だけ開きます。"
+      >
+      <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>投資計画チェック</CardTitle>
@@ -10037,6 +10734,8 @@ function ResultsSection({ result }: { result: ReturnType<typeof simulateScenario
           <ResultTable rows={result.annual} period="year" />
         </CardContent>
       </Card>
+      </div>
+      </ScenarioSyncDetails>
     </div>
   );
 }
