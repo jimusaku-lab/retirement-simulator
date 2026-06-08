@@ -145,6 +145,16 @@ const tabs = [
   { key: "data", label: "データ", group: "management" },
 ] as const;
 
+const inputTabLabels: Record<Exclude<TabKey, "dashboard" | "manual" | "results" | "compare" | "data">, string> = {
+  profile: "基本情報",
+  assets: "初期資産",
+  expenses: "生活費",
+  income: "収入",
+  tax: "税・社会保険",
+  special: "特別支出",
+  scenarios: "シナリオ",
+};
+
 type TabKey = "dashboard" | "manual" | (typeof tabs)[number]["key"];
 type TabGroup = (typeof tabs)[number]["group"];
 type AppMode = "safety" | "assetUse";
@@ -840,10 +850,26 @@ function App() {
     setActiveTab(card.tab);
     setTargetedInputCardId(card.id);
     window.setTimeout(() => {
-      document.getElementById(card.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const target = document.getElementById(card.id);
+      const focusTarget =
+        document.querySelector<HTMLElement>(`[data-input-focus-id="${card.id}"]`) ??
+        target?.querySelector<HTMLElement>("select, input, textarea, button");
+      const scrollTarget = focusTarget?.closest<HTMLElement>(`[data-input-card-id="${card.id}"]`) ?? target;
+      scrollTarget?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => {
+        focusTarget?.focus({ preventScroll: true });
+      }, 180);
     }, 120);
   };
-  const nextInputCard = inputCards.find((card) => card.highlight === "next_required") ?? inputCards.find(isInputCardActionable);
+  const openInputGuideSummary = () => {
+    setAppModeHash("safety");
+    if (!safetySubTabKeys.has(activeTab)) setActiveTab("profile");
+    window.setTimeout(() => {
+      document.getElementById("input-guidance-summary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  };
+  const nextInputCard = getNextInputCard(inputCards);
+  const requiredInputComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
 
   return (
     <div className="min-h-screen">
@@ -964,8 +990,16 @@ function App() {
               key={tab.key}
               variant="ghost"
               size="sm"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                if (nextInputCard?.tab === tab.key) {
+                  openInputCard(nextInputCard.id);
+                  return;
+                }
+                setActiveTab(tab.key);
+              }}
               className={`shrink-0 gap-1.5 ${activeTab === tab.key ? tabGroupClassNames[tab.group].active : tabGroupClassNames[tab.group].inactive}`}
+              title={nextInputCard?.tab === tab.key ? `次: ${nextInputCard.title}` : undefined}
+              aria-label={nextInputCard?.tab === tab.key ? `${tab.label}。次: ${nextInputCard.title}` : tab.label}
             >
               {tab.label}
               {nextInputCard?.tab === tab.key && (
@@ -1041,6 +1075,14 @@ function App() {
         )}
         {appMode === "safety" && (
           <>
+            {(activeTab === "dashboard" || activeTab === "results") && nextInputCard && (
+              <InputGuideMini
+                card={nextInputCard}
+                requiredComplete={requiredInputComplete}
+                onOpenCard={openInputCard}
+                onOpenGuide={openInputGuideSummary}
+              />
+            )}
             {activePrimaryNav === "safety" && safetySubTabKeys.has(activeTab) && (
               <InputGuidanceSummary
                 cards={inputCards}
@@ -1056,6 +1098,8 @@ function App() {
                 baselineScenario={baselineScenario}
                 onOpenFlexibleFreeCashSettings={openFlexibleFreeCashSettings}
                 onOpenInputCard={openInputCard}
+                inputCards={inputCards}
+                onOpenInputGuide={openInputGuideSummary}
               />
             )}
             {activeTab === "profile" && (
@@ -1120,7 +1164,14 @@ function App() {
                 updateScenario={updateScenario}
               />
             )}
-            {activeTab === "results" && <ResultsSection result={result} onOpenInputCard={openInputCard} />}
+            {activeTab === "results" && (
+              <ResultsSection
+                result={result}
+                onOpenInputCard={openInputCard}
+                inputCards={inputCards}
+                onOpenInputGuide={openInputGuideSummary}
+              />
+            )}
             {activeTab === "compare" && (
               <CompareSection
                 items={allResults}
@@ -2311,12 +2362,16 @@ function Dashboard({
   baselineScenario,
   onOpenFlexibleFreeCashSettings,
   onOpenInputCard,
+  inputCards,
+  onOpenInputGuide,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
   baselineScenario: ScenarioData;
   onOpenFlexibleFreeCashSettings: () => void;
   onOpenInputCard: (cardId: InputCardId) => void;
+  inputCards: InputCardDefinition[];
+  onOpenInputGuide: () => void;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
@@ -2401,6 +2456,8 @@ function Dashboard({
       remaining: Number.isFinite(row.nisaRemainingLifetimeLimit) ? row.nisaRemainingLifetimeLimit : 0,
     }));
   const nisaSkippedTotal = nisaProgressChartData.reduce((sum, row) => sum + row.skipped, 0);
+  const dashboardRequiredComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
+  const dashboardNextCard = getNextInputCard(inputCards);
   const targetBalanceAmount = scenario.userProfile.targetBalanceAmount ?? 0;
   const targetBalance = result.targetAgeBalance ?? 0;
   const targetBalanceGap = targetBalance - targetBalanceAmount;
@@ -2447,10 +2504,24 @@ function Dashboard({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>まず見る結論</CardTitle>
-          <CardDescription>
-            資産寿命、税金・社会保険を払った後の余力、注意が必要な年を先に確認します。
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>まず見る結論</CardTitle>
+              <CardDescription>
+                資産寿命、税金・社会保険を払った後の余力、注意が必要な年を先に確認します。
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {dashboardNextCard && (
+                <Button variant="outline" size="sm" onClick={() => onOpenInputCard(dashboardNextCard.id)}>
+                  {inputCardActionButtonLabel(dashboardNextCard, dashboardRequiredComplete)}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onOpenInputGuide}>
+                入力ガイド
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 lg:grid-cols-3">
@@ -3160,6 +3231,54 @@ function isInputCardActionable(card: InputCardDefinition) {
   return card.status === "not_started" || card.status === "incomplete" || card.status === "review_recommended";
 }
 
+function isInputCardSatisfied(card: InputCardDefinition) {
+  return card.status === "complete" || card.status === "review_recommended" || card.status === "not_applicable" || card.status === "inactive";
+}
+
+function getNextInputCard(cards: InputCardDefinition[]) {
+  const nextRequired = cards.find((card) => card.priority === "required" && (card.status === "not_started" || card.status === "incomplete"));
+  if (nextRequired) return nextRequired;
+  return cards.find(isInputCardActionable);
+}
+
+function getInputCardActionKind(card: InputCardDefinition | undefined, requiredComplete: boolean) {
+  if (!card) return "none" as const;
+  if (card.priority === "expert") return "expert" as const;
+  if (card.status === "review_recommended") return "recommended" as const;
+  if (!requiredComplete && card.priority === "required") return "required" as const;
+  if (card.priority === "recommended" || requiredComplete) return "recommended" as const;
+  return "required" as const;
+}
+
+function inputCardActionHeading(card: InputCardDefinition | undefined, requiredComplete: boolean) {
+  const kind = getInputCardActionKind(card, requiredComplete);
+  if (kind === "required") return "次に入力";
+  if (kind === "recommended") return "次に確認するとよい";
+  if (kind === "expert") return "必要なら確認";
+  return "主要入力は完了";
+}
+
+function inputCardActionButtonLabel(card: InputCardDefinition | undefined, requiredComplete: boolean) {
+  if (!card) return "入力ガイドを開く";
+  if (card.id === "income-ideco") return "iDeCo受取を確認する";
+  const kind = getInputCardActionKind(card, requiredComplete);
+  if (kind === "required") return "ここを入力する";
+  if (kind === "expert") return "必要なら確認する";
+  return "ここを確認する";
+}
+
+function inputCardActionLabel(card: InputCardDefinition | undefined, requiredComplete: boolean) {
+  const kind = getInputCardActionKind(card, requiredComplete);
+  if (kind === "required") return "ここを入力";
+  if (kind === "recommended") return "次に確認";
+  if (kind === "expert") return "必要なら確認";
+  return "";
+}
+
+function inputCardLocationLabel(card: InputCardDefinition) {
+  return `${inputTabLabels[card.tab]}タブにあります`;
+}
+
 function inputCardVisibilityFor(card: Omit<InputCardDefinition, "visibility" | "highlight">): InputCardVisibility {
   if (card.status === "not_applicable") return card.priority === "expert" ? "hidden" : "summary";
   if (card.status === "inactive") return "summary";
@@ -3169,13 +3288,16 @@ function inputCardVisibilityFor(card: Omit<InputCardDefinition, "visibility" | "
 }
 
 function withInputCardUiState(cards: Array<Omit<InputCardDefinition, "visibility" | "highlight">>): InputCardDefinition[] {
-  const nextRequiredCard = cards.find((card) => card.priority === "required" && isInputCardActionable(card as InputCardDefinition));
+  const nextRequiredCard = cards.find((card) => card.priority === "required" && (card.status === "not_started" || card.status === "incomplete"));
+  const nextReviewCard = nextRequiredCard ? undefined : cards.find((card) => isInputCardActionable(card as InputCardDefinition));
   return cards.map((card) => ({
     ...card,
     visibility: inputCardVisibilityFor(card),
     highlight:
       card.id === nextRequiredCard?.id
         ? "next_required"
+        : card.id === nextReviewCard?.id
+          ? card.priority === "expert" ? "review" : "next_required"
         : card.status === "incomplete" || card.status === "not_started"
           ? "blocked"
           : card.status === "review_recommended"
@@ -4564,6 +4686,11 @@ function GuidedDetails({
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{title}</span>
             <span className="rounded-md border bg-slate-50 px-2 py-0.5 text-xs text-muted-foreground">{priorityLabel(priority)}</span>
+            {isTargeted && (
+              <span className="rounded bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-950">
+                {priority === "required" ? "ここを入力" : priority === "expert" ? "必要なら確認" : "次に確認"}
+              </span>
+            )}
           </span>
           <span className="mt-1 block text-sm leading-6 text-muted-foreground">{summary ?? description}</span>
         </span>
@@ -4579,6 +4706,41 @@ function GuidedDetails({
   );
 }
 
+function InputGuideMini({
+  card,
+  requiredComplete,
+  onOpenCard,
+  onOpenGuide,
+}: {
+  card: InputCardDefinition;
+  requiredComplete: boolean;
+  onOpenCard: (cardId: InputCardId) => void;
+  onOpenGuide: () => void;
+}) {
+  const heading = inputCardActionHeading(card, requiredComplete);
+  const buttonLabel = inputCardActionButtonLabel(card, requiredComplete);
+  return (
+    <Card className="border-amber-200 bg-amber-50/60">
+      <CardContent className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="text-sm leading-6 text-amber-950">
+          <div className="font-semibold">入力ガイド</div>
+          <p>
+            {requiredComplete ? "必須入力は完了。" : "主要入力に未入力があります。"}
+            {heading}として <span className="font-medium">{card.title}</span> を確認すると試算の精度が上がります。
+          </p>
+          <p className="text-xs text-amber-900">{inputCardLocationLabel(card)} / {card.summary}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => onOpenCard(card.id)}>{buttonLabel}</Button>
+          <Button variant="outline" onClick={onOpenGuide}>
+            入力ガイド
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function InputGuidanceSummary({
   cards,
   onOpenCard,
@@ -4591,39 +4753,65 @@ function InputGuidanceSummary({
   onOpenOnboarding: () => void;
 }) {
   const requiredCards = cards.filter((card) => card.priority === "required");
-  const completedRequiredCount = requiredCards.filter((card) => card.status === "complete" || card.status === "not_applicable").length;
-  const nextCard = cards.find((card) => card.priority === "required" && isInputCardActionable(card)) ?? cards.find(isInputCardActionable);
+  const completedRequiredCount = requiredCards.filter(isInputCardSatisfied).length;
+  const requiredComplete = requiredCards.every(isInputCardSatisfied);
+  const nextCard = getNextInputCard(cards);
   const reviewCards = cards.filter((card) => card.status === "review_recommended");
-  const canShowResults = requiredCards.every((card) => card.status === "complete" || card.status === "not_applicable");
+  const canShowResults = requiredComplete;
+  const requiredMissingCards = requiredCards.filter((card) => !isInputCardSatisfied(card));
+  const nextHeading = inputCardActionHeading(nextCard, requiredComplete);
+  const nextActionLabel = inputCardActionButtonLabel(nextCard, requiredComplete);
 
   return (
-    <Card>
+    <Card id="input-guidance-summary">
       <CardHeader>
         <CardTitle>入力状況サマリー</CardTitle>
-        <CardDescription>通常入力で次に確認するカードを絞り込みます。詳細入力は必要な時だけ開きます。</CardDescription>
+        <CardDescription>必須入力と確認推奨を分けて、次に見る場所を案内します。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 text-sm md:grid-cols-4">
+        <div className="grid gap-3 text-sm lg:grid-cols-[1fr_1.4fr_1fr]">
           <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <div className="text-muted-foreground">必須入力</div>
-            <div className="mt-1 text-xl font-semibold">{completedRequiredCount}/{requiredCards.length} 完了</div>
+            <div className="text-muted-foreground">{requiredComplete ? "必須入力は完了" : "必須入力"}</div>
+            <div className="mt-1 text-xl font-semibold">
+              {requiredComplete ? `${requiredCards.length}項目すべて入力済み` : `${requiredCards.length}項目中${completedRequiredCount}項目完了`}
+            </div>
+            {!requiredComplete && (
+              <div className="mt-2 text-xs leading-5 text-rose-900">
+                未入力: {requiredMissingCards.map((card) => card.title).join("、")}
+              </div>
+            )}
           </div>
-          <div className="rounded-md border bg-slate-50 px-4 py-3">
-            <div className="text-muted-foreground">次に入力</div>
-            <div className="mt-1 font-semibold">{nextCard?.title ?? "主要入力は完了"}</div>
-          </div>
+          <button
+            type="button"
+            onClick={() => nextCard && onOpenCard(nextCard.id)}
+            disabled={!nextCard}
+            className={cn(
+              "rounded-md border px-4 py-3 text-left transition hover:bg-white disabled:cursor-default",
+              nextCard ? "border-amber-300 bg-amber-50 text-amber-950 ring-1 ring-amber-200" : "bg-slate-50 text-slate-600",
+            )}
+          >
+            <div className="text-muted-foreground">{nextHeading}</div>
+            <div className="mt-1 text-lg font-semibold">{nextCard?.title ?? "主要入力は完了"}</div>
+            {nextCard && (
+              <>
+                <div className="mt-1 text-sm leading-6">{nextCard.summary}</div>
+                <div className="mt-1 text-xs">{inputCardLocationLabel(nextCard)}</div>
+                {nextCard.missingItems.length > 0 && <div className="mt-1 text-xs">未確認: {nextCard.missingItems.join("、")}</div>}
+                <div className="mt-3 inline-flex rounded-md bg-amber-200 px-2.5 py-1 text-xs font-medium text-amber-950">
+                  {nextActionLabel}
+                </div>
+              </>
+            )}
+          </button>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="text-muted-foreground">確認推奨</div>
             <div className="mt-1 font-semibold">{reviewCards.length > 0 ? reviewCards.map((card) => card.title).join("、") : "なし"}</div>
-          </div>
-          <div className={`rounded-md border px-4 py-3 ${canShowResults ? "bg-emerald-50 text-emerald-950" : "bg-amber-50 text-amber-950"}`}>
-            <div className="text-sm">{canShowResults ? "結果は表示できます" : "主要入力が不足しています"}</div>
-            <div className="mt-1 text-xs leading-5">{canShowResults ? "必要なら詳細カードを確認してください。" : "結果を見る前に未入力カードを確認してください。"}</div>
+            <div className="mt-1 text-xs leading-5">{canShowResults ? "結果は表示できます。" : "結果を見る前に必須入力を確認してください。"}</div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => nextCard && onOpenCard(nextCard.id)} disabled={!nextCard}>
-            次の未入力へ
+            {nextActionLabel}
           </Button>
           <Button variant="outline" onClick={onOpenResults}>
             結果を見る
@@ -4632,6 +4820,28 @@ function InputGuidanceSummary({
             初回設定を開く
           </Button>
         </div>
+        <ScenarioSyncDetails
+          title="必須入力の内訳を見る"
+          description="必須カードだけを確認します。確認推奨や専門項目とは分けています。"
+        >
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {requiredCards.map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => onOpenCard(card.id)}
+                className={cn("rounded-md border px-3 py-2 text-left text-sm transition hover:bg-white", inputCardStatusClass(card.status))}
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{card.title}</span>
+                  <span className="rounded bg-white/70 px-1.5 py-0.5 text-xs">{statusLabel(card.status)}</span>
+                </span>
+                <span className="mt-1 block text-xs leading-5">{card.summary}</span>
+                {card.missingItems.length > 0 && <span className="mt-1 block text-xs">未入力: {card.missingItems.join("、")}</span>}
+              </button>
+            ))}
+          </div>
+        </ScenarioSyncDetails>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => (
             <button
@@ -4648,10 +4858,15 @@ function InputGuidanceSummary({
                 <span className="font-medium">{card.title}</span>
                 <span className="rounded bg-white/70 px-1.5 py-0.5 text-xs">{priorityLabel(card.priority)}</span>
                 <span className="rounded bg-white/70 px-1.5 py-0.5 text-xs">{statusLabel(card.status)}</span>
-                {card.highlight === "next_required" && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs">次に入力</span>}
+                {card.highlight === "next_required" && (
+                  <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs">
+                    {inputCardActionLabel(card, requiredComplete)}
+                  </span>
+                )}
                 {card.highlight === "review" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">確認推奨</span>}
               </span>
               <span className="mt-1 block text-xs leading-5">{card.summary}</span>
+              <span className="mt-1 block text-xs text-slate-600">{inputCardLocationLabel(card)}</span>
               {card.missingItems.length > 0 && <span className="mt-1 block text-xs">未確認: {card.missingItems.join("、")}</span>}
             </button>
           ))}
@@ -6666,6 +6881,23 @@ function IncomeSection({
           idecoPensionPayoutMode: "fixedMonthly",
         }),
       );
+  const addIdecoIncome = () =>
+      updateScenario((s) =>
+        s.incomeEvents.push({
+          id: createId(),
+          memberId: s.householdProfile.headMemberId || s.householdMembers[0]?.id || "",
+          name: "iDeCo受取",
+          type: "pension",
+          startYearMonth: s.userProfile.simulationStartYearMonth,
+          monthlyAmount: 0,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          sourceAssetPayoutMode: "cash",
+          idecoPensionPayoutMode: "monexSchedule",
+          idecoPensionYears: 10,
+          idecoPensionPaymentsPerYear: 6,
+        }),
+      );
   const duplicate = (index: number) =>
     updateScenario((s) => {
       const source = s.incomeEvents[index];
@@ -6699,12 +6931,33 @@ function IncomeSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div id="income-ideco" data-input-card-id="income-ideco" className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
-          <div className="font-medium">iDeCo受取</div>
-          <p className="mt-1">
-            原資資産を `iDeCo から受取` にすると、受取方法を `iDeCo年金受取（雑所得）` または `iDeCo一時金（一括受取・退職所得）` から選べます。
-            一時金は国保・後期高齢者医療の所得割には含めない前提で概算し、過去退職金がある場合は税・社会保険タブで重複調整を確認します。
-          </p>
+        <div
+          id="income-ideco"
+          data-input-card-id="income-ideco"
+          className={cn(
+            "rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950 transition-shadow",
+            targetCardId === "income-ideco" ? "border-amber-300 ring-2 ring-amber-200" : "",
+          )}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 font-medium">
+                <span>iDeCo受取</span>
+                {targetCardId === "income-ideco" && (
+                  <span className="rounded bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-950">次に確認</span>
+                )}
+              </div>
+              <p className="mt-1">
+                原資資産を `iDeCo から受取` にすると、受取方法を `iDeCo年金受取（雑所得）` または `iDeCo一時金（一括受取・退職所得）` から選べます。
+                一時金は国保・後期高齢者医療の所得割には含めない前提で概算し、過去退職金がある場合は税・社会保険タブで重複調整を確認します。
+              </p>
+            </div>
+            {scenario.initialAssets.ideco > 0 && scenario.incomeEvents.filter((event) => event.sourceAssetKey === "ideco").length === 0 && (
+              <Button data-input-focus-id="income-ideco" variant="outline" size="sm" onClick={addIdecoIncome}>
+                iDeCo受取イベントを追加
+              </Button>
+            )}
+          </div>
         </div>
         {scenario.incomeEvents.some((event) => event.type === "oneTime" && event.sourceAssetKey === "ideco") && (
           <div id="income-ideco-lump" data-input-card-id="income-ideco-lump" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
@@ -6734,6 +6987,7 @@ function IncomeSection({
               key={event.id}
               title={event.name || "収入"}
               onDelete={() => updateScenario((s) => void s.incomeEvents.splice(index, 1))}
+              inputCardId={event.sourceAssetKey === "ideco" && event.type === "oneTime" ? "income-ideco-lump" : undefined}
               actions={
                 <Button variant="ghost" size="sm" onClick={() => duplicate(index)}>
                   <Copy className="h-4 w-4" />
@@ -6768,6 +7022,7 @@ function IncomeSection({
               </Field>
               <Field label={event.sourceAssetKey === "ideco" ? "iDeCo受取方法" : "種別"}>
                 <Select
+                  data-input-focus-id={event.sourceAssetKey === "ideco" ? "income-ideco" : undefined}
                   value={event.type}
                   onChange={(e) =>
                     updateScenario((s) => {
@@ -7004,6 +7259,11 @@ function IncomeSection({
                   <Field label="加入開始日（任意）">
                     <Input
                       type="date"
+                      data-input-focus-id={
+                        event.sourceAssetKey === "ideco" && event.type === "oneTime" && !event.idecoLumpSumContributionStartDate
+                          ? "income-ideco-lump"
+                          : undefined
+                      }
                       value={event.idecoLumpSumContributionStartDate ?? ""}
                       onChange={(e) =>
                         updateScenario((s) => {
@@ -7015,6 +7275,14 @@ function IncomeSection({
                   <Field label="加入終了日（任意）">
                     <Input
                       type="date"
+                      data-input-focus-id={
+                        event.sourceAssetKey === "ideco" &&
+                        event.type === "oneTime" &&
+                        event.idecoLumpSumContributionStartDate &&
+                        !event.idecoLumpSumContributionEndDate
+                          ? "income-ideco-lump"
+                          : undefined
+                      }
                       value={event.idecoLumpSumContributionEndDate ?? ""}
                       onChange={(e) =>
                         updateScenario((s) => {
@@ -9980,9 +10248,13 @@ function ScenariosSection(props: {
 function ResultsSection({
   result,
   onOpenInputCard,
+  inputCards,
+  onOpenInputGuide,
 }: {
   result: ReturnType<typeof simulateScenario>;
   onOpenInputCard: (cardId: InputCardId) => void;
+  inputCards: InputCardDefinition[];
+  onOpenInputGuide: () => void;
 }) {
   const annualIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
   const annualRetainedSourceIncome = result.annual.reduce((sum, row) => sum + row.retainedSourceAssetIncomeTotal, 0);
@@ -10152,13 +10424,29 @@ function ResultsSection({
   );
   const resultStickyHeaderClass = "sticky left-0 z-30 bg-white shadow-[1px_0_0_#cbd5e1]";
   const resultStickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
+  const resultsRequiredComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
+  const resultsNextCard = getNextInputCard(inputCards);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>次に確認すること</CardTitle>
-          <CardDescription>結果で気になる数字がある場合は、該当する入力カードや根拠へ戻れます。</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>次に確認すること</CardTitle>
+              <CardDescription>結果で気になる数字がある場合は、該当する入力カードや根拠へ戻れます。</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {resultsNextCard && (
+                <Button variant="outline" size="sm" onClick={() => onOpenInputCard(resultsNextCard.id)}>
+                  {inputCardActionButtonLabel(resultsNextCard, resultsRequiredComplete)}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onOpenInputGuide}>
+                入力ガイド
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => onOpenInputCard("expenses-monthly")}>
@@ -12189,15 +12477,17 @@ function EventEditor({
   children,
   actions,
   className,
+  inputCardId,
 }: {
   title: string;
   onDelete: () => void;
   children: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
+  inputCardId?: InputCardId;
 }) {
   return (
-    <div className={`rounded-lg border bg-white p-4 ${className ?? ""}`}>
+    <div data-input-card-id={inputCardId} className={`rounded-lg border bg-white p-4 ${className ?? ""}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">{title}</h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
