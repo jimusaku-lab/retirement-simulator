@@ -365,6 +365,14 @@ export type PensionPlannerSettings = {
   spouseDependentForKakyu: boolean;
 };
 
+export type ReviewAcknowledgementCardId = "tax-retirement-overlap" | "income-ideco-lump" | "assets-cost-basis";
+
+export type ReviewAcknowledgement = {
+  cardId: ReviewAcknowledgementCardId;
+  fingerprint: string;
+  acknowledgedAt: string;
+};
+
 export type ScenarioData = {
   id: string;
   name: string;
@@ -395,6 +403,7 @@ export type ScenarioData = {
   nisaInvestmentRules: NisaInvestmentRules;
   taxableAccountSettings: TaxableAccountSettings;
   pensionPlannerSettings?: PensionPlannerSettings;
+  reviewAcknowledgements?: ReviewAcknowledgement[];
 };
 
 export type MonthlyResult = {

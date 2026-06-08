@@ -137,6 +137,7 @@ const baseScenario: ScenarioData = {
     },
   ],
   retirementIncomeEvents: [],
+  reviewAcknowledgements: [],
   taxDeductionEvents: [],
   specialExpenses: [
     {

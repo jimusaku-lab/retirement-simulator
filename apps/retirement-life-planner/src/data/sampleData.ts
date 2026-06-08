@@ -126,6 +126,7 @@ const baseScenario: ScenarioData = {
     },
   ],
   retirementIncomeEvents: [],
+  reviewAcknowledgements: [],
   taxDeductionEvents: [],
   specialExpenses: [
     { id: "trip-2027", name: "旅行", yearMonth: "2027-10", amount: 400_000, category: "enjoyment" },

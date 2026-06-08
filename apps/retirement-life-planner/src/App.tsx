@@ -19,6 +19,7 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  CheckCircle2,
   Copy,
   Download,
   BookOpen,
@@ -39,6 +40,7 @@ import { TimeBucketPlanner } from "@/components/TimeBucketPlanner";
 import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
 import {
+  buildRetirementIncomeRecords,
   getRetirementFilingAdvice,
   getRetirementOverlapAdjustments,
   getRetirementOverlapWarnings,
@@ -151,7 +153,7 @@ type AppMode = "safety" | "assetUse";
 type AssetUseTab = "timeBucket" | "quickTrial" | "review" | "incomePower";
 type PrimaryNavKey = "dashboard" | "safety" | "assetUse" | "results" | "compare" | "data";
 type InputCardPriority = "required" | "recommended" | "detail" | "expert";
-type InputCardStatus = "not_started" | "incomplete" | "complete" | "review_recommended" | "not_applicable" | "inactive";
+type InputCardStatus = "not_started" | "incomplete" | "complete" | "review_recommended" | "reviewed" | "not_applicable" | "inactive";
 type InputCardVisibility = "always" | "summary" | "collapsed" | "hidden";
 type InputCardHighlight = "none" | "current" | "next_required" | "review" | "blocked" | "targeted";
 type InputCardId =
@@ -3198,12 +3200,84 @@ type SectionProps = {
   targetCardId?: InputCardId | null;
 };
 
+type ReviewAcknowledgementInputCardId = Extract<InputCardId, "tax-retirement-overlap" | "income-ideco-lump" | "assets-cost-basis">;
+
+function stableReviewFingerprint(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableReviewFingerprint).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    return `{${Object.keys(objectValue)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableReviewFingerprint(objectValue[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function reviewSourceKey(source: RetirementOverlapAdjustment["currentSource"]) {
+  return `${source.kind}:${source.eventId}`;
+}
+
+function buildRetirementOverlapReviewFingerprint(scenario: ScenarioData, adjustments: RetirementOverlapAdjustment[]) {
+  const recordsBySource = new Map(buildRetirementIncomeRecords(scenario).map((record) => [reviewSourceKey(record.source), record]));
+  return stableReviewFingerprint({
+    cardId: "tax-retirement-overlap",
+    adjustments: adjustments.map((item) => {
+      const currentRecord = recordsBySource.get(reviewSourceKey(item.currentSource));
+      const priorRecord = recordsBySource.get(reviewSourceKey(item.priorSource));
+      return {
+        id: item.id,
+        targetEventId: item.currentSource.eventId,
+        targetSourceKind: item.currentSource.kind,
+        targetPaymentYearMonth: item.currentPaymentYearMonth,
+        targetAmount: currentRecord?.grossAmount ?? null,
+        targetServiceYears: currentRecord?.serviceYears ?? null,
+        targetServiceStartDate: currentRecord?.serviceStartDate ?? null,
+        targetServiceEndDate: currentRecord?.serviceEndDate ?? null,
+        targetAlreadyReceived: currentRecord?.alreadyReceived ?? null,
+        targetDeductionUsed: currentRecord?.retirementIncomeDeductionUsed ?? null,
+        targetWithholdingTaxPaid: currentRecord?.withholdingTaxPaid ?? null,
+        targetResidentTaxMunicipalPaid: currentRecord?.residentTaxMunicipalPaid ?? null,
+        targetResidentTaxPrefecturalPaid: currentRecord?.residentTaxPrefecturalPaid ?? null,
+        pastEventId: item.priorSource.eventId,
+        pastSourceKind: item.priorSource.kind,
+        pastPaymentYearMonth: item.priorPaymentYearMonth,
+        pastAmount: priorRecord?.grossAmount ?? null,
+        pastServiceYears: priorRecord?.serviceYears ?? null,
+        pastServiceStartDate: priorRecord?.serviceStartDate ?? null,
+        pastServiceEndDate: priorRecord?.serviceEndDate ?? null,
+        pastAlreadyReceived: priorRecord?.alreadyReceived ?? null,
+        pastDeductionUsed: priorRecord?.retirementIncomeDeductionUsed ?? null,
+        pastWithholdingTaxPaid: priorRecord?.withholdingTaxPaid ?? null,
+        pastResidentTaxMunicipalPaid: priorRecord?.residentTaxMunicipalPaid ?? null,
+        pastResidentTaxPrefecturalPaid: priorRecord?.residentTaxPrefecturalPaid ?? null,
+        overlapYears: item.estimatedOverlapYears,
+        adjustedDeduction: item.adjustedDeduction,
+      };
+    }),
+  });
+}
+
+function isReviewAcknowledged(scenario: ScenarioData, cardId: ReviewAcknowledgementInputCardId, fingerprint: string) {
+  return scenario.reviewAcknowledgements?.some((item) => item.cardId === cardId && item.fingerprint === fingerprint) ?? false;
+}
+
+function acknowledgeReviewCard(scenario: ScenarioData, cardId: ReviewAcknowledgementInputCardId, fingerprint: string) {
+  scenario.reviewAcknowledgements = [
+    ...(scenario.reviewAcknowledgements ?? []).filter((item) => item.cardId !== cardId),
+    { cardId, fingerprint, acknowledgedAt: new Date().toISOString() },
+  ];
+}
+
 function statusLabel(status: InputCardStatus) {
   const labels: Record<InputCardStatus, string> = {
     not_started: "未入力",
     incomplete: "不足あり",
     complete: "完了",
     review_recommended: "確認推奨",
+    reviewed: "確認済み",
     not_applicable: "対象外",
     inactive: "計算対象外",
   };
@@ -3222,6 +3296,7 @@ function priorityLabel(priority: InputCardPriority) {
 
 function inputCardStatusClass(status: InputCardStatus) {
   if (status === "complete") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "reviewed") return "border-emerald-200 bg-emerald-50 text-emerald-950";
   if (status === "review_recommended") return "border-amber-200 bg-amber-50 text-amber-950";
   if (status === "not_applicable" || status === "inactive") return "border-slate-200 bg-slate-50 text-slate-600";
   return "border-rose-200 bg-rose-50 text-rose-950";
@@ -3237,6 +3312,10 @@ function inputCardHighlightClass(highlight: InputCardHighlight) {
 
 function isInputCardActionable(card: InputCardDefinition) {
   return card.status === "not_started" || card.status === "incomplete" || card.status === "review_recommended";
+}
+
+function isInputCardSatisfied(card: InputCardDefinition) {
+  return card.status === "complete" || card.status === "reviewed" || card.status === "not_applicable" || card.status === "inactive";
 }
 
 function inputCardVisibilityFor(card: Omit<InputCardDefinition, "visibility" | "highlight">): InputCardVisibility {
@@ -3307,6 +3386,9 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
   });
   const specialMissing = scenario.specialExpenses.some((event) => !event.yearMonth || event.amount <= 0);
   const retirementAdjustments = getRetirementOverlapAdjustments(scenario);
+  const retirementOverlapFingerprint = buildRetirementOverlapReviewFingerprint(scenario, retirementAdjustments);
+  const retirementOverlapReviewed =
+    retirementAdjustments.length > 0 && isReviewAcknowledged(scenario, "tax-retirement-overlap", retirementOverlapFingerprint);
 
   return withInputCardUiState([
     {
@@ -3405,9 +3487,14 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
       id: "tax-retirement-overlap",
       title: "退職所得控除の重複調整",
       priority: "expert",
-      status: retirementAdjustments.length > 0 ? "review_recommended" : "not_applicable",
-      summary: retirementAdjustments.length > 0 ? `重複調整 ${retirementAdjustments.length}件を確認` : "対象イベントなし",
-      missingItems: retirementAdjustments.length > 0 ? ["退職所得控除の重複調整"] : [],
+      status: retirementAdjustments.length === 0 ? "not_applicable" : retirementOverlapReviewed ? "reviewed" : "review_recommended",
+      summary:
+        retirementAdjustments.length === 0
+          ? "対象イベントなし"
+          : retirementOverlapReviewed
+            ? `重複調整 ${retirementAdjustments.length}件を確認済み`
+            : `重複調整 ${retirementAdjustments.length}件を確認`,
+      missingItems: retirementAdjustments.length > 0 && !retirementOverlapReviewed ? ["退職所得控除の重複調整"] : [],
       tab: "tax",
       nextCardId: "special-expenses",
     },
@@ -4576,10 +4663,10 @@ function InputGuidanceSummary({
   onOpenOnboardingLabel?: string;
 }) {
   const requiredCards = cards.filter((card) => card.priority === "required");
-  const completedRequiredCount = requiredCards.filter((card) => card.status === "complete" || card.status === "not_applicable").length;
+  const completedRequiredCount = requiredCards.filter(isInputCardSatisfied).length;
   const nextCard = cards.find((card) => card.priority === "required" && isInputCardActionable(card)) ?? cards.find(isInputCardActionable);
   const reviewCards = cards.filter((card) => card.status === "review_recommended");
-  const canShowResults = requiredCards.every((card) => card.status === "complete" || card.status === "not_applicable");
+  const canShowResults = requiredCards.every(isInputCardSatisfied);
 
   return (
     <Card>
@@ -7482,6 +7569,12 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
   const isAuto = mode === "auto";
   const retirementOverlapWarnings = useMemo(() => getRetirementOverlapWarnings(scenario), [scenario]);
   const retirementOverlapAdjustments = useMemo(() => getRetirementOverlapAdjustments(scenario), [scenario]);
+  const retirementOverlapFingerprint = useMemo(
+    () => buildRetirementOverlapReviewFingerprint(scenario, retirementOverlapAdjustments),
+    [scenario, retirementOverlapAdjustments],
+  );
+  const retirementOverlapReviewed =
+    retirementOverlapAdjustments.length > 0 && isReviewAcknowledged(scenario, "tax-retirement-overlap", retirementOverlapFingerprint);
   const premiseRows = isManual ? scenario.taxInsurance : mode === "autoWithAdjustment" ? effectiveRows : autoRows;
   const premiseYears = premiseRows.map((row) => row.fiscalYear).filter((year) => Number.isFinite(year));
   const premiseYearLabel =
@@ -7544,6 +7637,12 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
 
   const adjustmentLabel = isManual ? "空欄追加" : "補正追加";
   const copyLabel = isManual ? "前年度コピー" : "前年度補正コピー";
+  const acknowledgeRetirementOverlapReview = () =>
+    updateScenario((s) => {
+      const nextAdjustments = getRetirementOverlapAdjustments(s);
+      if (nextAdjustments.length === 0) return;
+      acknowledgeReviewCard(s, "tax-retirement-overlap", buildRetirementOverlapReviewFingerprint(s, nextAdjustments));
+    });
 
   return (
     <Card id="tax-mode" data-input-card-id="tax-mode">
@@ -7674,6 +7773,30 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
                 重複ルールに該当するイベントについて、勤続/加入期間の重複分を概算します。収入イベントとして登録したiDeCo一時金は、この調整後控除を税額計算に使います。
               </p>
             </div>
+            {retirementOverlapAdjustments.length > 0 && (
+              <div
+                className={cn(
+                  "flex flex-col gap-3 rounded-md border px-4 py-3 text-sm md:flex-row md:items-center md:justify-between",
+                  retirementOverlapReviewed ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-amber-200 bg-amber-50 text-amber-950",
+                )}
+              >
+                <div>
+                  <div className="font-medium">{retirementOverlapReviewed ? "この内容は確認済みです" : "この内容は未確認です"}</div>
+                  <p className="mt-1 leading-6">
+                    内容を確認済みにすると、入力状況サマリーでは未確認扱いから外れます。金額や日付を変更すると再確認が必要になります。
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={retirementOverlapReviewed ? "outline" : "default"}
+                  onClick={acknowledgeRetirementOverlapReview}
+                  disabled={retirementOverlapReviewed}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {retirementOverlapReviewed ? "確認済み" : "この内容を確認済みにする"}
+                </Button>
+              </div>
+            )}
             {retirementOverlapAdjustments.length === 0 ? (
               <p className="text-sm text-muted-foreground">概算調整が必要な退職所得イベントはありません。</p>
             ) : (

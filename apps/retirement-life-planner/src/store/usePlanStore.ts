@@ -18,6 +18,8 @@ import type {
   PlanBackup,
   RetirementPlanSnapshot,
   RetirementPlanState,
+  ReviewAcknowledgement,
+  ReviewAcknowledgementCardId,
   ScenarioData,
   OptionSubAccount,
   AssetContributionEvent,
@@ -72,6 +74,11 @@ type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpe
 const baseScenario = sampleState.scenarios[0];
 const maxBackups = 5;
 const monthlyExpenseKeys = Object.keys(baseScenario.monthlyExpenses) as (keyof MonthlyExpenseProfile)[];
+const reviewAcknowledgementCardIds: ReviewAcknowledgementCardId[] = [
+  "tax-retirement-overlap",
+  "income-ideco-lump",
+  "assets-cost-basis",
+];
 const legacyOrdinaryAccountLabel = ["普通", "口座"].join("");
 const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] = [
   "enjoyment",
@@ -93,6 +100,22 @@ function normalizeExpenseAdjustmentTargets(source: unknown, fallback: ExpenseAdj
   );
   if (targets.includes("all")) return ["all"];
   return targets.length ? [...new Set(targets)] : fallback;
+}
+
+function normalizeReviewAcknowledgements(source: unknown): ReviewAcknowledgement[] {
+  if (!Array.isArray(source)) return [];
+  return source.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const value = item as Partial<ReviewAcknowledgement>;
+    if (!reviewAcknowledgementCardIds.includes(value.cardId as ReviewAcknowledgementCardId)) return [];
+    if (typeof value.fingerprint !== "string" || value.fingerprint.length === 0) return [];
+    if (typeof value.acknowledgedAt !== "string" || value.acknowledgedAt.length === 0) return [];
+    return [{
+      cardId: value.cardId as ReviewAcknowledgementCardId,
+      fingerprint: value.fingerprint,
+      acknowledgedAt: value.acknowledgedAt,
+    }];
+  });
 }
 
 function normalizeSpecialExpenses(source: LegacySpecialExpenseEvent[] | undefined): SpecialExpenseEvent[] {
@@ -559,6 +582,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
       ...baseScenario.taxableAccountSettings,
       ...(source.taxableAccountSettings ?? {}),
     },
+    reviewAcknowledgements: normalizeReviewAcknowledgements(source.reviewAcknowledgements),
   };
 
   delete (scenario.initialAssets as ScenarioData["initialAssets"] & { securities?: number }).securities;
