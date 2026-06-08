@@ -3331,8 +3331,8 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
     },
     {
       id: "assets-cost-basis",
-      title: "取得原価・評価損益",
-      priority: "detail",
+      title: "NISA・iDeCo・特定口座などの評価額と評価損益",
+      priority: "recommended",
       status: costBasisMissing ? "review_recommended" : "complete",
       summary: costBasisMissing ? "課税口座の取得原価が未設定です" : "取得原価の概算入力があります",
       missingItems: costBasisMissing ? ["取得原価"] : [],
@@ -4495,7 +4495,7 @@ function ScenarioSyncDetails({
           {isOpen ? "閉じる" : "開く"}
         </span>
       </summary>
-      <div className="mt-4 space-y-4">{children}</div>
+      <div hidden={!isOpen} className="mt-4 space-y-4">{children}</div>
     </details>
   );
 }
@@ -4508,6 +4508,7 @@ function GuidedDetails({
   priority = "detail",
   defaultOpen = false,
   targetCardId,
+  reviewHighlight = false,
   children,
 }: {
   id: InputCardId | string;
@@ -4517,6 +4518,7 @@ function GuidedDetails({
   priority?: InputCardPriority;
   defaultOpen?: boolean;
   targetCardId?: InputCardId | string | null;
+  reviewHighlight?: boolean;
   children: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -4532,6 +4534,7 @@ function GuidedDetails({
       className={cn(
         "rounded-lg border bg-white px-4 py-3 transition-shadow",
         isTargeted ? "border-sky-300 ring-2 ring-sky-200" : "",
+        reviewHighlight && !isTargeted ? "border-amber-300 bg-amber-50/50 ring-1 ring-amber-100" : "",
       )}
       open={isOpen}
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
@@ -4541,6 +4544,9 @@ function GuidedDetails({
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{title}</span>
             <span className="rounded-md border bg-slate-50 px-2 py-0.5 text-xs text-muted-foreground">{priorityLabel(priority)}</span>
+            {reviewHighlight && !isTargeted && (
+              <span className="rounded bg-amber-200 px-2 py-0.5 text-xs font-medium text-amber-950">確認推奨</span>
+            )}
           </span>
           <span className="mt-1 block text-sm leading-6 text-muted-foreground">{summary ?? description}</span>
         </span>
@@ -4699,7 +4705,7 @@ function AssetsSection({
   };
   const selectedAssetSyncLabels = [
     assetSyncOptions.liquidAssets ? "現金・預金・対象外資産" : "",
-    assetSyncOptions.marketAssets ? "証券・iDeCo評価額" : "",
+    assetSyncOptions.marketAssets ? "NISA・iDeCo等の評価額" : "",
     assetSyncOptions.costBasis ? "取得原価" : "",
     assetSyncOptions.optionSubAccounts ? "一般口座サブ口座" : "",
   ].filter(Boolean);
@@ -4853,11 +4859,12 @@ function AssetsSection({
         </FormGrid>
         <GuidedDetails
           id="assets-cost-basis"
-          title="証券・iDeCoの評価額と評価損益"
-          description="マネーフォワードの評価額と評価損益を入れてください。取得原価は自動計算し、特定口座と一般口座の取り崩し課税に使います。"
+          title="NISA・iDeCo・特定口座などの評価額と評価損益"
+          description="NISA、iDeCo、特定口座などについて、マネーフォワード等の評価額と評価損益を入力します。取得原価は自動計算し、課税口座の取り崩し時の税額概算に使います。"
           summary={`課税口座・iDeCoなどの取得原価を確認 / 含み損益対象 ${compactYen(scenario.initialAssets.specificAccount + scenario.initialAssets.ordinaryAccountForOptions + scenario.initialAssets.ideco)}`}
-          priority="detail"
+          priority="recommended"
           targetCardId={targetCardId}
+          reviewHighlight
         >
             {gainTrackedAssets.filter(({ key }) => key !== "ordinaryAccountForOptions").map(({ key, label }) => {
               const currentValue = scenario.initialAssets[key];
@@ -4915,15 +4922,15 @@ function AssetsSection({
               );
             })}
         </GuidedDetails>
-        <Card className="border-dashed">
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>一般口座（オプション用）のサブ口座</CardTitle>
-                <CardDescription>
-                  CFD、米国株オプションなどを別口座として管理します。最低維持額、利益移動、取り崩し優先順位を口座ごとに設定できます。
-                </CardDescription>
-                <p className="mt-2 text-xs text-muted-foreground">
+        <ScenarioSyncDetails
+          title="一般口座（申告対象運用）のサブ口座"
+          description="詳細設定。通常は閉じたままで構いません。"
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="text-sm leading-6 text-muted-foreground">
+                <p>申告対象の運用口座などを別口座として管理します。最低維持額、利益移動、取り崩し優先順位を口座ごとに設定できます。</p>
+                <p className="mt-1 text-xs">
                   開始年月がシミュレーション開始より後の口座は、その月に現金・普通預金から初期金額を自動移動します。
                 </p>
               </div>
@@ -4932,8 +4939,6 @@ function AssetsSection({
                 追加
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
             <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
               合計評価額 {yen(scenario.initialAssets.ordinaryAccountForOptions)} / 取得原価 {yen(scenario.initialAssetCostBasis.ordinaryAccountForOptions)}
               <div className="mt-1 text-xs">
@@ -5100,8 +5105,8 @@ function AssetsSection({
                 </EventEditor>
               );
             })}
-          </CardContent>
-        </Card>
+          </div>
+        </ScenarioSyncDetails>
         <div className="grid gap-4 sm:grid-cols-2">
           <Metric title="初期総資産" value={compactYen(getTotalAssets(scenario))} sub="対象外資産を含む" />
           <Metric title="シミュレーション対象資産" value={compactYen(getSimulationTargetAssets(scenario))} sub="取り崩し計算の起点" />
@@ -5591,7 +5596,7 @@ function AssetsSection({
           }
           options={[
             { key: "liquidAssets", label: "現金・預金・対象外資産", description: "現金、普通預金、定期預金、対象外資産、負債" },
-            { key: "marketAssets", label: "証券・iDeCo評価額", description: "NISA、特定口座、iDeCoの評価額" },
+            { key: "marketAssets", label: "NISA・iDeCo等の評価額", description: "NISA、特定口座、iDeCoの評価額" },
             { key: "costBasis", label: "取得原価", description: "譲渡益税の前提。評価額更新時は通常一緒に反映" },
             { key: "optionSubAccounts", label: "一般口座サブ口座", description: "口座構成、評価額、取得原価、運用ルールも反映" },
           ]}
