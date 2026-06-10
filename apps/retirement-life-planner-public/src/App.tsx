@@ -907,6 +907,9 @@ function App() {
             <Button variant="outline" onClick={() => setShowDataTrustModal(true)}>
               データの扱い
             </Button>
+            <Button variant="outline" onClick={() => setShowOnboarding(true)}>
+              初回設定をやり直す
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -1195,6 +1198,7 @@ function App() {
                 importJson={openJsonImportDialog}
                 resetToSample={resetToSample}
                 clearLocalData={clearBrowserData}
+                onOpenOnboarding={() => setShowOnboarding(true)}
                 lastSavedAt={lastSavedAt}
                 backups={backups}
                 createBackup={createBackup}
@@ -2527,6 +2531,12 @@ function Dashboard({
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
+          {scenario.id === "base" && (
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+              <span className="font-medium">これは入力練習用の匿名サンプルです。</span>{" "}
+              年齢・資産・生活費・収入を初回設定から自分用に置き換えて使ってください。
+            </div>
+          )}
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-md border bg-emerald-50 px-4 py-4">
               <div className="text-sm font-medium text-emerald-900">資産寿命</div>
@@ -3311,6 +3321,16 @@ function isInputCardSatisfied(card: InputCardDefinition) {
   return card.status === "complete" || card.status === "reviewed" || card.status === "review_recommended" || card.status === "not_applicable" || card.status === "inactive";
 }
 
+function getExpenseOtherShare(monthlyExpenses: MonthlyExpenseProfile, excludeTaxExpense: boolean) {
+  const total = getBaseMonthlyExpense(monthlyExpenses, excludeTaxExpense);
+  if (total <= 0) return 0;
+  return Math.max(0, monthlyExpenses.other ?? 0) / total;
+}
+
+function hasLargeUnclassifiedExpense(monthlyExpenses: MonthlyExpenseProfile, excludeTaxExpense: boolean) {
+  return getExpenseOtherShare(monthlyExpenses, excludeTaxExpense) >= 0.5;
+}
+
 function getNextInputCard(cards: InputCardDefinition[]) {
   const nextRequired = cards.find((card) => card.priority === "required" && (card.status === "not_started" || card.status === "incomplete"));
   if (nextRequired) return nextRequired;
@@ -3336,7 +3356,7 @@ function inputCardActionHeading(card: InputCardDefinition | undefined, requiredC
 
 function inputCardActionButtonLabel(card: InputCardDefinition | undefined, requiredComplete: boolean) {
   if (!card) return "入力ガイドを開く";
-  if (card.id === "income-ideco") return "iDeCo受取を確認する";
+  if (card.id === "income-ideco" || card.id === "income-ideco-lump") return "iDeCo受取を確認する";
   const kind = getInputCardActionKind(card, requiredComplete);
   if (kind === "required") return "ここを入力する";
   if (kind === "expert") return "必要なら確認する";
@@ -3396,7 +3416,9 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
   ].filter(Boolean) as string[];
   const totalAssets = getTotalAssets(scenario);
   const simulationAssets = getSimulationTargetAssets(scenario);
-  const expenseTotal = getBaseMonthlyExpense(scenario.monthlyExpenses, shouldIgnoreTaxExpenseField(scenario));
+  const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
+  const expenseTotal = getBaseMonthlyExpense(scenario.monthlyExpenses, excludeTaxExpense);
+  const largeUnclassifiedExpense = hasLargeUnclassifiedExpense(scenario.monthlyExpenses, excludeTaxExpense);
   const pensionSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
   const pensionTotal =
     pensionSettings.selfBasicAnnual +
@@ -3446,7 +3468,7 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
       title: "現在資産",
       priority: "required",
       status: "complete",
-      summary: `現在資産 ${compactYen(totalAssets)} / 取り崩し対象 ${compactYen(simulationAssets)}`,
+      summary: `現在資産 ${compactYen(totalAssets)} / 取り崩し対象 ${compactYen(simulationAssets)}${scenario.assetContributionEvents.length > 0 ? " / 積立予定あり" : ""}`,
       missingItems: [],
       tab: "assets",
       nextCardId: "expenses-monthly",
@@ -3465,9 +3487,11 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
       id: "expenses-monthly",
       title: "毎月の生活費",
       priority: "required",
-      status: expenseTotal > 0 ? "complete" : "incomplete",
-      summary: `月平均生活費 ${compactYen(expenseTotal)}`,
-      missingItems: expenseTotal > 0 ? [] : ["毎月生活費"],
+      status: expenseTotal <= 0 ? "incomplete" : largeUnclassifiedExpense ? "review_recommended" : "complete",
+      summary: largeUnclassifiedExpense
+        ? `月平均生活費 ${compactYen(expenseTotal)} / 生活費の内訳を確認`
+        : `月平均生活費 ${compactYen(expenseTotal)}`,
+      missingItems: expenseTotal <= 0 ? ["毎月生活費"] : largeUnclassifiedExpense ? ["生活費の内訳"] : [],
       tab: "expenses",
       nextCardId: "income-pension",
     },
@@ -4815,15 +4839,16 @@ function InputGuideMini({
         <div className="text-sm leading-6 text-amber-950">
           <div className="font-semibold">入力ガイド</div>
           <p>
-            {requiredComplete ? "必須入力は完了。" : "主要入力に未入力があります。"}
-            {heading}として <span className="font-medium">{card.title}</span> を確認すると試算の精度が上がります。
+            {requiredComplete
+              ? `必須入力は完了しています。${heading}項目は「${card.title}」です。`
+              : `主要入力に未入力があります。${heading}項目は「${card.title}」です。`}
           </p>
           <p className="text-xs text-amber-900">{inputCardLocationLabel(card)} / {card.summary}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => onOpenCard(card.id)}>{buttonLabel}</Button>
           <Button variant="outline" onClick={onOpenGuide}>
-            入力ガイド
+            入力状況を開く
           </Button>
         </div>
       </CardContent>
@@ -5764,8 +5789,10 @@ function AssetsSection({
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle>毎月の追加投資</CardTitle>
-                <CardDescription>指定口座へ毎月積み増す金額を設定します。開始月から終了月まで有効です。</CardDescription>
+                <CardTitle>将来の積立予定</CardTitle>
+                <CardDescription>
+                  現在の資産額ではなく、開始月以降に毎月投資する予定額です。生活費・税社保を払った後の資金から実行されます。
+                </CardDescription>
               </div>
               <Button onClick={addContribution}>
                 <Plus className="h-4 w-4" />
@@ -5774,6 +5801,11 @@ function AssetsSection({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {scenario.assetContributionEvents.length === 0 && (
+              <div className="rounded-md border border-dashed bg-slate-50 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                積立予定はまだありません。NISA積立などを将来も続ける場合だけ追加します。
+              </div>
+            )}
             {scenario.assetContributionEvents.map((event, index) => (
               <EventEditor
                 key={event.id}
@@ -6058,6 +6090,23 @@ function ExpensesSection({
       s.inflationSettings.livingCostInflationTargets = [...living];
       s.inflationSettings.medicalInflationTargets = [...medical];
     });
+  const baseMonthlyExpense = getBaseMonthlyExpense(scenario.monthlyExpenses, excludeTaxExpense);
+  const otherExpense = Math.max(0, scenario.monthlyExpenses.other ?? 0);
+  const largeUnclassifiedExpense = hasLargeUnclassifiedExpense(scenario.monthlyExpenses, excludeTaxExpense);
+  const quickSplitOtherExpense = () =>
+    updateScenario((s) => {
+      const amount = Math.max(0, s.monthlyExpenses.other ?? 0);
+      if (amount <= 0) return;
+      s.monthlyExpenses.food += Math.round(amount * 0.4);
+      s.monthlyExpenses.dailyGoods += Math.round(amount * 0.2);
+      s.monthlyExpenses.utilities += Math.round(amount * 0.25);
+      s.monthlyExpenses.communication += amount - Math.round(amount * 0.4) - Math.round(amount * 0.2) - Math.round(amount * 0.25);
+      s.monthlyExpenses.other = 0;
+    });
+  const keepUnclassifiedExpense = () =>
+    updateScenario((s) => {
+      s.monthlyExpenses.other = Math.max(0, s.monthlyExpenses.other ?? 0);
+    });
 
   return (
     <Card id="expenses-monthly" data-input-card-id="expenses-monthly">
@@ -6072,13 +6121,42 @@ function ExpensesSection({
           </div>
         )}
         <div className="rounded-lg border bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
-          初回設定で入れた毎月の生活費は、この費目別入力に分けて保存されています。
-          住宅費や医療費として分けた分以外は「その他」に入っています。
-          ここで食費、日用品などを入力し直すと、下の「月平均生活費」は費目別の合計に変わり、その合計が試算に使われます。
+          生活費は費目別に分けると、将来の変化やインフレの見通しを確認しやすくなります。初回設定で入れた合計のうち、住宅費や医療費として分けた分以外は「その他（未分類）」に入っています。
+          食費・日用品・光熱費などへ分けると、下の「月平均生活費」は同じ合計のまま、内訳だけが分かりやすくなります。
         </div>
+        {largeUnclassifiedExpense && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-medium">生活費の「その他（未分類）」が多めです</p>
+                <p className="mt-1">
+                  その他が月平均生活費の {Math.round(getExpenseOtherShare(scenario.monthlyExpenses, excludeTaxExpense) * 100)}%（{compactYen(otherExpense)}）あります。
+                  必須ではありませんが、食費・日用品・光熱費などへ分けると見直しやすくなります。
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={keepUnclassifiedExpense}>
+                  ざっくりのまま進む
+                </Button>
+                <Button size="sm" onClick={quickSplitOtherExpense}>
+                  費目別に分ける
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         <FormGrid>
           {(Object.keys(expenseLabels) as ExpenseKey[]).map((key) => (
-            <Field key={key} label={expenseLabels[key]}>
+            <Field
+              key={key}
+              label={
+                key === "other" && largeUnclassifiedExpense
+                  ? "その他（未分類が多め）"
+                  : key === "other"
+                    ? "その他（未分類）"
+                    : expenseLabels[key]
+              }
+            >
               <Input type="number" value={scenario.monthlyExpenses[key]} onChange={(event) => updateScenario((s) => void (s.monthlyExpenses[key] = numberOrZero(event.target.value)))} />
             </Field>
           ))}
@@ -6086,7 +6164,7 @@ function ExpensesSection({
         <div className="grid gap-4 md:grid-cols-4">
           <Metric
             title="月平均生活費"
-            value={compactYen(getBaseMonthlyExpense(scenario.monthlyExpenses, excludeTaxExpense))}
+            value={compactYen(baseMonthlyExpense)}
             sub={excludeTaxExpense ? "税・社会保険を除く現在入力値" : "現在入力値"}
           />
           <Field label="インフレ反映">
@@ -8884,6 +8962,9 @@ function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
 
   const visibleAdvice = advice.filter((item) => item.status !== "notRequiredLikely" || item.pensionGrossAnnual > 0);
   if (visibleAdvice.length === 0) return null;
+  const priorityAdvice = visibleAdvice.filter((item) => item.status === "attention" || item.status === "review");
+  const routineAdvice = visibleAdvice.filter((item) => item.status === "notRequiredLikely");
+  const routineGroups = groupRoutineTaxFilingAdvice(routineAdvice);
 
   const styleByStatus: Record<TaxFilingAdvice["status"], string> = {
     attention: "border-amber-300 bg-amber-50 text-amber-950",
@@ -8905,40 +8986,101 @@ function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
           本人・配偶者などメンバー別に判定します。
         </p>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <thead>
-            <Tr>
-              <Th>年度</Th>
-              <Th>メンバー</Th>
-              <Th>判定</Th>
-              <Th>理由</Th>
-              <Th>年金収入</Th>
-              <Th>年金以外</Th>
-              <Th>所得税</Th>
-              <Th>住民税</Th>
-            </Tr>
-          </thead>
-          <tbody>
-        {visibleAdvice.map((item) => (
-          <Tr key={item.id} className={styleByStatus[item.status]}>
-            <Td>{item.fiscalYear}</Td>
-            <Td>{item.memberName}</Td>
-            <Td>
-              <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
-            </Td>
-            <Td className="min-w-[28rem] text-sm">{item.message}</Td>
-            <Td>{yen(item.pensionGrossAnnual)}</Td>
-            <Td>{yen(item.nonPensionIncomeAnnual)}</Td>
-            <Td>{yen(item.incomeTaxAnnual)}</Td>
-            <Td>{yen(item.residentTaxAnnual)}</Td>
-          </Tr>
-        ))}
-          </tbody>
-        </Table>
+      <div className="space-y-2">
+        {priorityAdvice.length === 0 ? (
+          <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            目立つ確認年はありません。申告不要制度の可能性がある年度は下の折りたたみで確認できます。
+          </div>
+        ) : (
+          priorityAdvice.map((item) => (
+            <div key={item.id} className={cn("rounded-md border px-4 py-3 text-sm leading-6", styleByStatus[item.status])}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{item.fiscalYear}年 {item.memberName}</span>
+                <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
+              </div>
+              <p className="mt-1">{item.message}</p>
+              <p className="mt-1 text-xs">
+                年金収入 {yen(item.pensionGrossAnnual)} / 年金以外 {yen(item.nonPensionIncomeAnnual)} / 所得税 {yen(item.incomeTaxAnnual)} / 住民税 {yen(item.residentTaxAnnual)}
+              </p>
+            </div>
+          ))
+        )}
       </div>
+      {routineGroups.length > 0 && (
+        <details className="rounded-lg border bg-slate-50 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">申告不要制度の可能性が続く年度を開く</summary>
+          <div className="mt-3 space-y-2">
+            {routineGroups.map((group) => (
+              <div key={group.id} className="rounded-md border bg-white px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium">{group.label}</span>
+                <span className="ml-2 text-muted-foreground">{group.memberName}: {group.message}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <details className="rounded-lg border bg-white px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium">全年度の判定表を開く</summary>
+        <div className="mt-3 overflow-x-auto rounded-lg border">
+          <Table>
+            <thead>
+              <Tr>
+                <Th>年度</Th>
+                <Th>メンバー</Th>
+                <Th>判定</Th>
+                <Th>理由</Th>
+                <Th>年金収入</Th>
+                <Th>年金以外</Th>
+                <Th>所得税</Th>
+                <Th>住民税</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {visibleAdvice.map((item) => (
+                <Tr key={item.id} className={styleByStatus[item.status]}>
+                  <Td>{item.fiscalYear}</Td>
+                  <Td>{item.memberName}</Td>
+                  <Td>
+                    <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
+                  </Td>
+                  <Td className="min-w-[28rem] text-sm">{item.message}</Td>
+                  <Td>{yen(item.pensionGrossAnnual)}</Td>
+                  <Td>{yen(item.nonPensionIncomeAnnual)}</Td>
+                  <Td>{yen(item.incomeTaxAnnual)}</Td>
+                  <Td>{yen(item.residentTaxAnnual)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </details>
     </div>
   );
+}
+
+function groupRoutineTaxFilingAdvice(items: TaxFilingAdvice[]) {
+  const sorted = [...items].sort((a, b) => {
+    if (a.memberName !== b.memberName) return a.memberName.localeCompare(b.memberName);
+    return a.fiscalYear - b.fiscalYear;
+  });
+  const groups: Array<{ id: string; memberName: string; startYear: number; endYear: number; message: string; label: string }> = [];
+  for (const item of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && last.memberName === item.memberName && last.message === item.message && last.endYear + 1 === item.fiscalYear) {
+      last.endYear = item.fiscalYear;
+      last.label = `${last.startYear}〜${last.endYear}年`;
+    } else {
+      groups.push({
+        id: item.id,
+        memberName: item.memberName,
+        startYear: item.fiscalYear,
+        endYear: item.fiscalYear,
+        message: item.message,
+        label: `${item.fiscalYear}年`,
+      });
+    }
+  }
+  return groups;
 }
 
 function TaxCashTimingSummary({
@@ -9962,6 +10104,8 @@ function SpecialSection({
     );
   };
   const categoryWarnings = findSpecialExpenseCategoryWarnings(scenario.specialExpenses);
+  const enjoymentExpenseCount = scenario.specialExpenses.filter((event) => (event.category ?? "lifeMaintenance") === "enjoyment").length;
+  const emphasizeTimeBucketLead = scenario.specialExpenses.length === 0 || enjoymentExpenseCount === 0;
   const timeBucketSpecialExpenseIds = useMemo(
     () => new Set(scenario.timeBucketItems.map((item) => item.convertedSpecialExpenseId).filter((id): id is string => Boolean(id))),
     [scenario.timeBucketItems],
@@ -10022,6 +10166,27 @@ function SpecialSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div
+          className={cn(
+            "rounded-lg border px-4 py-3 text-sm leading-6",
+            emphasizeTimeBucketLead ? "border-amber-200 bg-amber-50 text-amber-950" : "bg-slate-50 text-slate-800",
+          )}
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="font-medium">やりたいことから作る</p>
+              <p className="mt-1">
+                旅行・趣味・家族イベントなどは、資産活用のタイムバケットで整理してから、計算に入れるものだけ特別支出に変換できます。
+              </p>
+              <p className="mt-1 text-xs">
+                現在の特別支出 {scenario.specialExpenses.length}件 / 楽しみカテゴリ {enjoymentExpenseCount}件
+              </p>
+            </div>
+            <Button className="shrink-0" onClick={onOpenTimeBucket}>
+              資産活用でやりたいことを整理
+            </Button>
+          </div>
+        </div>
         {categoryWarnings.length > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="font-medium">楽しみ支出として扱う可能性がある項目があります</div>
@@ -10645,6 +10810,19 @@ function ResultsSection({
         <Metric title="累計収支" value={compactYen(annualNet)} sub={annualNet >= 0 ? "黒字" : "赤字"} />
         <Metric title="期末評価損益" value={compactYen(latestTrackedGainTotal)} sub={latestAnnual ? `${latestAnnual.year}年末の合計` : "年末時点"} />
       </div>
+      {annualContributionGap > 0 && (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">追加投資の原資不足があります</p>
+              <p className="mt-1">将来の積立予定が生活費・税社保後の資金で賄えない月があります。積立額や期間を確認してください。</p>
+            </div>
+            <Button variant="outline" onClick={() => onOpenInputCard("assets-current")}>
+              将来の積立予定を確認
+            </Button>
+          </div>
+        </div>
+      )}
       </ScenarioSyncDetails>
 
       <ScenarioSyncDetails
@@ -12243,6 +12421,7 @@ function DataSection(props: {
   importJson: () => void;
   resetToSample: () => void;
   clearLocalData: () => void;
+  onOpenOnboarding: () => void;
   lastSavedAt?: string;
   backups: PlanBackup[];
   createBackup: (label?: string) => void;
@@ -12299,6 +12478,9 @@ function DataSection(props: {
           <Button variant="outline" onClick={() => props.createBackup("手動バックアップ")}>
             <FileJson className="h-4 w-4" />
             履歴に保存
+          </Button>
+          <Button variant="outline" onClick={props.onOpenOnboarding}>
+            初回設定をやり直す
           </Button>
           <Button
             variant="secondary"

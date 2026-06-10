@@ -28,7 +28,7 @@ export type OnboardingDraft = {
   selfAge: number;
   hasSpouse: boolean;
   spouseAge: number;
-  retirementStatus: "planned" | "retired";
+  retirementStatus: "preRetirement" | "retired" | "workingAfterRetirement" | "pensionLife";
   startYearMonth: string;
   simulationEndAge: number;
   targetBalanceAge: number;
@@ -123,7 +123,7 @@ export function createOnboardingDraft(scenario: ScenarioData): OnboardingDraft {
     selfAge: Math.max(20, currentYear - birthYear),
     hasSpouse: Boolean(spouse ?? scenario.userProfile.hasSpouse),
     spouseAge: Math.max(20, currentYear - spouseBirthYear),
-    retirementStatus: "planned",
+    retirementStatus: "preRetirement",
     startYearMonth: nextMonthYearMonth(),
     simulationEndAge: scenario.userProfile.simulationEndAge ?? 95,
     targetBalanceAge: scenario.userProfile.targetBalanceAge,
@@ -224,6 +224,7 @@ export function applyOnboardingDraftToScenario(scenario: ScenarioData, draft: On
   scenario.monthlyExpenses = createMonthlyExpenses(draft);
   scenario.ageExpenseAdjustments = createAgeExpenseAdjustments(draft);
   scenario.incomeEvents = createIncomeEvents(draft, selfId, draft.hasSpouse ? spouseId : undefined);
+  scenario.assetContributionEvents = [];
   scenario.specialExpenses = createSpecialExpenses(draft);
   scenario.timeBucketItems = createTimeBucketItems(draft);
   scenario.assetGrowthSettings = createAssetGrowthSettings(draft);
@@ -318,11 +319,16 @@ export function OnboardingWizard({
                   </Select>
                 </Field>
                 {draft.hasSpouse && <NumberField label="配偶者の年齢" value={draft.spouseAge} min={20} onChange={(value) => update("spouseAge", value)} />}
-                <Field label="退職状況">
+                <Field label="現在の状態">
                   <Select value={draft.retirementStatus} onChange={(event) => update("retirementStatus", event.target.value as OnboardingDraft["retirementStatus"])}>
-                    <option value="planned">退職予定</option>
+                    <option value="preRetirement">退職前</option>
                     <option value="retired">退職済み</option>
+                    <option value="workingAfterRetirement">退職後も働く</option>
+                    <option value="pensionLife">年金生活中</option>
                   </Select>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    退職前は給与・退職予定・退職金を先に、退職済みや年金生活中は年金・iDeCo・その他収入を先に確認します。
+                  </p>
                 </Field>
                 <Field label="試算を始める年月">
                   <Input type="month" value={draft.startYearMonth} onChange={(event) => update("startYearMonth", event.target.value)} />
@@ -373,15 +379,43 @@ export function OnboardingWizard({
           )}
 
           {step.key === "income" && (
-            <WizardPanel title="収入" description="年金、働く収入、退職金などの主な収入を設定します。細かい条件は後から補正できます。">
+            <WizardPanel
+              title="収入"
+              description={
+                draft.retirementStatus === "preRetirement"
+                  ? "退職前の方は、給与・賞与、退職予定、退職金、年金見込み、iDeCoの順で確認します。細かい条件は後から補正できます。"
+                  : "退職済み・年金生活中の方は、年金、iDeCo、その他収入を中心に確認します。細かい条件は後から補正できます。"
+              }
+            >
+              {draft.retirementStatus === "preRetirement" && (
+                <div className="rounded-md border bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                  退職前の入力順: 給与・賞与 → 退職予定 → 退職金 → 年金見込み → iDeCo。退職金はこの画面では有無だけ確認し、金額や受取日は後で収入タブから設定します。
+                </div>
+              )}
               <FormGrid>
+                {draft.retirementStatus === "preRetirement" && (
+                  <>
+                    <NumberField label="給与・パート等（月額）" value={draft.workIncomeMonthly} min={0} step={10_000} onChange={(value) => update("workIncomeMonthly", value)} />
+                    <NumberField label="給与・パート等の終了年齢" value={draft.workIncomeEndAge} min={draft.selfAge} onChange={(value) => update("workIncomeEndAge", value)} />
+                    <Field label="退職金・一時金">
+                      <Select value={draft.retirementAllowance ? "yes" : "no"} onChange={(event) => update("retirementAllowance", event.target.value === "yes")}>
+                        <option value="no">今は入れない</option>
+                        <option value="yes">後で詳しく設定する</option>
+                      </Select>
+                    </Field>
+                  </>
+                )}
                 <NumberField label="本人の年金見込み額（年額）" value={draft.selfPensionAnnual} min={0} step={10_000} onChange={(value) => update("selfPensionAnnual", value)} />
                 {draft.hasSpouse && (
                   <NumberField label="配偶者の年金見込み額（年額）" value={draft.spousePensionAnnual} min={0} step={10_000} onChange={(value) => update("spousePensionAnnual", value)} />
                 )}
                 <NumberField label="年金受給開始年齢" value={draft.pensionStartAge} min={60} max={75} onChange={(value) => update("pensionStartAge", value)} />
-                <NumberField label="給与・パート等（月額）" value={draft.workIncomeMonthly} min={0} step={10_000} onChange={(value) => update("workIncomeMonthly", value)} />
-                <NumberField label="給与・パート等の終了年齢" value={draft.workIncomeEndAge} min={draft.selfAge} onChange={(value) => update("workIncomeEndAge", value)} />
+                {draft.retirementStatus !== "preRetirement" && (
+                  <>
+                    <NumberField label="給与・パート等（月額）" value={draft.workIncomeMonthly} min={0} step={10_000} onChange={(value) => update("workIncomeMonthly", value)} />
+                    <NumberField label="給与・パート等の終了年齢" value={draft.workIncomeEndAge} min={draft.selfAge} onChange={(value) => update("workIncomeEndAge", value)} />
+                  </>
+                )}
                 <Field label="iDeCo受取予定">
                   <Select value={draft.idecoPlan} onChange={(event) => update("idecoPlan", event.target.value as OnboardingDraft["idecoPlan"])}>
                     <option value="later">後で設定</option>
@@ -389,12 +423,14 @@ export function OnboardingWizard({
                     <option value="lumpSum">一時金</option>
                   </Select>
                 </Field>
-                <Field label="退職金・一時金">
-                  <Select value={draft.retirementAllowance ? "yes" : "no"} onChange={(event) => update("retirementAllowance", event.target.value === "yes")}>
-                    <option value="no">今は入れない</option>
-                    <option value="yes">後で詳しく設定する</option>
-                  </Select>
-                </Field>
+                {draft.retirementStatus !== "preRetirement" && (
+                  <Field label="退職金・一時金">
+                    <Select value={draft.retirementAllowance ? "yes" : "no"} onChange={(event) => update("retirementAllowance", event.target.value === "yes")}>
+                      <option value="no">今は入れない</option>
+                      <option value="yes">後で詳しく設定する</option>
+                    </Select>
+                  </Field>
+                )}
               </FormGrid>
             </WizardPanel>
           )}

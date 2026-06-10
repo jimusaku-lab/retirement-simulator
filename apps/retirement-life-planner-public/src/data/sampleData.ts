@@ -3,7 +3,7 @@ import type { RetirementPlanState, ScenarioData } from "@/types";
 const baseScenario: ScenarioData = {
   id: "base",
   name: "標準ケース",
-  description: "60歳前後の夫婦世帯を想定した匿名サンプル",
+  description: "入力練習用の匿名サンプル。90歳時点で目標残高を少し上回る前提です。",
   compare: true,
   userProfile: {
     birthDate: "1968-04-01",
@@ -18,13 +18,13 @@ const baseScenario: ScenarioData = {
     cashReserve: 1_000_000,
     municipality: "東京都大田区",
     hasSpouse: true,
-    note: "匿名の標準世帯サンプルです。税・社会保険は自動計算を基本にしています。",
+    note: "入力練習用の匿名サンプルです。税・社会保険は自動計算を基本にしています。",
   },
   householdProfile: {
     municipality: "東京都大田区",
     headMemberId: "member-self",
     taxCalculationMode: "auto",
-    notes: "一般公開版の初期確認用サンプル。",
+    notes: "一般公開版の入力練習用サンプル。",
   },
   householdMembers: [
     {
@@ -54,7 +54,7 @@ const baseScenario: ScenarioData = {
   householdMemberStatusEvents: [],
   initialAssets: {
     cash: 1_000_000,
-    bankDeposit: 11_000_000,
+    bankDeposit: 42_000_000,
     timeDeposit: 0,
     nisa: 8_000_000,
     specificAccount: 7_000_000,
@@ -183,19 +183,7 @@ const baseScenario: ScenarioData = {
       convertedSpecialExpenseId: "home-maintenance",
     },
   ],
-  assetContributionEvents: [
-    {
-      id: "nisa-accumulate",
-      assetKey: "nisa",
-      name: "NISA積立",
-      startYearMonth: "2026-06",
-      endYearMonth: "2033-03",
-      monthlyAmount: 50_000,
-      nisaInvestmentSlot: "tsumitate",
-      contributionPriority: 1,
-      carryOverSkipped: false,
-    },
-  ],
+  assetContributionEvents: [],
   assetTransferEvents: [],
   withdrawalOrder: ["bankDeposit", "timeDeposit", "specificAccount", "nisa", "ideco"],
   taxInsurance: [],
@@ -281,6 +269,23 @@ export const sampleState: RetirementPlanState = {
   backups: [],
   scenarios: [
     baseScenario,
+    scenarioWith("stress-shortfall", "厳しめケース", (scenario) => {
+      scenario.description = "比較用の厳しめサンプル。資産や収入が少ない場合の見え方を確認します。";
+      scenario.initialAssets.bankDeposit = 11_000_000;
+      scenario.assetContributionEvents = [
+        {
+          id: "nisa-accumulate",
+          assetKey: "nisa",
+          name: "NISA積立",
+          startYearMonth: "2026-06",
+          endYearMonth: "2033-03",
+          monthlyAmount: 50_000,
+          nisaInvestmentSlot: "tsumitate",
+          contributionPriority: 1,
+          carryOverSkipped: false,
+        },
+      ];
+    }),
     scenarioWith("expense-low", "生活費を少し抑える", (scenario) => {
       for (const key of Object.keys(scenario.monthlyExpenses) as (keyof typeof scenario.monthlyExpenses)[]) {
         scenario.monthlyExpenses[key] = Math.round(scenario.monthlyExpenses[key] * 0.9);

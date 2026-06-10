@@ -6081,10 +6081,13 @@ describe("simulation", () => {
 
   it("代表的サンプルシナリオで比較に必要な結果が出る", () => {
     const results = sampleState.scenarios.map(simulateScenario);
+    const baseScenario = sampleState.scenarios.find((scenario) => scenario.id === "base");
+    const baseResult = results[sampleState.scenarios.findIndex((scenario) => scenario.id === "base")];
 
     expect(results.length).toBeGreaterThanOrEqual(5);
     expect(results.every((result) => result.monthly.length > 0)).toBe(true);
     expect(results.every((result) => Number.isFinite(result.totalWithdrawal))).toBe(true);
+    expect((baseResult?.targetAgeBalance ?? 0) - (baseScenario?.userProfile.targetBalanceAmount ?? 0)).toBeGreaterThanOrEqual(0);
   });
 
   it("特別支出は毎月発生と毎年発生を反映する", () => {
