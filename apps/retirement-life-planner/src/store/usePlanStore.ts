@@ -537,12 +537,16 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
       id: event.id ?? `income-${index}-${eventIndex}`,
       memberId: memberIds.has(event.memberId ?? "") ? event.memberId! : defaultMemberId,
       sourceAssetPayoutMode: event.sourceAssetPayoutMode ?? "cash",
+      taxTreatment:
+        event.taxTreatment ??
+        (event.type === "unemployment" ? "nonTaxable" : event.taxable === false ? "nonTaxable" : event.taxable === true ? "taxable" : "taxable"),
+      idecoLumpSumContributionMonths: Number.isFinite(event.idecoLumpSumContributionMonths)
+        ? Number(event.idecoLumpSumContributionMonths)
+        : event.idecoLumpSumContributionMonths,
       idecoPensionPayoutMode:
         event.type === "pension" && event.sourceAssetKey === "ideco"
           ? event.idecoPensionPayoutMode ?? "monexSchedule"
           : event.idecoPensionPayoutMode,
-      taxTreatment:
-        event.taxTreatment ?? (event.taxable === false ? "nonTaxable" : event.taxable === true ? "taxable" : "taxable"),
     })),
     assetContributionEvents: normalizeAssetContributionEvents(source.assetContributionEvents ?? []),
     retirementIncomeEvents: normalizeRetirementIncomeEvents(source.retirementIncomeEvents),

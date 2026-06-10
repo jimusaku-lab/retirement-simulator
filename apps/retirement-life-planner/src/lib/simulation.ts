@@ -18,7 +18,13 @@ import {
 } from "@/lib/pensionPlanner";
 import { applyScenarioNameOptionIncomeHint, inferMonthlyOptionIncomeFromScenarioName, isOrdinaryOptionIncomeEvent } from "@/lib/optionIncomeHints";
 import { resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
-import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
+import {
+  calculateRetirementIncomeTaxFromGross,
+  getIdecoLumpSumContributionYears,
+  getRetirementIncomeDeduction,
+  type RetirementOverlapAdjustment,
+  getRetirementOverlapAdjustments,
+} from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
 import { createId } from "@/lib/id";
 import type {
@@ -130,26 +136,10 @@ const monthlyExpenseKeys: (keyof MonthlyExpenseProfile)[] = [
   "other",
 ];
 
-function getRetirementIncomeDeduction(years: number) {
-  const roundedYears = Math.max(1, Math.ceil(years));
-  if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
-  return 8_000_000 + (roundedYears - 20) * 700_000;
-}
-
 function calculateIdecoLumpSumEstimatedTax(gross: number, contributionYears: number, adjustedDeduction?: number) {
   if (gross <= 0) return 0;
   const deduction = adjustedDeduction ?? getRetirementIncomeDeduction(contributionYears);
-  const retirementIncome = Math.max(0, Math.round((gross - deduction) / 2));
-  if (retirementIncome <= 0) return 0;
-  let incomeTax = 0;
-  if (retirementIncome <= 1_949_000) incomeTax = retirementIncome * 0.05;
-  else if (retirementIncome <= 3_299_000) incomeTax = retirementIncome * 0.1 - 97_500;
-  else if (retirementIncome <= 6_949_000) incomeTax = retirementIncome * 0.2 - 427_500;
-  else if (retirementIncome <= 8_999_000) incomeTax = retirementIncome * 0.23 - 636_000;
-  else if (retirementIncome <= 17_999_000) incomeTax = retirementIncome * 0.33 - 1_536_000;
-  else if (retirementIncome <= 39_999_000) incomeTax = retirementIncome * 0.4 - 2_796_000;
-  else incomeTax = retirementIncome * 0.45 - 4_796_000;
-  return Math.max(0, Math.round(incomeTax * 1.021 + retirementIncome * 0.1));
+  return calculateRetirementIncomeTaxFromGross(gross, deduction).totalTax;
 }
 
 function getRetirementAdjustmentByIncomeEventId(scenario: ScenarioData) {
@@ -1578,11 +1568,11 @@ function simulateScenarioCore(
             ? 0
             : event.idecoLumpSumTaxMode === "noDeclaration"
               ? withdrawal.grossWithdrawal * IDECO_LUMP_SUM_NO_DECLARATION_WITHHOLDING_RATE
-              : calculateIdecoLumpSumEstimatedTax(
-                  withdrawal.grossWithdrawal,
-                  event.idecoLumpSumContributionYears ?? 20,
-                  retirementAdjustment?.adjustedDeduction,
-                );
+	              : calculateIdecoLumpSumEstimatedTax(
+	                  withdrawal.grossWithdrawal,
+	                  getIdecoLumpSumContributionYears(event),
+	                  retirementAdjustment?.adjustedDeduction,
+	                );
           idecoWithholdingTaxTotal += withholdingTax;
           idecoWithholdingByIncomeYear.set(
             cursor.year(),

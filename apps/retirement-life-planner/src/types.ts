@@ -191,6 +191,7 @@ export type IncomeEvent = {
   idecoPensionPayoutMode?: "fixedMonthly" | "monexSchedule";
   idecoPensionYears?: 5 | 10 | 15 | 20;
   idecoPensionPaymentsPerYear?: 1 | 2 | 4 | 6;
+  idecoLumpSumContributionMonths?: number;
   idecoLumpSumContributionYears?: number;
   idecoLumpSumContributionStartDate?: string;
   idecoLumpSumContributionEndDate?: string;

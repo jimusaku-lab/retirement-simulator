@@ -41,6 +41,7 @@ import { sampleState } from "@/data/sampleData";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
 import {
   buildRetirementIncomeRecords,
+  getIdecoLumpSumContributionYears,
   getRetirementFilingAdvice,
   getRetirementOverlapAdjustments,
   getRetirementOverlapWarnings,
@@ -3368,12 +3369,12 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
   const idecoLumpSumEvents = idecoEvents.filter((event) => event.type === "oneTime");
   const idecoLumpMissing = Array.from(
     new Set(
-      idecoLumpSumEvents.flatMap((event) => [
-        !event.startYearMonth && "受取年月",
-        event.monthlyAmount <= 0 && "一時金受取額",
-        !event.idecoLumpSumContributionYears && "加入年数",
-        !event.idecoLumpSumTaxMode && "退職所得の申告",
-      ]).filter(Boolean) as string[],
+        idecoLumpSumEvents.flatMap((event) => [
+          !event.startYearMonth && "受取年月",
+          event.monthlyAmount <= 0 && "一時金受取額",
+          getIdecoLumpSumContributionYears(event, 0) <= 0 && "iDeCo拠出年数",
+          !event.idecoLumpSumTaxMode && "退職所得の申告",
+        ]).filter(Boolean) as string[],
     ),
   );
   const idecoLumpDateMissing = idecoLumpSumEvents.some(
@@ -6791,7 +6792,7 @@ function IncomeSection({
           <div id="income-ideco-lump" data-input-card-id="income-ideco-lump" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
             <div className="font-medium">iDeCo一時金の確認</div>
             <p className="mt-1">
-              受取年月、一時金受取額、加入年数、退職所得の申告を確認してください。加入開始日/終了日は任意ですが、入力すると退職所得控除の重複調整を期間入力ベースで確認できます。
+              受取年月、一時金受取額、iDeCo拠出年数（1年未満切上げ）、退職所得の申告を確認してください。加入開始日/終了日を入力すると、拠出月数から控除年数を自動計算します。
             </p>
           </div>
         )}
@@ -6854,10 +6855,13 @@ function IncomeSection({
                     updateScenario((s) => {
                       const nextType = e.target.value as IncomeEvent["type"];
                       s.incomeEvents[index].type = nextType;
-                      if (nextType === "oneTime") {
-                        s.incomeEvents[index].linkedHouseholdLivingArrangementEventId = undefined;
-                      }
-                      if (nextType === "oneTime" && s.incomeEvents[index].sourceAssetKey === "ideco") {
+                        if (nextType === "oneTime") {
+                          s.incomeEvents[index].linkedHouseholdLivingArrangementEventId = undefined;
+                        }
+                        if (nextType === "unemployment") {
+                          s.incomeEvents[index].taxTreatment = "nonTaxable";
+                        }
+                        if (nextType === "oneTime" && s.incomeEvents[index].sourceAssetKey === "ideco") {
                         s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
                         s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
                         s.incomeEvents[index].idecoLumpSumTaxMode ??= "retirementIncomeDeclaration";
@@ -7075,15 +7079,26 @@ function IncomeSection({
                   <Field label="一時金受取額">
                     <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
                   </Field>
-                  <Field label="加入年数">
-                    <Input
-                      type="number"
-                      value={event.idecoLumpSumContributionYears ?? 20}
-                      onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].idecoLumpSumContributionYears = numberOrZero(e.target.value)))}
-                    />
-                  </Field>
-                  <Field label="加入開始日（任意）">
-                    <Input
+                    <Field label="iDeCo拠出年数（1年未満切上げ）">
+                      <Input
+                        type="number"
+                        value={event.idecoLumpSumContributionYears ?? 20}
+                        onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].idecoLumpSumContributionYears = numberOrZero(e.target.value)))}
+                      />
+                    </Field>
+                    <Field label="拠出月数（任意・日付優先）">
+                      <Input
+                        type="number"
+                        value={event.idecoLumpSumContributionMonths ?? ""}
+                        onChange={(e) =>
+                          updateScenario((s) => {
+                            s.incomeEvents[index].idecoLumpSumContributionMonths = e.target.value === "" ? undefined : numberOrZero(e.target.value);
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="加入・拠出開始日（任意）">
+                      <Input
                       type="date"
                       value={event.idecoLumpSumContributionStartDate ?? ""}
                       onChange={(e) =>
@@ -7093,7 +7108,7 @@ function IncomeSection({
                       }
                     />
                   </Field>
-                  <Field label="加入終了日（任意）">
+                    <Field label="加入・拠出終了日（任意）">
                     <Input
                       type="date"
                       value={event.idecoLumpSumContributionEndDate ?? ""}
@@ -7114,7 +7129,7 @@ function IncomeSection({
                         )
                       }
                     >
-                      <option value="retirementIncomeDeclaration">提出あり（退職所得控除で概算）</option>
+                        <option value="retirementIncomeDeclaration">提出あり（退職所得税額を概算）</option>
                       <option value="noDeclaration">提出なし（20.42%源泉徴収）</option>
                     </Select>
                   </Field>
@@ -7142,7 +7157,7 @@ function IncomeSection({
             )}
             {event.sourceAssetKey === "ideco" && (
               <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-                iDeCo年金受取は公的年金等の雑所得、一時金（一括受取）は退職所得として扱います。一時金は過去退職金との重複調整後の退職所得控除で概算し、国保・後期高齢者医療の所得割には含めません。加入開始日/終了日は任意です。未入力なら加入年数ベース、入力すると期間重複ベースで概算します。
+                  iDeCo年金受取は公的年金等の雑所得、一時金（一括受取）は退職所得として扱います。一時金は過去退職金との重複調整後の退職所得控除で、所得税等と住民税（市区町村6% + 都道府県4%）を概算します。国保・後期高齢者医療の所得割には含めません。加入・拠出開始日/終了日があれば拠出月数から1年未満切上げ、未入力なら拠出年数ベースで概算します。
               </div>
             )}
             {event.type === "pension" && event.sourceAssetKey === "ideco" && (event.idecoPensionPayoutMode ?? "monexSchedule") === "monexSchedule" && (
@@ -8512,7 +8527,7 @@ function TaxCashTimingSummary({
         <h3 className="font-medium">税・社会保険の発生年と支払年</h3>
         <p className="text-sm text-muted-foreground">
           自動計算では、所得税精算・住民税・国保・介護は原則として翌年の現金支出に回します。国民年金は対象年の月額支払として扱います。
-          iDeCo源泉徴収と売却時譲渡益税は、結果タブの支払タイミングで別に確認します。
+            iDeCo年金の源泉徴収、一時金の退職所得税額見積、売却時譲渡益税は、結果タブの支払タイミングで別に確認します。
         </p>
       </div>
       <div className="overflow-x-auto rounded-lg border">

@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import type { RetirementIncomeEvent, RetirementIncomeEventType, ScenarioData } from "@/types";
+import type { IncomeEvent, RetirementIncomeEvent, RetirementIncomeEventType, ScenarioData } from "@/types";
 
 export type RetirementIncomeSource =
   | { kind: "incomeEvent"; eventId: string }
@@ -73,6 +73,23 @@ export type RetirementOverlapAdjustment = {
   note: string;
 };
 
+export type RetirementIncomeTaxBreakdown = {
+  taxableRetirementIncome: number;
+  nationalTax: number;
+  municipalResidentTax: number;
+  prefecturalResidentTax: number;
+  residentTax: number;
+  totalTax: number;
+};
+
+export function floorToThousand(value: number) {
+  return Math.floor(Math.max(0, value) / 1_000) * 1_000;
+}
+
+export function floorToHundred(value: number) {
+  return Math.floor(Math.max(0, value) / 100) * 100;
+}
+
 export function getRetirementIncomeDeduction(years: number) {
   const serviceYears = Math.max(0, Math.floor(years));
   if (serviceYears <= 0) return 0;
@@ -80,13 +97,77 @@ export function getRetirementIncomeDeduction(years: number) {
   return 8_000_000 + (serviceYears - 20) * 700_000;
 }
 
-export function calculateRetirementIncome(grossAmount: number, serviceYears: number) {
-  const deduction = getRetirementIncomeDeduction(serviceYears);
-  const retirementIncome = Math.max(0, Math.round((grossAmount - deduction) / 2));
+export function calculateRetirementIncomeWithDeduction(grossAmount: number, deduction: number) {
+  const retirementIncome = floorToThousand((grossAmount - deduction) / 2);
   return {
     deduction,
     income: retirementIncome,
   };
+}
+
+export function calculateRetirementIncome(grossAmount: number, serviceYears: number) {
+  return calculateRetirementIncomeWithDeduction(grossAmount, getRetirementIncomeDeduction(serviceYears));
+}
+
+export function calculateRetirementIncomeTax(taxableRetirementIncome: number): RetirementIncomeTaxBreakdown {
+  if (taxableRetirementIncome <= 0) {
+    return {
+      taxableRetirementIncome: 0,
+      nationalTax: 0,
+      municipalResidentTax: 0,
+      prefecturalResidentTax: 0,
+      residentTax: 0,
+      totalTax: 0,
+    };
+  }
+  let baseIncomeTax = 0;
+  if (taxableRetirementIncome <= 1_949_000) baseIncomeTax = taxableRetirementIncome * 0.05;
+  else if (taxableRetirementIncome <= 3_299_000) baseIncomeTax = taxableRetirementIncome * 0.1 - 97_500;
+  else if (taxableRetirementIncome <= 6_949_000) baseIncomeTax = taxableRetirementIncome * 0.2 - 427_500;
+  else if (taxableRetirementIncome <= 8_999_000) baseIncomeTax = taxableRetirementIncome * 0.23 - 636_000;
+  else if (taxableRetirementIncome <= 17_999_000) baseIncomeTax = taxableRetirementIncome * 0.33 - 1_536_000;
+  else if (taxableRetirementIncome <= 39_999_000) baseIncomeTax = taxableRetirementIncome * 0.4 - 2_796_000;
+  else baseIncomeTax = taxableRetirementIncome * 0.45 - 4_796_000;
+
+  const nationalTax = Math.floor(Math.max(0, baseIncomeTax) * 1.021 + 0.000001);
+  const municipalResidentTax = floorToHundred(taxableRetirementIncome * 0.06);
+  const prefecturalResidentTax = floorToHundred(taxableRetirementIncome * 0.04);
+  const residentTax = municipalResidentTax + prefecturalResidentTax;
+  return {
+    taxableRetirementIncome,
+    nationalTax,
+    municipalResidentTax,
+    prefecturalResidentTax,
+    residentTax,
+    totalTax: nationalTax + residentTax,
+  };
+}
+
+export function calculateRetirementIncomeTaxFromGross(grossAmount: number, deduction: number) {
+  return calculateRetirementIncomeTax(calculateRetirementIncomeWithDeduction(grossAmount, deduction).income);
+}
+
+export function getInclusiveMonthCount(startDate: string | undefined, endDate: string | undefined) {
+  if (!startDate || !endDate) return null;
+  const start = dayjs(startDate);
+  const end = dayjs(endDate);
+  if (!start.isValid() || !end.isValid() || end.isBefore(start, "day")) return null;
+  return end.startOf("month").diff(start.startOf("month"), "month") + 1;
+}
+
+export function getIdecoLumpSumContributionYears(
+  event: Pick<
+    IncomeEvent,
+    "idecoLumpSumContributionMonths" | "idecoLumpSumContributionYears" | "idecoLumpSumContributionStartDate" | "idecoLumpSumContributionEndDate"
+  >,
+  fallbackYears = 20,
+) {
+  const monthsFromDates = getInclusiveMonthCount(event.idecoLumpSumContributionStartDate, event.idecoLumpSumContributionEndDate);
+  if (monthsFromDates !== null) return Math.max(0, Math.ceil(monthsFromDates / 12));
+  if (Number.isFinite(event.idecoLumpSumContributionMonths) && (event.idecoLumpSumContributionMonths ?? 0) > 0) {
+    return Math.ceil((event.idecoLumpSumContributionMonths ?? 0) / 12);
+  }
+  return Math.max(0, Math.ceil(event.idecoLumpSumContributionYears ?? fallbackYears));
 }
 
 function toDate(yearMonth: string) {
@@ -110,7 +191,7 @@ function getDateRangeOverlapYears(current: RetirementIncomeRecord, prior: Retire
   if (overlapEnd.isBefore(overlapStart, "day")) return 0;
 
   const overlapMonths = overlapEnd.startOf("month").diff(overlapStart.startOf("month"), "month") + 1;
-  return Math.max(0, Math.ceil(overlapMonths / 12));
+  return Math.max(0, Math.floor(overlapMonths / 12));
 }
 
 function isIdecoType(type: RetirementIncomeEventType) {
@@ -170,7 +251,7 @@ export function buildRetirementIncomeRecords(scenario: ScenarioData): Retirement
       type: "idecoLumpSum",
       paymentYearMonth: event.startYearMonth,
       grossAmount: Math.max(0, Math.round(event.monthlyAmount)),
-      serviceYears: Math.max(0, Math.round(event.idecoLumpSumContributionYears ?? 20)),
+      serviceYears: getIdecoLumpSumContributionYears(event),
       serviceStartDate: event.idecoLumpSumContributionStartDate,
       serviceEndDate: event.idecoLumpSumContributionEndDate,
       alreadyReceived: false,
@@ -265,7 +346,7 @@ export function getRetirementOverlapAdjustments(scenario: ScenarioData): Retirem
       const estimatedOverlapDeduction = Math.min(baseDeduction, getRetirementIncomeDeduction(estimatedOverlapYears));
       const adjustedDeduction = Math.max(0, baseDeduction - estimatedOverlapDeduction);
       const estimatedIncomeBeforeAdjustment = calculateRetirementIncome(current.grossAmount, current.serviceYears).income;
-      const estimatedIncomeAfterAdjustment = Math.max(0, Math.round((current.grossAmount - adjustedDeduction) / 2));
+        const estimatedIncomeAfterAdjustment = calculateRetirementIncomeWithDeduction(current.grossAmount, adjustedDeduction).income;
       const priorBaseDeduction = getRetirementIncomeDeduction(prior.serviceYears);
       const priorUnderUsed = prior.grossAmount > 0 && prior.grossAmount < priorBaseDeduction;
 

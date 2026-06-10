@@ -2,7 +2,14 @@ import dayjs from "dayjs";
 import { getIncomeEventAmountForMonth, isIdecoMonexPensionEvent } from "@/lib/incomeEvents";
 import { isOrdinaryOptionIncomeEvent } from "@/lib/optionIncomeHints";
 import { getPensionPlannerIncomeForMonth, isPensionPlannerReplacingEvent } from "@/lib/pensionPlanner";
-import { getRetirementOverlapAdjustments, type RetirementOverlapAdjustment } from "@/lib/retirementIncome";
+import {
+  calculateRetirementIncomeTax,
+  calculateRetirementIncomeWithDeduction,
+  getIdecoLumpSumContributionYears,
+  getRetirementIncomeDeduction,
+  type RetirementOverlapAdjustment,
+  getRetirementOverlapAdjustments,
+} from "@/lib/retirementIncome";
 import type {
   HouseholdMember,
   IncomeEvent,
@@ -369,7 +376,7 @@ function getMemberIncomeBreakdown(
     for (const event of events) {
       if (isPensionPlannerReplacingEvent(scenario, event)) continue;
       if (isOrdinaryOptionIncomeEvent(event)) continue;
-      if (event.taxTreatment === "nonTaxable") continue;
+      if (event.taxTreatment === "nonTaxable" || event.type === "unemployment") continue;
       const amount = getMonthlyIncomeAmount(event, month, scenario);
       if (amount <= 0) continue;
       if (event.type === "salary") {
@@ -380,7 +387,7 @@ function getMemberIncomeBreakdown(
         const overlapAdjustment = retirementAdjustmentByIncomeEventId.get(event.id);
         const retirement = overlapAdjustment
           ? calculateRetirementIncomeWithDeduction(amount, overlapAdjustment.adjustedDeduction)
-          : calculateRetirementIncome(amount, event.idecoLumpSumContributionYears ?? 20);
+          : calculateRetirementIncome(amount, getIdecoLumpSumContributionYears(event));
         retirementGross += amount;
         retirementIncome += retirement.income;
         retirementDeduction += retirement.deduction;
@@ -409,8 +416,8 @@ function getMemberIncomeBreakdown(
     retirementGrossAnnual: Math.round(retirementGross),
     retirementIncomeDeductionAnnual: Math.round(retirementDeduction),
     retirementIncomeAnnual: Math.round(retirementIncome),
-    retirementIncomeTaxAnnual: calculateIncomeTax(retirementIncome),
-    retirementResidentTaxAnnual: calculateResidentTax(retirementIncome, false),
+    retirementIncomeTaxAnnual: calculateRetirementIncomeTax(retirementIncome).nationalTax,
+    retirementResidentTaxAnnual: calculateRetirementIncomeTax(retirementIncome).residentTax,
     totalIncome,
     ageAtYearEnd,
   };
@@ -549,25 +556,10 @@ function calculateResidentTax(taxableIncome: number, includeFlat = true) {
   return Math.max(0, Math.round(taxableIncome * RESIDENT_TAX_RATE + (includeFlat ? RESIDENT_TAX_FLAT : 0)));
 }
 
-function getRetirementIncomeDeduction(years: number) {
-  const roundedYears = Math.max(1, Math.ceil(years));
-  if (years <= 0) return 0;
-  if (roundedYears <= 20) return Math.max(800_000, roundedYears * 400_000);
-  return 8_000_000 + (roundedYears - 20) * 700_000;
-}
-
 function calculateRetirementIncome(gross: number, contributionYears: number) {
   if (gross <= 0) return { deduction: 0, income: 0 };
   const deduction = getRetirementIncomeDeduction(contributionYears);
   return calculateRetirementIncomeWithDeduction(gross, deduction);
-}
-
-function calculateRetirementIncomeWithDeduction(gross: number, deduction: number) {
-  if (gross <= 0) return { deduction: 0, income: 0 };
-  return {
-    deduction,
-    income: Math.max(0, Math.round((gross - deduction) / 2)),
-  };
 }
 
 function calculateNationalPensionMonthly(fiscalYear: number) {
