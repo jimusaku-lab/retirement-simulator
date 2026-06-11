@@ -62,4 +62,7 @@
 
 ## GitHub反映
 
-- この報告書を含め、公開版アプリ関連の未コミット差分をコミット・push対象にする。
+- 公開版アプリ関連の未コミット差分を `127c182e Improve public app mid-career UX` としてコミットした。
+- `main` ブランチを GitHub `origin` へ push 済み。
+- ローカル公開版は `127.0.0.1:5176` で待受中であることを確認した。
+- `apps/us-options-risk-planner`、`docs/us-options`、`pages-dist`、`tradingview-us-options-agent`、`us-options-risk-planner-public-repo`、`マネースクール` には別件または生成物・個人資料を含む未コミット差分が残っているため、今回の公開版アプリ反映コミットには含めていない。
