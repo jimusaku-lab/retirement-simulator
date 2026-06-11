@@ -9,6 +9,9 @@
 - `requirements.md`: 一般向け版の要求整理
 - `information-architecture.md`: 画面構成と導線
 - `input-classification.md`: 入力項目の標準・詳細・専門分類
+- `ux-guided-input-card-collapse-design.md`: 入力導線、カード折りたたみ、次アクション誘導のUX設計
+- `review-acknowledgement-design-2026-06-08.md`: 確認推奨カードの確認済み状態設計
+- `local-vs-public-gap-audit-2026-06-08.md`: ローカル版とGitHub公開版の仕様差分監査
 - `tax-social-policy.md`: 税金・社会保険の扱い方
 - `current-app-inventory.md`: 現行版から一般向け版への棚卸し
 - `migration-policy.md`: 流用、再設計、除外の方針

@@ -68,17 +68,17 @@ describe("normalizePlanState", () => {
     expect(normalized.baselineScenarioId).toBe(second.id);
   });
 
-  it("既存の一般向けサンプル保存データに年金受給を早めるシナリオを補完する", () => {
+  it("既存の一般向けサンプル保存データに現役向けシナリオを補完する", () => {
     const legacyPublicSample = {
       ...sampleState,
-      scenarios: sampleState.scenarios.filter((scenario) => scenario.id !== "pension-earlier"),
+      scenarios: sampleState.scenarios.filter((scenario) => scenario.id !== "early-retirement-60"),
     };
 
     const normalized = normalizePlanState(legacyPublicSample);
 
-    expect(normalized.scenarios.map((scenario) => scenario.id)).toContain("pension-earlier");
-    expect(normalized.scenarios.findIndex((scenario) => scenario.id === "pension-earlier")).toBeLessThan(
-      normalized.scenarios.findIndex((scenario) => scenario.id === "pension-later"),
+    expect(normalized.scenarios.map((scenario) => scenario.id)).toContain("early-retirement-60");
+    expect(normalized.scenarios.findIndex((scenario) => scenario.id === "early-retirement-60")).toBeLessThan(
+      normalized.scenarios.findIndex((scenario) => scenario.id === "pension-earlier"),
     );
   });
 
@@ -118,7 +118,7 @@ describe("normalizePlanState", () => {
 
     const normalized = normalizePlanState(legacyPublicSample);
 
-    expect(normalized.scenarios.find((scenario) => scenario.id === "base")?.userProfile.flexibleFreeCashStartAge).toBe(58);
+    expect(normalized.scenarios.find((scenario) => scenario.id === "base")?.userProfile.flexibleFreeCashStartAge).toBe(50);
   });
 
   it("保存済みサブ口座名の普通口座表記を一般口座へ移行する", () => {

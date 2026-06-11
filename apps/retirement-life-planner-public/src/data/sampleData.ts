@@ -2,28 +2,29 @@ import type { RetirementPlanState, ScenarioData } from "@/types";
 
 const baseScenario: ScenarioData = {
   id: "base",
-  name: "標準ケース",
-  description: "入力練習用の匿名サンプル。90歳時点で目標残高を少し上回る前提です。",
+  name: "今の働き方と積立を継続",
+  description: "入力練習用の匿名サンプル。50歳前後の現役世代が、60歳・65歳時点資産とライフイベントを確認する前提です。",
   compare: true,
   userProfile: {
-    birthDate: "1968-04-01",
+    birthDate: "1976-04-01",
     simulationStartYearMonth: "2026-06",
     simulationEndMode: "age",
     simulationEndAge: 95,
     targetBalanceAge: 90,
     targetBalanceAmount: 5_000_000,
-    flexibleFreeCashStartAge: 58,
+    flexibleFreeCashStartAge: 50,
     flexibleFreeCashEndAge: 75,
     plannedDrawdownEnabled: false,
     cashReserve: 1_000_000,
     municipality: "東京都大田区",
     hasSpouse: true,
-    note: "入力練習用の匿名サンプルです。税・社会保険は自動計算を基本にしています。",
+    note: "入力練習用の匿名サンプルです。現役収入、積立、教育費、住まい、体験支出を含めています。",
   },
   householdProfile: {
     municipality: "東京都大田区",
     headMemberId: "member-self",
     taxCalculationMode: "auto",
+    planningGoals: ["assetAtMilestone", "lifeEvents", "enjoymentBudget"],
     notes: "一般公開版の入力練習用サンプル。",
   },
   householdMembers: [
@@ -31,7 +32,7 @@ const baseScenario: ScenarioData = {
       id: "member-self",
       name: "本人",
       relationship: "self",
-      birthDate: "1968-04-01",
+      birthDate: "1976-04-01",
       isResident: true,
       isNationalHealthInsuranceMember: true,
       isLateElderlyMedicalMember: false,
@@ -42,7 +43,7 @@ const baseScenario: ScenarioData = {
       id: "member-spouse",
       name: "配偶者",
       relationship: "spouse",
-      birthDate: "1969-04-01",
+      birthDate: "1977-04-01",
       isResident: true,
       isNationalHealthInsuranceMember: true,
       isLateElderlyMedicalMember: false,
@@ -54,18 +55,18 @@ const baseScenario: ScenarioData = {
   householdMemberStatusEvents: [],
   initialAssets: {
     cash: 1_000_000,
-    bankDeposit: 42_000_000,
+    bankDeposit: 55_000_000,
     timeDeposit: 0,
     nisa: 8_000_000,
-    specificAccount: 7_000_000,
+    specificAccount: 4_000_000,
     ordinaryAccountForOptions: 0,
-    ideco: 6_000_000,
+    ideco: 3_000_000,
     excludedAssets: 0,
     debt: 0,
   },
   initialAssetCostBasis: {
     nisa: 7_200_000,
-    specificAccount: 6_300_000,
+    specificAccount: 3_600_000,
     ordinaryAccountForOptions: 0,
     ideco: 5_400_000,
   },
@@ -76,14 +77,14 @@ const baseScenario: ScenarioData = {
     social: 15_000,
     transportation: 15_000,
     clothingBeauty: 10_000,
-    healthMedical: 15_000,
+    healthMedical: 12_000,
     car: 0,
-    educationCulture: 5_000,
+    educationCulture: 15_000,
     specialExpense: 0,
     cashCard: 0,
     utilities: 28_000,
-    communication: 12_000,
-    housing: 80_000,
+    communication: 15_000,
+    housing: 100_000,
     taxSocialInsurance: 0,
     insurance: 15_000,
     other: 25_000,
@@ -110,11 +111,11 @@ const baseScenario: ScenarioData = {
     {
       id: "salary-part-time",
       memberId: "member-self",
-      name: "退職後の給与・パート",
+      name: "現在の給与",
       type: "salary",
       startYearMonth: "2026-06",
-      endYearMonth: "2033-03",
-      monthlyAmount: 100_000,
+      endYearMonth: "2041-03",
+      monthlyAmount: 700_000,
       taxTreatment: "taxable",
     },
     {
@@ -122,7 +123,7 @@ const baseScenario: ScenarioData = {
       memberId: "member-self",
       name: "本人の公的年金",
       type: "pension",
-      startYearMonth: "2033-04",
+      startYearMonth: "2041-04",
       monthlyAmount: 150_000,
       taxTreatment: "taxable",
     },
@@ -131,7 +132,7 @@ const baseScenario: ScenarioData = {
       memberId: "member-spouse",
       name: "配偶者の公的年金",
       type: "pension",
-      startYearMonth: "2034-04",
+      startYearMonth: "2042-04",
       monthlyAmount: 100_000,
       taxTreatment: "taxable",
     },
@@ -141,49 +142,77 @@ const baseScenario: ScenarioData = {
   taxDeductionEvents: [],
   specialExpenses: [
     {
-      id: "annual-enjoyment",
-      name: "旅行・趣味",
+      id: "education-university",
+      name: "ライフイベント由来: 教育費",
       yearMonth: "2028-04",
-      endYearMonth: "2038-03",
-      amount: 300_000,
+      endYearMonth: "2032-03",
+      amount: 900_000,
+      category: "familySupport",
+      schedule: "yearly",
+      inflationMode: "livingCost",
+      note: "ライフイベントテンプレート例: 大学・進学関連費用",
+    },
+    {
+      id: "annual-family-travel",
+      name: "ライフイベント由来: 家族旅行・体験",
+      yearMonth: "2027-04",
+      endYearMonth: "2036-03",
+      amount: 350_000,
       category: "enjoyment",
       schedule: "yearly",
       inflationMode: "livingCost",
+      note: "ライフイベントテンプレート例: 健康なうちの家族旅行・体験",
     },
     {
-      id: "home-maintenance",
-      name: "住まいの修繕",
+      id: "home-renovation",
+      name: "ライフイベント由来: 住まいの修繕",
       yearMonth: "2036-04",
-      amount: 1_200_000,
+      amount: 1_800_000,
       category: "housingCar",
       schedule: "once",
       inflationMode: "livingCost",
+      note: "ライフイベントテンプレート例: 10年以内のリフォーム",
     },
     {
-      id: "family-event",
-      name: "家族イベント",
-      yearMonth: "2033-04",
-      amount: 300_000,
+      id: "parent-care-support",
+      name: "ライフイベント由来: 親の介護・支援",
+      yearMonth: "2034-04",
+      endYearMonth: "2038-03",
+      amount: 360_000,
       category: "familySupport",
-      schedule: "once",
+      schedule: "yearly",
       inflationMode: "livingCost",
+      note: "ライフイベントテンプレート例: 親への支援・帰省費",
     },
   ],
   timeBucketItems: [
     {
       id: "todo-travel",
-      title: "元気なうちの旅行・趣味",
+      title: "家族旅行・体験",
       bucketId: "todo",
-      convertedSpecialExpenseId: "annual-enjoyment",
+      convertedSpecialExpenseId: "annual-family-travel",
     },
     {
       id: "todo-home",
       title: "住まいの修繕",
       bucketId: "todo",
-      convertedSpecialExpenseId: "home-maintenance",
+      convertedSpecialExpenseId: "home-renovation",
     },
   ],
-  assetContributionEvents: [],
+  assetContributionEvents: [
+    {
+      id: "nisa-continue",
+      assetKey: "nisa",
+      name: "将来の積立予定: NISA積立",
+      startYearMonth: "2026-06",
+      endYearMonth: "2041-03",
+      monthlyAmount: 100_000,
+      nisaInvestmentSlot: "tsumitate",
+      contributionPriority: 1,
+      carryOverSkipped: false,
+      note: "入力練習用サンプルの将来積立予定です。初回設定を保存すると、入力値に置き換わります。",
+    },
+  ],
   assetTransferEvents: [],
   withdrawalOrder: ["bankDeposit", "timeDeposit", "specificAccount", "nisa", "ideco"],
   taxInsurance: [],
@@ -269,22 +298,57 @@ export const sampleState: RetirementPlanState = {
   backups: [],
   scenarios: [
     baseScenario,
-    scenarioWith("stress-shortfall", "厳しめケース", (scenario) => {
-      scenario.description = "比較用の厳しめサンプル。資産や収入が少ない場合の見え方を確認します。";
-      scenario.initialAssets.bankDeposit = 11_000_000;
-      scenario.assetContributionEvents = [
-        {
-          id: "nisa-accumulate",
-          assetKey: "nisa",
-          name: "NISA積立",
-          startYearMonth: "2026-06",
-          endYearMonth: "2033-03",
-          monthlyAmount: 50_000,
-          nisaInvestmentSlot: "tsumitate",
-          contributionPriority: 1,
-          carryOverSkipped: false,
-        },
-      ];
+    scenarioWith("early-retirement-60", "早期リタイア: 60歳で仕事をやめる", (scenario) => {
+      scenario.description = "60歳で現在の仕事収入と積立を止めた場合の比較用サンプル。";
+      for (const event of scenario.incomeEvents) {
+        if (event.type === "salary") event.endYearMonth = "2036-03";
+      }
+      for (const event of scenario.assetContributionEvents) {
+        event.endYearMonth = "2036-03";
+      }
+    }),
+    scenarioWith("second-career", "セカンドキャリア: 60歳以降は月15万円", (scenario) => {
+      scenario.description = "60歳以降は仕事量を減らし、月15万円の収入を続ける比較用サンプル。";
+      for (const event of scenario.incomeEvents) {
+        if (event.type === "salary") event.endYearMonth = "2036-03";
+      }
+      scenario.incomeEvents.push({
+        id: "second-career-income",
+        memberId: "member-self",
+        name: "セカンドキャリア収入",
+        type: "salary",
+        startYearMonth: "2036-04",
+        endYearMonth: "2046-03",
+        monthlyAmount: 150_000,
+        taxTreatment: "taxable",
+      });
+      for (const event of scenario.assetContributionEvents) {
+        event.monthlyAmount = 50_000;
+        event.endYearMonth = "2036-03";
+      }
+    }),
+    scenarioWith("enjoyment-priority", "楽しみ優先: 55〜65歳の体験支出を増やす", (scenario) => {
+      scenario.description = "健康なうちの家族旅行・趣味・学びを厚めに入れた比較用サンプル。";
+      scenario.specialExpenses.push({
+        id: "extra-family-experience",
+        name: "追加の家族旅行・学び",
+        yearMonth: "2031-04",
+        endYearMonth: "2041-03",
+        amount: 450_000,
+        category: "enjoyment",
+        schedule: "yearly",
+        inflationMode: "livingCost",
+        note: "楽しみ優先シナリオの追加体験支出",
+      });
+    }),
+    scenarioWith("safety-first", "安全重視: 支出を抑えて残高を厚めに残す", (scenario) => {
+      scenario.description = "生活費と楽しみ支出を少し抑え、90歳時点残高を厚めに残す比較用サンプル。";
+      for (const key of Object.keys(scenario.monthlyExpenses) as (keyof typeof scenario.monthlyExpenses)[]) {
+        scenario.monthlyExpenses[key] = Math.round(scenario.monthlyExpenses[key] * 0.9);
+      }
+      for (const event of scenario.specialExpenses) {
+        if ((event.category ?? "lifeMaintenance") === "enjoyment") event.amount = Math.round(event.amount * 0.7);
+      }
     }),
     scenarioWith("expense-low", "生活費を少し抑える", (scenario) => {
       for (const key of Object.keys(scenario.monthlyExpenses) as (keyof typeof scenario.monthlyExpenses)[]) {
@@ -295,11 +359,11 @@ export const sampleState: RetirementPlanState = {
       const selfPension = scenario.incomeEvents.find((event) => event.id === "pension-self");
       const spousePension = scenario.incomeEvents.find((event) => event.id === "pension-spouse");
       if (selfPension) {
-        selfPension.startYearMonth = "2031-04";
+        selfPension.startYearMonth = "2036-04";
         selfPension.monthlyAmount = 136_000;
       }
       if (spousePension) {
-        spousePension.startYearMonth = "2032-04";
+        spousePension.startYearMonth = "2037-04";
         spousePension.monthlyAmount = 90_000;
       }
     }),
@@ -307,25 +371,22 @@ export const sampleState: RetirementPlanState = {
       const selfPension = scenario.incomeEvents.find((event) => event.id === "pension-self");
       const spousePension = scenario.incomeEvents.find((event) => event.id === "pension-spouse");
       if (selfPension) {
-        selfPension.startYearMonth = "2035-04";
+        selfPension.startYearMonth = "2043-04";
         selfPension.monthlyAmount = 175_000;
       }
       if (spousePension) {
-        spousePension.startYearMonth = "2036-04";
+        spousePension.startYearMonth = "2044-04";
         spousePension.monthlyAmount = 117_000;
       }
     }),
-    scenarioWith("enjoyment-plus", "楽しみ支出を増やす", (scenario) => {
-      scenario.specialExpenses.push({
-        id: "extra-enjoyment",
-        name: "追加の旅行・趣味",
-        yearMonth: "2028-04",
-        endYearMonth: "2038-03",
-        amount: 200_000,
-        category: "enjoyment",
-        schedule: "yearly",
-        inflationMode: "livingCost",
-      });
+    scenarioWith("stress-shortfall", "厳しめケース", (scenario) => {
+      scenario.description = "比較用の厳しめサンプル。資産や収入が少ない場合の見え方を確認します。";
+      scenario.initialAssets.bankDeposit = 8_000_000;
+      scenario.initialAssets.nisa = 3_000_000;
+      scenario.initialAssets.specificAccount = 1_000_000;
+      for (const event of scenario.assetContributionEvents) {
+        event.monthlyAmount = 30_000;
+      }
     }),
     scenarioWith("growth-low", "利回りを低めに見る", (scenario) => {
       scenario.assetGrowthSettings.enabled = true;

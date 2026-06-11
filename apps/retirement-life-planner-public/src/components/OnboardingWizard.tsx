@@ -9,10 +9,12 @@ import { simulateScenario } from "@/lib/simulation";
 import { compactYen } from "@/lib/utils";
 import type {
   AgeExpenseAdjustment,
+  AssetContributionEvent,
   GrowthSettings,
   HouseholdMember,
   IncomeEvent,
   MonthlyExpenseProfile,
+  PlanningGoal,
   ScenarioData,
   SpecialExpenseEvent,
   TimeBucketItem,
@@ -25,6 +27,7 @@ type AgeExpensePreset = "none" | "standard" | "custom";
 type TaxModeDraft = "auto" | "autoWithAdjustment" | "manual";
 
 export type OnboardingDraft = {
+  planningGoals: PlanningGoal[];
   selfAge: number;
   hasSpouse: boolean;
   spouseAge: number;
@@ -45,6 +48,7 @@ export type OnboardingDraft = {
   pensionStartAge: number;
   workIncomeMonthly: number;
   workIncomeEndAge: number;
+  monthlyAssetContribution: number;
   idecoPlan: "later" | "pension" | "lumpSum";
   retirementAllowance: boolean;
   monthlyLivingCost: number;
@@ -62,7 +66,7 @@ export type OnboardingDraft = {
 };
 
 const steps: { key: OnboardingStep; label: string }[] = [
-  { key: "family", label: "家族" },
+  { key: "family", label: "目的・家族" },
   { key: "assets", label: "資産" },
   { key: "income", label: "収入" },
   { key: "expenses", label: "支出" },
@@ -71,6 +75,39 @@ const steps: { key: OnboardingStep; label: string }[] = [
   { key: "result", label: "結果" },
 ];
 const DEFAULT_ONBOARDING_MONTHLY_LIVING_COST = 320_000;
+
+const planningGoalOptions: { id: PlanningGoal; label: string; description: string }[] = [
+  {
+    id: "assetAtMilestone",
+    label: "何歳時点でいくら資産ができるか知りたい",
+    description: "60歳・65歳など節目の残高を先に見ます。",
+  },
+  {
+    id: "earlyRetirement",
+    label: "早期リタイアできる年齢を見たい",
+    description: "今の働き方を終える年齢をシナリオで比較します。",
+  },
+  {
+    id: "reducedWork",
+    label: "仕事を減らす、またはセカンドビジネスを始める前提で見たい",
+    description: "給与を減らした後の収入や資産余力を見ます。",
+  },
+  {
+    id: "lifeEvents",
+    label: "教育費、住宅ローン、親の介護などを含めて見たい",
+    description: "大きな責任支出を入れてから余力を見ます。",
+  },
+  {
+    id: "enjoymentBudget",
+    label: "家族旅行、趣味、学びなどにいくら使えるか見たい",
+    description: "健康なうちの体験支出をタイムバケットで整理します。",
+  },
+  {
+    id: "pensionAndRetirementBenefits",
+    label: "年金、iDeCo、退職金の受け取り方を見たい",
+    description: "税金・社会保険への影響も後から確認します。",
+  },
+];
 
 const inflationPresetLabels: Record<InflationPreset, string> = {
   low: "低め（年1.5%）",
@@ -120,6 +157,7 @@ export function createOnboardingDraft(scenario: ScenarioData): OnboardingDraft {
   const inflationRate = scenario.inflationSettings.livingCostAnnualInflationRate ?? 0.02;
 
   return {
+    planningGoals: scenario.householdProfile.planningGoals ?? ["assetAtMilestone", "lifeEvents", "enjoymentBudget"],
     selfAge: Math.max(20, currentYear - birthYear),
     hasSpouse: Boolean(spouse ?? scenario.userProfile.hasSpouse),
     spouseAge: Math.max(20, currentYear - spouseBirthYear),
@@ -140,6 +178,7 @@ export function createOnboardingDraft(scenario: ScenarioData): OnboardingDraft {
     pensionStartAge: 65,
     workIncomeMonthly: workEvent?.monthlyAmount ?? 0,
     workIncomeEndAge: 65,
+    monthlyAssetContribution: scenario.assetContributionEvents.reduce((sum, event) => sum + Math.max(0, event.monthlyAmount), 0),
     idecoPlan: scenario.initialAssets.ideco > 0 ? "later" : "later",
     retirementAllowance: false,
     monthlyLivingCost: livingWithoutTax > 0 ? Math.min(livingWithoutTax, DEFAULT_ONBOARDING_MONTHLY_LIVING_COST) : DEFAULT_ONBOARDING_MONTHLY_LIVING_COST,
@@ -198,6 +237,7 @@ export function applyOnboardingDraftToScenario(scenario: ScenarioData, draft: On
   scenario.userProfile.flexibleFreeCashEndAge = Math.max(draft.selfAge, 75);
   scenario.householdProfile.headMemberId = selfId;
   scenario.householdProfile.taxCalculationMode = draft.taxMode;
+  scenario.householdProfile.planningGoals = draft.planningGoals;
   scenario.householdProfile.notes = draft.detailedTaxSetup
     ? "初回設定で、税金・社会保険を後から詳しく補正する前提にしました。"
     : "初回設定で、税金・社会保険を標準前提で自動概算する前提にしました。";
@@ -224,7 +264,7 @@ export function applyOnboardingDraftToScenario(scenario: ScenarioData, draft: On
   scenario.monthlyExpenses = createMonthlyExpenses(draft);
   scenario.ageExpenseAdjustments = createAgeExpenseAdjustments(draft);
   scenario.incomeEvents = createIncomeEvents(draft, selfId, draft.hasSpouse ? spouseId : undefined);
-  scenario.assetContributionEvents = [];
+  scenario.assetContributionEvents = createAssetContributionEvents(draft);
   scenario.specialExpenses = createSpecialExpenses(draft);
   scenario.timeBucketItems = createTimeBucketItems(draft);
   scenario.assetGrowthSettings = createAssetGrowthSettings(draft);
@@ -263,13 +303,22 @@ export function OnboardingWizard({
       : "期間内維持";
     return [
       { label: "現在の資産寿命", value: depletion },
+      { label: "60歳時点資産", value: compactYen(getPreviewBalanceAtAge(previewResult, 60)) },
+      { label: "65歳時点資産", value: compactYen(getPreviewBalanceAtAge(previewResult, 65)) },
       { label: `${draft.targetBalanceAge}歳時点残高`, value: compactYen(previewResult.targetAgeBalance ?? 0) },
-      { label: "平均月次取り崩し", value: compactYen(previewResult.averageMonthlyWithdrawal) },
     ];
   }, [draft, scenario]);
 
   const update = <K extends keyof OnboardingDraft>(key: K, value: OnboardingDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+  const togglePlanningGoal = (goal: PlanningGoal) => {
+    setDraft((current) => ({
+      ...current,
+      planningGoals: current.planningGoals.includes(goal)
+        ? current.planningGoals.filter((item) => item !== goal)
+        : [...current.planningGoals, goal],
+    }));
   };
 
   const applyAndClose = () => {
@@ -309,7 +358,39 @@ export function OnboardingWizard({
         </CardHeader>
         <CardContent className="space-y-6 py-6">
           {step.key === "family" && (
-            <WizardPanel title="家族" description="年齢、配偶者、シミュレーション期間を設定します。">
+            <WizardPanel title="今回知りたいこと" description="最初に見たい判断を選ぶと、入力ガイドとダッシュボードの見方が分かりやすくなります。複数選べます。">
+              <div className="grid gap-3 md:grid-cols-2">
+                {planningGoalOptions.map((goal) => {
+                  const selected = draft.planningGoals.includes(goal.id);
+                  return (
+                    <button
+                      key={goal.id}
+                      type="button"
+                      className={`rounded-md border px-4 py-3 text-left transition ${
+                        selected ? "border-teal-600 bg-teal-50 text-teal-950 ring-1 ring-teal-200" : "bg-white text-slate-800 hover:bg-slate-50"
+                      }`}
+                      onClick={() => togglePlanningGoal(goal.id)}
+                    >
+                      <span className="flex items-start gap-2">
+                        <input type="checkbox" className="mt-1" checked={selected} readOnly />
+                        <span>
+                          <span className="block text-sm font-medium">{goal.label}</span>
+                          <span className="mt-1 block text-xs leading-5 text-muted-foreground">{goal.description}</span>
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {draft.planningGoals.length === 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  迷う場合は「何歳時点でいくら資産ができるか」と「家族旅行、趣味、学びなど」を選んで進めてください。
+                </div>
+              )}
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold">家族・期間</h3>
+                <p className="mt-1 text-sm text-muted-foreground">年齢、配偶者、シミュレーション期間を設定します。</p>
+              </div>
               <FormGrid>
                 <NumberField label="本人の年齢" value={draft.selfAge} min={20} onChange={(value) => update("selfAge", value)} />
                 <Field label="配偶者">
@@ -327,7 +408,7 @@ export function OnboardingWizard({
                     <option value="pensionLife">年金生活中</option>
                   </Select>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    退職前は給与・退職予定・退職金を先に、退職済みや年金生活中は年金・iDeCo・その他収入を先に確認します。
+                    退職前は現在収入・積立・働き方・ライフイベントを先に、年金や退職金は後半で概算確認します。
                   </p>
                 </Field>
                 <Field label="試算を始める年月">
@@ -383,19 +464,28 @@ export function OnboardingWizard({
               title="収入"
               description={
                 draft.retirementStatus === "preRetirement"
-                  ? "退職前の方は、給与・賞与、退職予定、退職金、年金見込み、iDeCoの順で確認します。細かい条件は後から補正できます。"
+                  ? "退職前の方は、現在収入、毎月の積立、何歳まで働くか、ライフイベント、やりたいことを先に確認します。年金・退職金・iDeCoは後半で概算確認します。"
                   : "退職済み・年金生活中の方は、年金、iDeCo、その他収入を中心に確認します。細かい条件は後から補正できます。"
               }
             >
               {draft.retirementStatus === "preRetirement" && (
                 <div className="rounded-md border bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-                  退職前の入力順: 給与・賞与 → 退職予定 → 退職金 → 年金見込み → iDeCo。退職金はこの画面では有無だけ確認し、金額や受取日は後で収入タブから設定します。
+                  退職前の入力順: 現在の給与・賞与 → 毎月の積立 → 何歳まで今の働き方を続けるか → 教育費・住宅ローン・親の介護 → 家族旅行や趣味 → 年金・退職金・iDeCo受取。
+                  年金や退職金は消さず、後半の概算確認として扱います。
                 </div>
               )}
               <FormGrid>
                 {draft.retirementStatus === "preRetirement" && (
                   <>
                     <NumberField label="給与・パート等（月額）" value={draft.workIncomeMonthly} min={0} step={10_000} onChange={(value) => update("workIncomeMonthly", value)} />
+                    <NumberField
+                      label="毎月の積立予定（NISAなど）"
+                      value={draft.monthlyAssetContribution}
+                      min={0}
+                      step={10_000}
+                      onChange={(value) => update("monthlyAssetContribution", value)}
+                      helpText="現在資産ではなく、開始月以降に毎月投資する予定額です。"
+                    />
                     <NumberField label="給与・パート等の終了年齢" value={draft.workIncomeEndAge} min={draft.selfAge} onChange={(value) => update("workIncomeEndAge", value)} />
                     <Field label="退職金・一時金">
                       <Select value={draft.retirementAllowance ? "yes" : "no"} onChange={(event) => update("retirementAllowance", event.target.value === "yes")}>
@@ -414,6 +504,13 @@ export function OnboardingWizard({
                   <>
                     <NumberField label="給与・パート等（月額）" value={draft.workIncomeMonthly} min={0} step={10_000} onChange={(value) => update("workIncomeMonthly", value)} />
                     <NumberField label="給与・パート等の終了年齢" value={draft.workIncomeEndAge} min={draft.selfAge} onChange={(value) => update("workIncomeEndAge", value)} />
+                    <NumberField
+                      label="毎月の積立予定（NISAなど）"
+                      value={draft.monthlyAssetContribution}
+                      min={0}
+                      step={10_000}
+                      onChange={(value) => update("monthlyAssetContribution", value)}
+                    />
                   </>
                 )}
                 <Field label="iDeCo受取予定">
@@ -662,6 +759,24 @@ function createAgeExpenseAdjustments(draft: OnboardingDraft): AgeExpenseAdjustme
   ];
 }
 
+function createAssetContributionEvents(draft: OnboardingDraft): AssetContributionEvent[] {
+  if (draft.monthlyAssetContribution <= 0) return [];
+  return [
+    {
+      id: "onboarding-nisa-contribution",
+      assetKey: "nisa",
+      name: "初回設定: 毎月の積立予定",
+      startYearMonth: draft.startYearMonth,
+      endYearMonth: yearMonthAtAge(draft.selfAge, draft.workIncomeEndAge),
+      monthlyAmount: draft.monthlyAssetContribution,
+      nisaInvestmentSlot: "tsumitate",
+      contributionPriority: 1,
+      carryOverSkipped: false,
+      note: "初回設定で入力した将来の積立予定です。現在資産ではありません。",
+    },
+  ];
+}
+
 function createIncomeEvents(draft: OnboardingDraft, selfId: string, spouseId?: string): IncomeEvent[] {
   const events: IncomeEvent[] = [
     {
@@ -698,6 +813,11 @@ function createIncomeEvents(draft: OnboardingDraft, selfId: string, spouseId?: s
     });
   }
   return events;
+}
+
+function getPreviewBalanceAtAge(result: ReturnType<typeof simulateScenario>, age: number) {
+  const row = result.annual.find((item) => item.ageYears >= age);
+  return row?.endingAssets ?? 0;
 }
 
 function createSpecialExpenses(draft: OnboardingDraft): SpecialExpenseEvent[] {

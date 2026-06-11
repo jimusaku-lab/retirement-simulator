@@ -16,6 +16,7 @@ import type {
   HouseholdProfile,
   MonthlyExpenseProfile,
   PlanBackup,
+  PlanningGoal,
   RetirementPlanSnapshot,
   RetirementPlanState,
   ReviewAcknowledgement,
@@ -79,6 +80,14 @@ const reviewAcknowledgementCardIds: ReviewAcknowledgementCardId[] = [
   "tax-retirement-overlap",
   "income-ideco-lump",
   "assets-cost-basis",
+];
+const planningGoalIds: PlanningGoal[] = [
+  "assetAtMilestone",
+  "earlyRetirement",
+  "reducedWork",
+  "lifeEvents",
+  "enjoymentBudget",
+  "pensionAndRetirementBenefits",
 ];
 const specialExpenseCategories: NonNullable<SpecialExpenseEvent["category"]>[] = [
   "enjoyment",
@@ -353,10 +362,14 @@ function createDefaultHouseholdMembers(source: LegacyScenario): HouseholdMember[
 
 function normalizeHouseholdProfile(source: LegacyScenario, members: HouseholdMember[]): HouseholdProfile {
   const existing = source.householdProfile ?? baseScenario.householdProfile;
+  const planningGoals = Array.isArray(existing.planningGoals)
+    ? existing.planningGoals.filter((goal): goal is PlanningGoal => planningGoalIds.includes(goal as PlanningGoal))
+    : [];
   return {
     municipality: existing.municipality ?? source.userProfile?.municipality ?? baseScenario.householdProfile.municipality,
     headMemberId: existing.headMemberId ?? members[0]?.id ?? "member-self",
     taxCalculationMode: existing.taxCalculationMode ?? baseScenario.householdProfile.taxCalculationMode,
+    planningGoals: [...new Set(planningGoals)],
     notes: existing.notes,
   };
 }
@@ -614,6 +627,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
 }
 
 const legacyPrivateStarterSampleIds = ["base", "income-100k", "expense-low", "expense-shock", "growth-zero"];
+const publicMidCareerStarterScenarioIds = ["early-retirement-60", "second-career", "enjoyment-priority", "safety-first"];
 
 function isLegacyPrivateStarterSample(scenarios: ScenarioData[]) {
   if (scenarios.length !== legacyPrivateStarterSampleIds.length) return false;
@@ -641,6 +655,19 @@ export function normalizePlanState(input: Partial<RetirementPlanState> | undefin
     : structuredClone(sampleState.scenarios);
   if (isLegacyPrivateStarterSample(scenarios)) {
     scenarios = structuredClone(sampleState.scenarios);
+  }
+  const publicSampleHasMidCareerBase =
+    scenarios.length >= sampleState.scenarios.length - 1 &&
+    scenarios.some((scenario) => scenario.id === "base" && scenario.name === sampleState.scenarios[0]?.name);
+  if (publicSampleHasMidCareerBase) {
+    const existingIds = new Set(scenarios.map((scenario) => scenario.id));
+    const inserts = publicMidCareerStarterScenarioIds
+      .filter((id) => !existingIds.has(id))
+      .map((id) => sampleState.scenarios.find((scenario) => scenario.id === id))
+      .filter((scenario): scenario is ScenarioData => Boolean(scenario));
+    if (inserts.length > 0) {
+      scenarios.splice(1, 0, ...structuredClone(inserts));
+    }
   }
   const publicSampleHasPensionCases =
     scenarios.some((scenario) => scenario.id === "base" && scenario.name === "標準ケース") &&

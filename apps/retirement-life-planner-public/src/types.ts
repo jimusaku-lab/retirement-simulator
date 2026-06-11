@@ -4,10 +4,19 @@ export type TaxCalculationMode = "manual" | "auto" | "autoWithAdjustment";
 
 export type HouseholdRelationship = "self" | "spouse" | "child" | "parent" | "other";
 
+export type PlanningGoal =
+  | "assetAtMilestone"
+  | "earlyRetirement"
+  | "reducedWork"
+  | "lifeEvents"
+  | "enjoymentBudget"
+  | "pensionAndRetirementBenefits";
+
 export type HouseholdProfile = {
   municipality: string;
   headMemberId: string;
   taxCalculationMode: TaxCalculationMode;
+  planningGoals?: PlanningGoal[];
   notes?: string;
 };
 

@@ -117,6 +117,7 @@ import type {
   HouseholdMember,
   HouseholdProfile,
   HouseholdLivingArrangementEvent,
+  PlanningGoal,
   RetirementPlanState,
   ScenarioData,
   SpecialExpenseEvent,
@@ -233,6 +234,15 @@ const specialExpenseCategoryLabels: Record<SpecialExpenseCategory, string> = {
   medicalCare: "医療・介護",
   familySupport: "家族支援",
 };
+const planningGoalLabels: Record<PlanningGoal, string> = {
+  assetAtMilestone: "60歳・65歳時点資産",
+  earlyRetirement: "早期リタイア",
+  reducedWork: "仕事を減らす・セカンドキャリア",
+  lifeEvents: "教育費・住宅ローン・親の介護",
+  enjoymentBudget: "家族旅行・趣味・学び",
+  pensionAndRetirementBenefits: "年金・iDeCo・退職金",
+};
+const lifeEventNoteMarker = "ライフイベント由来";
 
 const monthOptions = Array.from({ length: 12 }, (_, index) => index + 1);
 
@@ -2465,6 +2475,11 @@ function Dashboard({
   const nisaSkippedTotal = nisaProgressChartData.reduce((sum, row) => sum + row.skipped, 0);
   const dashboardRequiredComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
   const dashboardNextCard = getNextInputCard(inputCards);
+  const preRetirementDashboard = isPreRetirementScenario(scenario, result);
+  const planningGoals = scenario.householdProfile.planningGoals ?? [];
+  const planningGoalText = planningGoals.length > 0
+    ? planningGoals.map((goal) => planningGoalLabels[goal]).filter(Boolean).join(" / ")
+    : "60歳・65歳時点資産 / ライフイベント / 楽しみ支出";
   const targetBalanceAmount = scenario.userProfile.targetBalanceAmount ?? 0;
   const targetBalance = result.targetAgeBalance ?? 0;
   const targetBalanceGap = targetBalance - targetBalanceAmount;
@@ -2477,6 +2492,17 @@ function Dashboard({
     (flexibleFreeCashSummary.cashLikeIncomeTotal - flexibleFreeCashSummary.livingExpenseTotal - flexibleFreeCashSummary.taxAndSocialTotal) /
     periodMonthCount;
   const monthlyAfterAllSpending = flexibleFreeCashSummary.averageAnnualFreeCash / 12;
+  const balanceAt60 = getAnnualBalanceAtAge(result, 60);
+  const balanceAt65 = getAnnualBalanceAtAge(result, 65);
+  const salaryEndAge = getSalaryEndAge(scenario, result);
+  const earlyRetirementText =
+    targetBalanceGap >= 0
+      ? salaryEndAge
+        ? `${salaryEndAge}歳終了案を比較`
+        : "現在案は目標達成"
+      : "シナリオ比較で確認";
+  const enjoymentAnnualAverage = specialExpenseCategoryTotals.enjoyment / Math.max(1, flexibleFreeCashSummary.yearCount);
+  const lifeEventAttentionYear = getLifeEventAttentionYear(scenario, result);
   const peakTaxYear = result.annual.reduce<AnnualResult | undefined>((peak, row) => {
     const rowTax = row.taxInsuranceTotal + row.capitalGainsTaxTotal + row.idecoWithholdingTaxTotal;
     const peakTax = peak ? peak.taxInsuranceTotal + peak.capitalGainsTaxTotal + peak.idecoWithholdingTaxTotal : -1;
@@ -2515,7 +2541,9 @@ function Dashboard({
             <div>
               <CardTitle>まず見る結論</CardTitle>
               <CardDescription>
-                資産寿命、税金・社会保険を払った後の余力、注意が必要な年を先に確認します。
+                {preRetirementDashboard
+                  ? "60歳・65歳時点資産、働き方、ライフイベント、楽しみ支出を先に確認します。"
+                  : "資産寿命、税金・社会保険を払った後の余力、注意が必要な年を先に確認します。"}
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2535,6 +2563,46 @@ function Dashboard({
             <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
               <span className="font-medium">これは入力練習用の匿名サンプルです。</span>{" "}
               年齢・資産・生活費・収入を初回設定から自分用に置き換えて使ってください。
+            </div>
+          )}
+          {preRetirementDashboard && (
+            <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+              <span className="font-medium">今回の見方:</span> {planningGoalText}。年金や退職金の詳細より先に、今後10〜15年の働き方・積立・大きな支出を確認します。
+            </div>
+          )}
+          {preRetirementDashboard && (
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="rounded-md border bg-teal-50 px-4 py-4">
+                <div className="text-sm font-medium text-teal-900">60歳時点の見込み資産</div>
+                <div className="mt-2 text-2xl font-semibold text-teal-950">{balanceAt60 === undefined ? "試算範囲外" : compactYen(balanceAt60)}</div>
+                <p className="mt-2 text-sm leading-6 text-teal-900">今の収入・積立・ライフイベントを入れた節目残高です。</p>
+              </div>
+              <div className="rounded-md border bg-cyan-50 px-4 py-4">
+                <div className="text-sm font-medium text-cyan-900">65歳時点の見込み資産</div>
+                <div className="mt-2 text-2xl font-semibold text-cyan-950">{balanceAt65 === undefined ? "試算範囲外" : compactYen(balanceAt65)}</div>
+                <p className="mt-2 text-sm leading-6 text-cyan-900">仕事を続ける・減らす判断の比較基準です。</p>
+              </div>
+              <div className="rounded-md border bg-blue-50 px-4 py-4">
+                <div className="text-sm font-medium text-blue-900">仕事をやめても成立しそうな年齢</div>
+                <div className="mt-2 text-2xl font-semibold text-blue-950">{earlyRetirementText}</div>
+                <p className="mt-2 text-sm leading-6 text-blue-900">P0では簡易表示です。早期リタイア案は比較タブで確認します。</p>
+              </div>
+              <div className="rounded-md border bg-rose-50 px-4 py-4">
+                <div className="text-sm font-medium text-rose-900">健康なうちの楽しみ年額</div>
+                <div className="mt-2 text-2xl font-semibold text-rose-950">{compactYen(enjoymentAnnualAverage)}</div>
+                <p className="mt-2 text-sm leading-6 text-rose-900">{flexibleFreeCashLabel} の旅行・趣味・学びの年平均です。</p>
+              </div>
+              <div className="rounded-md border bg-amber-50 px-4 py-4">
+                <div className="text-sm font-medium text-amber-900">ライフイベント注意年</div>
+                <div className="mt-2 text-2xl font-semibold text-amber-950">
+                  {lifeEventAttentionYear ? `${lifeEventAttentionYear.year}年` : "未登録"}
+                </div>
+                <p className="mt-2 text-sm leading-6 text-amber-900">
+                  {lifeEventAttentionYear
+                    ? `年末${lifeEventAttentionYear.ageYears}歳に ${compactYen(lifeEventAttentionYear.amount)} が重なります。`
+                    : "教育費・住宅ローン・親の介護テンプレートから追加できます。"}
+                </p>
+              </div>
             </div>
           )}
           <div className="grid gap-4 lg:grid-cols-3">
@@ -3331,6 +3399,73 @@ function hasLargeUnclassifiedExpense(monthlyExpenses: MonthlyExpenseProfile, exc
   return getExpenseOtherShare(monthlyExpenses, excludeTaxExpense) >= 0.5;
 }
 
+function isPreRetirementScenario(scenario: ScenarioData, result?: ReturnType<typeof simulateScenario>) {
+  const firstMonth = result?.monthly[0];
+  const currentAge = firstMonth?.ageYears ?? getSelfAgeAtStart(scenario);
+  const startYearMonth = scenario.userProfile.simulationStartYearMonth;
+  return scenario.incomeEvents.some(
+    (event) =>
+      event.type === "salary" &&
+      event.monthlyAmount > 0 &&
+      (!event.endYearMonth || event.endYearMonth >= startYearMonth) &&
+      currentAge < 65,
+  );
+}
+
+function getSelfAgeAtStart(scenario: ScenarioData) {
+  const self =
+    scenario.householdMembers.find((member) => member.relationship === "self") ??
+    scenario.householdMembers.find((member) => member.id === scenario.householdProfile.headMemberId) ??
+    scenario.householdMembers[0];
+  const birthYear = Number(self?.birthDate?.slice(0, 4));
+  const startYear = Number(scenario.userProfile.simulationStartYearMonth?.slice(0, 4));
+  if (!Number.isFinite(birthYear) || !Number.isFinite(startYear)) return 0;
+  return Math.max(0, startYear - birthYear);
+}
+
+function getAnnualBalanceAtAge(result: ReturnType<typeof simulateScenario>, age: number) {
+  const row = result.annual.find((item) => item.ageYears >= age);
+  return row?.endingAssets;
+}
+
+function getSalaryEndAge(scenario: ScenarioData, result: ReturnType<typeof simulateScenario>) {
+  const salaryEvents = scenario.incomeEvents.filter((event) => event.type === "salary" && event.monthlyAmount > 0);
+  const endYearMonths = salaryEvents.map((event) => event.endYearMonth).filter((yearMonth): yearMonth is string => Boolean(yearMonth));
+  if (endYearMonths.length === 0) return undefined;
+  const lastEnd = endYearMonths.sort().at(-1);
+  if (!lastEnd) return undefined;
+  return result.monthly.find((row) => row.yearMonth >= lastEnd)?.ageYears;
+}
+
+function getLifeEventExpenses(scenario: ScenarioData) {
+  return scenario.specialExpenses.filter((event) => event.note?.includes(lifeEventNoteMarker) || event.name.includes(lifeEventNoteMarker));
+}
+
+function getLifeEventAttentionYear(scenario: ScenarioData, result: ReturnType<typeof simulateScenario>) {
+  const lifeEvents = getLifeEventExpenses(scenario);
+  if (lifeEvents.length === 0) return undefined;
+  const rows = result.annual.map((row) => {
+    const yearMonths = result.monthly
+      .filter((monthlyRow) => Number(monthlyRow.yearMonth.slice(0, 4)) === row.year)
+      .map((monthlyRow) => monthlyRow.yearMonth);
+    const amount = lifeEvents.reduce((sum, event) => {
+      return sum + yearMonths.reduce((monthSum, yearMonth) => monthSum + (isSpecialExpenseActive(event, yearMonth) ? getSpecialExpenseAmountForMonth(scenario, event, yearMonth) : 0), 0);
+    }, 0);
+    return { year: row.year, ageYears: row.ageYears, amount };
+  });
+  return rows.reduce<typeof rows[number] | undefined>((peak, row) => {
+    if (row.amount <= 0) return peak;
+    if (!peak || row.amount > peak.amount) return row;
+    return peak;
+  }, undefined);
+}
+
+function addYearsToYearMonth(yearMonth: string, years: number) {
+  const year = Number(yearMonth.slice(0, 4));
+  const month = yearMonth.slice(5, 7) || "04";
+  return `${year + years}-${month}`;
+}
+
 function getNextInputCard(cards: InputCardDefinition[]) {
   const nextRequired = cards.find((card) => card.priority === "required" && (card.status === "not_started" || card.status === "incomplete"));
   if (nextRequired) return nextRequired;
@@ -3348,8 +3483,8 @@ function getInputCardActionKind(card: InputCardDefinition | undefined, requiredC
 
 function inputCardActionHeading(card: InputCardDefinition | undefined, requiredComplete: boolean) {
   const kind = getInputCardActionKind(card, requiredComplete);
-  if (kind === "required") return "次に入力";
-  if (kind === "recommended") return "次に確認するとよい";
+  if (kind === "required") return "次の意思決定";
+  if (kind === "recommended") return "次に確認";
   if (kind === "expert") return "必要なら確認";
   return "主要入力は完了";
 }
@@ -3363,9 +3498,26 @@ function inputCardActionButtonLabel(card: InputCardDefinition | undefined, requi
   return "ここを確認する";
 }
 
+function inputCardDecisionTitle(card: InputCardDefinition | undefined) {
+  if (!card) return "主要入力は完了";
+  const decisions: Partial<Record<InputCardId, string>> = {
+    "profile-family-period": "何歳時点の資産を見たいか",
+    "assets-current": "現在資産と負債をどう置くか",
+    "assets-cost-basis": "運用資産の評価益をどこまで入れるか",
+    "expenses-monthly": "毎月生活費と未分類支出をどう置くか",
+    "income-pension": "何歳まで今の働き方を続けるか",
+    "income-ideco": "iDeCoをいつ・どう受け取るか",
+    "income-ideco-lump": "iDeCo一時金の受取条件をどう置くか",
+    "tax-mode": "税金・社会保険を概算で見るか詳しく見るか",
+    "tax-retirement-overlap": "退職金とiDeCo一時金の重なりを確認するか",
+    "special-expenses": "教育費・住宅ローン・親の介護・体験支出をどう入れるか",
+  };
+  return decisions[card.id] ?? card.title;
+}
+
 function inputCardActionLabel(card: InputCardDefinition | undefined, requiredComplete: boolean) {
   const kind = getInputCardActionKind(card, requiredComplete);
-  if (kind === "required") return "ここを入力";
+  if (kind === "required") return "次の意思決定";
   if (kind === "recommended") return "次に確認";
   if (kind === "expert") return "必要なら確認";
   return "";
@@ -3419,6 +3571,7 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
   const excludeTaxExpense = shouldIgnoreTaxExpenseField(scenario);
   const expenseTotal = getBaseMonthlyExpense(scenario.monthlyExpenses, excludeTaxExpense);
   const largeUnclassifiedExpense = hasLargeUnclassifiedExpense(scenario.monthlyExpenses, excludeTaxExpense);
+  const preRetirementScenario = isPreRetirementScenario(scenario);
   const pensionSettings = mergePensionPlannerSettings(scenario, selfMember, spouseMember);
   const pensionTotal =
     pensionSettings.selfBasicAnnual +
@@ -3447,6 +3600,7 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
     return scenario.initialAssetCostBasis[key] <= 0;
   });
   const specialMissing = scenario.specialExpenses.some((event) => !event.yearMonth || event.amount <= 0);
+  const lifeEventCount = getLifeEventExpenses(scenario).length;
   const retirementAdjustments = getRetirementOverlapAdjustments(scenario);
   const retirementOverlapFingerprint = buildRetirementOverlapReviewFingerprint(scenario, retirementAdjustments);
   const retirementOverlapReviewed =
@@ -3498,9 +3652,11 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
     {
       id: "income-pension",
       title: "公的年金",
-      priority: "required",
+      priority: preRetirementScenario ? "recommended" : "required",
       status: pensionTotal > 0 ? "complete" : "incomplete",
-      summary: `65歳標準年額 ${compactYen(pensionTotal)}`,
+      summary: preRetirementScenario
+        ? `現在収入・働き方を先に確認 / 65歳標準年額 ${compactYen(pensionTotal)}`
+        : `65歳標準年額 ${compactYen(pensionTotal)}`,
       missingItems: pensionTotal > 0 ? [] : ["年金見込み額"],
       tab: "income",
       nextCardId: "tax-mode",
@@ -3564,10 +3720,13 @@ function buildInputCards(scenario: ScenarioData): InputCardDefinition[] {
     },
     {
       id: "special-expenses",
-      title: "特別支出・やりたいこと",
+      title: "ライフイベント・やりたいこと",
       priority: "recommended",
       status: scenario.specialExpenses.length === 0 ? "not_applicable" : specialMissing ? "incomplete" : "complete",
-      summary: scenario.specialExpenses.length === 0 ? "登録なし" : `特別支出 ${scenario.specialExpenses.length}件`,
+      summary:
+        scenario.specialExpenses.length === 0
+          ? "登録なし"
+          : `ライフイベント ${lifeEventCount}件 / 特別支出 ${scenario.specialExpenses.length}件`,
       missingItems: specialMissing ? ["金額または年月"] : [],
       tab: "special",
     },
@@ -4840,8 +4999,8 @@ function InputGuideMini({
           <div className="font-semibold">入力ガイド</div>
           <p>
             {requiredComplete
-              ? `必須入力は完了しています。${heading}項目は「${card.title}」です。`
-              : `主要入力に未入力があります。${heading}項目は「${card.title}」です。`}
+              ? `必須入力は完了しています。${heading}は「${inputCardDecisionTitle(card)}」です。`
+              : `主要入力に未入力があります。${heading}は「${inputCardDecisionTitle(card)}」です。`}
           </p>
           <p className="text-xs text-amber-900">{inputCardLocationLabel(card)} / {card.summary}</p>
         </div>
@@ -4881,7 +5040,7 @@ function InputGuidanceSummary({
     <Card id="input-guidance-summary">
       <CardHeader>
         <CardTitle>入力状況サマリー</CardTitle>
-        <CardDescription>必須入力と確認推奨を分けて、次に見る場所を案内します。</CardDescription>
+        <CardDescription>入力漏れだけでなく、次に考える意思決定を案内します。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 text-sm lg:grid-cols-[1fr_1.4fr_1fr]">
@@ -4906,9 +5065,10 @@ function InputGuidanceSummary({
             )}
           >
             <div className="text-muted-foreground">{nextHeading}</div>
-            <div className="mt-1 text-lg font-semibold">{nextCard?.title ?? "主要入力は完了"}</div>
+            <div className="mt-1 text-lg font-semibold">{inputCardDecisionTitle(nextCard)}</div>
             {nextCard && (
               <>
+                <div className="mt-1 text-xs text-amber-900">対象: {nextCard.title}</div>
                 <div className="mt-1 text-sm leading-6">{nextCard.summary}</div>
                 <div className="mt-1 text-xs">{inputCardLocationLabel(nextCard)}</div>
                 {nextCard.missingItems.length > 0 && <div className="mt-1 text-xs">未確認: {nextCard.missingItems.join("、")}</div>}
@@ -4981,6 +5141,7 @@ function InputGuidanceSummary({
                 {card.highlight === "review" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs">確認推奨</span>}
               </span>
               <span className="mt-1 block text-xs leading-5">{card.summary}</span>
+              <span className="mt-1 block text-xs font-medium text-slate-700">意思決定: {inputCardDecisionTitle(card)}</span>
               <span className="mt-1 block text-xs text-slate-600">{inputCardLocationLabel(card)}</span>
               {card.missingItems.length > 0 && <span className="mt-1 block text-xs">未確認: {card.missingItems.join("、")}</span>}
             </button>
@@ -10122,6 +10283,90 @@ function SpecialSection({
         repeatIntervalMonths: 12,
       }),
     );
+  const addLifeEventTemplate = (template: "education" | "housing" | "care" | "travel") =>
+    updateScenario((s) => {
+      const start = s.userProfile.simulationStartYearMonth;
+      if (template === "education") {
+        s.specialExpenses.push({
+          id: createId(),
+          name: "ライフイベント由来: 教育費",
+          yearMonth: start,
+          endYearMonth: addYearsToYearMonth(start, 4),
+          amount: 80_000,
+          category: "familySupport",
+          schedule: "monthly",
+          inflationMode: "livingCost",
+          note: `${lifeEventNoteMarker}: 教育費テンプレート。対象者名、期間、毎月費用、一時金はこの通常入力で調整してください。`,
+        });
+        s.specialExpenses.push({
+          id: createId(),
+          name: "ライフイベント由来: 入学金・一時金",
+          yearMonth: start,
+          amount: 500_000,
+          category: "familySupport",
+          schedule: "once",
+          inflationMode: "livingCost",
+          note: `${lifeEventNoteMarker}: 教育費テンプレートの一時金です。`,
+        });
+      }
+      if (template === "housing") {
+        s.specialExpenses.push({
+          id: createId(),
+          name: "ライフイベント由来: 住宅ローン・住まい",
+          yearMonth: start,
+          endYearMonth: addYearsToYearMonth(start, 10),
+          amount: 120_000,
+          category: "housingCar",
+          schedule: "monthly",
+          inflationMode: "none",
+          note: `${lifeEventNoteMarker}: 住宅ローン・住まいテンプレート。返済終了年月、固定資産税、リフォーム予定は通常入力で調整してください。`,
+        });
+        s.specialExpenses.push({
+          id: createId(),
+          name: "ライフイベント由来: リフォーム一時金",
+          yearMonth: addYearsToYearMonth(start, 8),
+          amount: 1_500_000,
+          category: "housingCar",
+          schedule: "once",
+          inflationMode: "livingCost",
+          note: `${lifeEventNoteMarker}: 住宅ローン・住まいテンプレートのリフォーム一時金です。`,
+        });
+      }
+      if (template === "care") {
+        s.specialExpenses.push({
+          id: createId(),
+          name: "ライフイベント由来: 親の介護・支援",
+          yearMonth: addYearsToYearMonth(start, 5),
+          endYearMonth: addYearsToYearMonth(start, 9),
+          amount: 50_000,
+          category: "familySupport",
+          schedule: "monthly",
+          inflationMode: "livingCost",
+          note: `${lifeEventNoteMarker}: 親の介護・支援テンプレート。確度が可能性ありの場合は別シナリオでも確認してください。`,
+        });
+      }
+      if (template === "travel") {
+        const specialExpenseId = createId();
+        s.specialExpenses.push({
+          id: specialExpenseId,
+          name: "ライフイベント由来: 家族旅行・体験",
+          yearMonth: addYearsToYearMonth(start, 1),
+          endYearMonth: addYearsToYearMonth(start, 10),
+          amount: 300_000,
+          category: "enjoyment",
+          schedule: "yearly",
+          inflationMode: "livingCost",
+          note: `${lifeEventNoteMarker}: 家族旅行・体験テンプレート。タイムバケットにも候補として追加済みです。`,
+        });
+        s.timeBucketItems.push({
+          id: createId(),
+          title: "家族旅行・体験",
+          bucketId: "todo",
+          convertedSpecialExpenseId: specialExpenseId,
+          note: "ライフイベントテンプレートから追加しました。",
+        });
+      }
+    });
   const duplicate = (index: number) =>
     updateScenario((s) => {
       const source = s.specialExpenses[index];
@@ -10199,6 +10444,30 @@ function SpecialSection({
             </ul>
           </div>
         )}
+        <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm leading-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="font-medium text-slate-900">ライフイベントテンプレート</p>
+              <p className="mt-1 text-muted-foreground">
+                教育費、住宅ローン・住まい、親の介護・支援、家族旅行・体験を見落とさないための入力補助です。追加後は通常の特別支出として編集できます。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => addLifeEventTemplate("education")}>
+                教育費
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => addLifeEventTemplate("housing")}>
+                住宅ローン・住まい
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => addLifeEventTemplate("care")}>
+                親の介護・支援
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => addLifeEventTemplate("travel")}>
+                家族旅行・体験
+              </Button>
+            </div>
+          </div>
+        </div>
         {scenario.specialExpenses.map((event, index) => {
           const isEnjoyment = (event.category ?? "lifeMaintenance") === "enjoyment";
           const linkedTimeBucketItem = scenario.timeBucketItems.find((item) => item.convertedSpecialExpenseId === event.id);
@@ -10225,6 +10494,11 @@ function SpecialSection({
                       タイムバケットへ
                     </Button>
                   </>
+                )}
+                {(event.note?.includes(lifeEventNoteMarker) || event.name.includes(lifeEventNoteMarker)) && (
+                  <span className="rounded-full bg-teal-100 px-2 py-1 text-xs font-medium text-teal-800">
+                    ライフイベント由来
+                  </span>
                 )}
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   順番
@@ -12142,6 +12416,35 @@ function ManualSection() {
           </div>
           <div className="rounded-md border bg-rose-50 px-4 py-3 text-rose-950">
             保存用ファイルや画面の画像には家計情報が含まれます。送付前に金額や個人情報を伏せるか、必要範囲だけ共有してください。
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>最初からやり直すには</CardTitle>
+          <CardDescription>試しに入れた数字を消して、初回状態から入力し直す方法です。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm leading-7 text-muted-foreground">
+          <p>
+            上部メニューの「データ」を開き、「この端末の入力データを削除」を押すと、このブラウザに保存された入力データと履歴バックアップを削除できます。
+            確認画面が表示されるため、内容を確認してから実行してください。
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border bg-rose-50 px-4 py-3 text-rose-950">
+              <p className="font-medium">削除されるもの</p>
+              <p className="mt-1">このブラウザに保存された入力データと履歴バックアップが削除されます。削除後は、初期サンプルと初回設定からやり直せます。</p>
+            </div>
+            <div className="rounded-md border bg-sky-50 px-4 py-3 text-sky-950">
+              <p className="font-medium">削除されないもの</p>
+              <p className="mt-1">過去に作成した保存用JSONファイルは自動では削除されません。不要な保存用JSONファイルは、端末上で別途削除してください。</p>
+            </div>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3 text-slate-700">
+            <p className="font-medium text-slate-900">「サンプルに戻す」との違い</p>
+            <p className="mt-1">
+              「サンプルに戻す」は、現在の入力内容をサンプルへ戻す操作です。完全に初回状態から試したい場合は、「この端末の入力データを削除」を使ってください。
+            </p>
           </div>
         </CardContent>
       </Card>
