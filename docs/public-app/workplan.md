@@ -840,3 +840,45 @@ Phase 10 の初期QAは完了した。
 - `npm --prefix apps/retirement-life-planner-public run test -- src/lib/simulation.test.ts` が成功する。
 - `npm --prefix apps/retirement-life-planner-public run build` が成功する。
 - GitHub Pagesへ反映する場合は、push後に `https://jimusaku-lab.github.io/retirement-simulator/` で確認できる。
+
+## Phase 17: シナリオ反映での一般口座サブ口座と収入イベントの連動
+
+追加日: 2026-06-12
+
+目的: CFD、米国株オプションなど、一般口座サブ口座を原資にする収入イベントを他シナリオへ反映する時に、初期資産側の一般口座サブ口座条件も同時に反映できるようにする。逆に、初期資産タブから一般口座サブ口座を反映する時は、関連収入イベントも同時反映できるようにする。
+
+設計書:
+
+- `docs/public-app/scenario-sync-linked-option-account-design-2026-06-12.md`
+
+実装担当向けプロンプト:
+
+- `docs/handoff/implementation-prompt-all-versions-linked-option-scenario-sync-2026-06-12.md`
+- 公開URL反映用: `docs/handoff/implementation-prompt-public-release-linked-option-scenario-sync-2026-06-12.md`
+
+実装対象:
+
+- `apps/retirement-life-planner`
+- `apps/retirement-life-planner-public`
+- `apps/life-asset-simulator-beta`
+
+主な作業:
+
+- 収入タブで `ordinaryAccountForOptions` 由来の収入イベントを選んだ時、関連する一般口座サブ口座を検出する。
+- `関連する一般口座サブ口座の初期条件も一緒に反映する（推奨）` を表示する。
+- ONの場合、収入イベントと同時にサブ口座、評価額、取得原価、保護・スイープ設定、利回りを反映する。
+- 初期資産タブで一般口座サブ口座を反映する時、関連収入イベントを検出する。
+- `関連する収入イベントも一緒に反映する（推奨）` を表示する。
+- 確認ダイアログと完了メッセージに、主対象と関連対象を分けて表示する。
+- 友人向け公開版については、`apps/retirement-life-planner-public` のローカル確認だけでなく、GitHub Pages公開URLまで反映・確認する。
+
+完了条件:
+
+- 収入タブからCFD/米国株オプション収入をコピーするだけで、必要な初期資産条件も同時反映できる。
+- 初期資産タブから一般口座サブ口座をコピーするだけで、必要な関連収入イベントも同時反映できる。
+- ユーザーは同時反映をOFFにでき、その場合は警告が出る。
+- 反映先だけに存在する収入イベントやサブ口座は削除されない。
+- ローカル版、公開版、ベータ版で同じ挙動になる。
+- 各アプリの該当テストとビルドが成功する。
+- GitHub Pages公開版 `https://jimusaku-lab.github.io/retirement-simulator/` で、収入タブと初期資産タブの関連前提UIが確認できる。
+- 公開版にQNAP、本人専用保存、実データ復旧などの個人環境機能が混入していない。

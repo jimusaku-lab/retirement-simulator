@@ -4144,6 +4144,7 @@ type ExpenseSyncOptions = {
 
 type IncomeSyncOptions = {
   incomeEvents: boolean;
+  optionSubAccounts: boolean;
   pensionPlanner: boolean;
   retirementIncomeEvents: boolean;
   pensionAdjustmentRate: boolean;
@@ -4269,7 +4270,68 @@ function applyProfileSyncFromSource(target: ScenarioData, source: ScenarioData, 
   }
 }
 
-function applyAssetSyncFromSource(target: ScenarioData, source: ScenarioData, options: AssetSyncOptions) {
+function isOptionIncomeEvent(event: IncomeEvent) {
+  return event.sourceAssetKey === "ordinaryAccountForOptions";
+}
+
+function resolveIncomeEventOptionSubAccountId(source: ScenarioData, event: IncomeEvent) {
+  if (!isOptionIncomeEvent(event)) return undefined;
+  if (event.sourceOptionSubAccountId && source.optionSubAccounts.some((account) => account.id === event.sourceOptionSubAccountId)) {
+    return event.sourceOptionSubAccountId;
+  }
+  return (
+    resolveOptionSubAccountId(source.optionSubAccounts, event.sourceOptionSubAccountId, event.name) ??
+    inferOptionSubAccountIdFromName(source.optionSubAccounts, source.name)
+  );
+}
+
+function getLinkedOptionSubAccountIdsForIncomeEvents(source: ScenarioData, selectedIncomeEventIds: string[]) {
+  const selectedIds = new Set(selectedIncomeEventIds);
+  return Array.from(
+    new Set(
+      source.incomeEvents
+        .filter((event) => selectedIds.has(event.id))
+        .map((event) => resolveIncomeEventOptionSubAccountId(source, event))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+}
+
+function getUnresolvedOptionIncomeEventNames(source: ScenarioData, selectedIncomeEventIds: string[]) {
+  const selectedIds = new Set(selectedIncomeEventIds);
+  return source.incomeEvents
+    .filter((event) => selectedIds.has(event.id) && isOptionIncomeEvent(event) && !resolveIncomeEventOptionSubAccountId(source, event))
+    .map((event) => event.name || "名称未設定");
+}
+
+function getLinkedIncomeEventIdsForOptionSubAccounts(source: ScenarioData, selectedOptionSubAccountIds: string[]) {
+  const selectedIds = new Set(selectedOptionSubAccountIds);
+  return source.incomeEvents
+    .filter((event) => {
+      const accountId = resolveIncomeEventOptionSubAccountId(source, event);
+      return accountId ? selectedIds.has(accountId) : false;
+    })
+    .map((event) => event.id);
+}
+
+function applyIncomeEventsSyncFromSource(target: ScenarioData, source: ScenarioData, selectedIncomeEventIds?: string[]) {
+  const selectedIds = new Set(selectedIncomeEventIds ?? source.incomeEvents.map((event) => event.id));
+  const sourceIncomeEvents = source.incomeEvents.filter((event) => selectedIds.has(event.id));
+  const preservedTargetEvents = target.incomeEvents.filter(
+    (targetEvent) => !sourceIncomeEvents.some((sourceEvent) => isSameIncomeSyncSlot(targetEvent, sourceEvent)),
+  );
+  target.incomeEvents = [
+    ...sourceIncomeEvents.map((event) => cloneIncomeEventForTarget(target, event)),
+    ...preservedTargetEvents.map((event) => structuredClone(event)),
+  ];
+}
+
+function applyAssetSyncFromSource(
+  target: ScenarioData,
+  source: ScenarioData,
+  options: AssetSyncOptions,
+  linkedIncomeEventIds?: string[],
+) {
   if (options.liquidAssets) {
     for (const key of liquidAssetKeys) {
       target.initialAssets[key] = source.initialAssets[key];
@@ -4289,10 +4351,11 @@ function applyAssetSyncFromSource(target: ScenarioData, source: ScenarioData, op
   }
 
   if (options.optionSubAccounts) {
-    target.optionSubAccounts = structuredClone(source.optionSubAccounts);
-    target.optionAccountRules = structuredClone(source.optionAccountRules);
-    target.initialAssets.ordinaryAccountForOptions = source.initialAssets.ordinaryAccountForOptions;
-    target.initialAssetCostBasis.ordinaryAccountForOptions = source.initialAssetCostBasis.ordinaryAccountForOptions;
+    applyOptionSubAccountSyncFromSource(target, source);
+  }
+
+  if (linkedIncomeEventIds && linkedIncomeEventIds.length > 0) {
+    applyIncomeEventsSyncFromSource(target, source, linkedIncomeEventIds);
   }
 }
 
@@ -4340,7 +4403,8 @@ function isSameIncomeSyncSlot(targetEvent: IncomeEvent, sourceEvent: IncomeEvent
     targetEvent.name.trim() !== "" &&
     targetEvent.name === sourceEvent.name &&
     targetEvent.type === sourceEvent.type &&
-    targetEvent.sourceAssetKey === sourceEvent.sourceAssetKey
+    targetEvent.sourceAssetKey === sourceEvent.sourceAssetKey &&
+    targetEvent.sourceOptionSubAccountId === sourceEvent.sourceOptionSubAccountId
   );
 }
 
@@ -4353,22 +4417,60 @@ function cloneIncomeEventForTarget(target: ScenarioData, event: IncomeEvent): In
   };
 }
 
+function isSameOptionSubAccountSyncSlot(targetAccount: ScenarioData["optionSubAccounts"][number], sourceAccount: ScenarioData["optionSubAccounts"][number]) {
+  if (targetAccount.id === sourceAccount.id) return true;
+  return targetAccount.name.trim() !== "" && targetAccount.name === sourceAccount.name;
+}
+
+function syncOptionAggregateInputs(scenario: ScenarioData) {
+  const initialValue = scenario.optionSubAccounts.reduce((sum, account) => sum + Math.max(0, account.initialValue), 0);
+  const initialCostBasis = scenario.optionSubAccounts.reduce(
+    (sum, account) => sum + Math.min(Math.max(0, account.initialCostBasis), Math.max(0, account.initialValue)),
+    0,
+  );
+  scenario.initialAssets.ordinaryAccountForOptions = initialValue;
+  scenario.initialAssetCostBasis.ordinaryAccountForOptions = Math.min(initialCostBasis, initialValue);
+}
+
+function applyOptionSubAccountSyncFromSource(
+  target: ScenarioData,
+  source: ScenarioData,
+  selectedOptionSubAccountIds?: string[],
+) {
+  const selectedIds = new Set(selectedOptionSubAccountIds ?? source.optionSubAccounts.map((account) => account.id));
+  const sourceOptionSubAccounts = source.optionSubAccounts.filter((account) => selectedIds.has(account.id));
+  if (sourceOptionSubAccounts.length === 0) return;
+  const copiedAccounts = sourceOptionSubAccounts.map((account) => structuredClone(account));
+  const preservedTargetAccounts = target.optionSubAccounts.filter(
+    (targetAccount) => !copiedAccounts.some((sourceAccount) => isSameOptionSubAccountSyncSlot(targetAccount, sourceAccount)),
+  );
+  target.optionSubAccounts = [...copiedAccounts, ...preservedTargetAccounts].sort(
+    (a, b) => a.withdrawalPriority - b.withdrawalPriority,
+  );
+  target.optionAccountRules = structuredClone(source.optionAccountRules);
+  target.assetGrowthSettings = {
+    ...target.assetGrowthSettings,
+    rates: {
+      ...target.assetGrowthSettings.rates,
+      ordinaryAccountForOptions: source.assetGrowthSettings.rates.ordinaryAccountForOptions,
+    },
+  };
+  syncOptionAggregateInputs(target);
+}
+
 function applyIncomeSyncFromSource(
   target: ScenarioData,
   source: ScenarioData,
   options: IncomeSyncOptions,
   selectedIncomeEventIds?: string[],
+  selectedOptionSubAccountIds?: string[],
 ) {
+  if (options.optionSubAccounts) {
+    applyOptionSubAccountSyncFromSource(target, source, selectedOptionSubAccountIds);
+  }
+
   if (options.incomeEvents) {
-    const selectedIds = new Set(selectedIncomeEventIds ?? source.incomeEvents.map((event) => event.id));
-    const sourceIncomeEvents = source.incomeEvents.filter((event) => selectedIds.has(event.id));
-    const preservedTargetEvents = target.incomeEvents.filter(
-      (targetEvent) => !sourceIncomeEvents.some((sourceEvent) => isSameIncomeSyncSlot(targetEvent, sourceEvent)),
-    );
-    target.incomeEvents = [
-      ...sourceIncomeEvents.map((event) => cloneIncomeEventForTarget(target, event)),
-      ...preservedTargetEvents.map((event) => structuredClone(event)),
-    ];
+    applyIncomeEventsSyncFromSource(target, source, selectedIncomeEventIds);
   }
 
   if (options.pensionPlanner) {
@@ -4391,8 +4493,11 @@ function applyIncomeSyncFromSource(
 }
 
 export const __testHooks = {
+  applyAssetSyncFromSource,
   applyIncomeSyncFromSource,
   countAssetSyncTargets,
+  getLinkedIncomeEventIdsForOptionSubAccounts,
+  getLinkedOptionSubAccountIdsForIncomeEvents,
 };
 
 function applySpecialSyncFromSource(target: ScenarioData, source: ScenarioData, options: SpecialSyncOptions) {
@@ -4495,7 +4600,11 @@ function ScenarioSyncCard<T extends string>({
                   )}
                 </div>
               ) : (
-                <p className="mt-1 text-xs">対象シナリオはありません。</p>
+                <p className="mt-1 text-xs">
+                  {targetMode === "selected"
+                    ? "まだ反映先が選択されていません。下のシナリオカードにチェックを入れてください。"
+                    : "対象シナリオはありません。"}
+                </p>
               )}
               {targetMode === "compare" && (
                 <p className="mt-2 text-xs">
@@ -4511,14 +4620,25 @@ function ScenarioSyncCard<T extends string>({
         {targetMode === "selected" && allScenarios && sourceScenarioId && selectedTargetIds && toggleSelectedTarget && (
           <div className="rounded-md border bg-white px-4 py-3">
             <div className="text-sm font-medium">反映先を個別に選択</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              コピーしたい先のシナリオ名にチェックを入れると、上の「今回の反映先」と実行ボタンに反映されます。
+            </p>
             <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {allScenarios
                 .filter((item) => item.id !== sourceScenarioId && !excludedScenarioIds.has(item.id))
-                .map((item) => (
-                  <label key={item.id} className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                .map((item) => {
+                  const isSelected = selectedTargetIds.has(item.id);
+                  return (
+                  <label
+                    key={item.id}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                      isSelected ? "border-teal-400 bg-teal-50" : "bg-slate-50",
+                    )}
+                  >
                     <input
                       type="checkbox"
-                      checked={selectedTargetIds.has(item.id)}
+                      checked={isSelected}
                       onChange={() => toggleSelectedTarget(item.id)}
                     />
                     <span>
@@ -4526,7 +4646,8 @@ function ScenarioSyncCard<T extends string>({
                       <span className="text-xs text-muted-foreground">{item.compare ? "比較対象" : "比較対象外"}</span>
                     </span>
                   </label>
-                ))}
+                );
+                })}
             </div>
           </div>
         )}
@@ -4754,6 +4875,7 @@ function AssetsSection({
     costBasis: true,
     optionSubAccounts: false,
   });
+  const [includeLinkedIncomeEventsWithAssetSync, setIncludeLinkedIncomeEventsWithAssetSync] = useState(true);
   const [assetSyncMessage, setAssetSyncMessage] = useState<string | null>(null);
   const assetSyncSourceScenario = scenarios.find((item) => item.id === assetSyncSourceScenarioId) ?? scenario;
   const assetSyncSourceIsCurrentScenario = assetSyncSourceScenario.id === scenario.id;
@@ -4782,6 +4904,20 @@ function AssetsSection({
     assetSyncExcludedScenarioIds,
     assetSyncSelectedTargetIdSet,
   ).map((item) => item.name);
+  const assetSyncOptionSubAccountIds = useMemo(
+    () => assetSyncSourceScenario.optionSubAccounts.map((account) => account.id),
+    [assetSyncSourceScenario.optionSubAccounts],
+  );
+  const assetSyncOptionSubAccountIdsKey = assetSyncOptionSubAccountIds.join("|");
+  const linkedIncomeEventIdsForAssetSync = useMemo(
+    () => getLinkedIncomeEventIdsForOptionSubAccounts(assetSyncSourceScenario, assetSyncOptionSubAccountIds),
+    [assetSyncOptionSubAccountIdsKey, assetSyncSourceScenario],
+  );
+  const linkedIncomeEventsForAssetSync = assetSyncSourceScenario.incomeEvents.filter((event) =>
+    linkedIncomeEventIdsForAssetSync.includes(event.id),
+  );
+  const shouldCopyLinkedIncomeEventsWithAssetSync =
+    assetSyncOptions.optionSubAccounts && includeLinkedIncomeEventsWithAssetSync && linkedIncomeEventIdsForAssetSync.length > 0;
   const hasAssetSyncSelection = Object.values(assetSyncOptions).some(Boolean);
   const updateAssetSyncOption = (key: keyof AssetSyncOptions) => {
     setAssetSyncOptions((current) => ({ ...current, [key]: !current[key] }));
@@ -4796,25 +4932,42 @@ function AssetsSection({
     assetSyncOptions.marketAssets ? "NISA・iDeCo等の評価額" : "",
     assetSyncOptions.costBasis ? "取得原価" : "",
     assetSyncOptions.optionSubAccounts ? "一般口座サブ口座" : "",
+    shouldCopyLinkedIncomeEventsWithAssetSync ? `関連収入イベント ${linkedIncomeEventIdsForAssetSync.length}件` : "",
   ].filter(Boolean);
   const applyAssetSync = () => {
     if (assetSyncTargetCount === 0 || !hasAssetSyncSelection) return;
     const source = structuredClone(assetSyncSourceScenario);
+    const linkedNames = linkedIncomeEventsForAssetSync.map((event) => event.name || "名称未設定");
     const confirmed = window.confirm(
       `「${source.name}」の ${selectedAssetSyncLabels.join("、")} を、コピー元自身を除く ${assetSyncTargetCount} 件のシナリオへ反映します。` +
         (!assetSyncSourceIsCurrentScenario && excludeCurrentScenarioFromAssetSync
           ? `現在開いている「${scenario.name}」は反映先から外します。`
           : "") +
+        (assetSyncOptions.optionSubAccounts
+          ? `\n\n主対象:\n・一般口座サブ口座 ${assetSyncOptionSubAccountIds.length}件`
+          : "") +
+        (shouldCopyLinkedIncomeEventsWithAssetSync
+          ? `\n\n関連対象:\n・収入イベント ${linkedIncomeEventIdsForAssetSync.length}件（${linkedNames.join("、")}）`
+          : assetSyncOptions.optionSubAccounts && linkedIncomeEventIdsForAssetSync.length > 0
+            ? "\n\n注意:\n関連する収入イベントは一緒に反映しません。サブ口座だけでは入金力シナリオとして成立しない可能性があります。"
+            : "") +
         `\n\n反映先:\n${formatScenarioNamesForConfirm(assetSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
       if (!isAssetSyncTarget(target, source.id, assetSyncTargetMode, assetSyncExcludedScenarioIds, assetSyncSelectedTargetIdSet)) return target;
-      applyAssetSyncFromSource(target, source, assetSyncOptions);
+      applyAssetSyncFromSource(
+        target,
+        source,
+        assetSyncOptions,
+        shouldCopyLinkedIncomeEventsWithAssetSync ? linkedIncomeEventIdsForAssetSync : undefined,
+      );
       return target;
     });
     setAssetSyncMessage(
-      `${assetSyncTargetCount} 件のシナリオへ反映しました: ${formatScenarioNamesForMessage(assetSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+      `${assetSyncTargetCount} 件のシナリオへ反映しました: ${formatScenarioNamesForMessage(assetSyncTargetNames)}。` +
+        (shouldCopyLinkedIncomeEventsWithAssetSync ? `関連収入イベント ${linkedIncomeEventIdsForAssetSync.length}件も反映しました。` : "") +
+        "実行前の状態は履歴に保存されています。",
     );
   };
   const addOptionSubAccount = () =>
@@ -5694,6 +5847,47 @@ function AssetsSection({
           onApply={applyAssetSync}
           message={assetSyncMessage}
         />
+        {assetSyncOptions.optionSubAccounts && linkedIncomeEventsForAssetSync.length > 0 && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+            <div className="font-medium">関連する収入イベントがあります</div>
+            <p className="mt-1">
+              この一般口座サブ口座を原資にする収入イベントがあります。
+            </p>
+            <label className="mt-3 flex items-start gap-2 rounded-md border bg-white/70 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={includeLinkedIncomeEventsWithAssetSync}
+                onChange={(event) => setIncludeLinkedIncomeEventsWithAssetSync(event.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">関連する収入イベントも一緒に反映する（推奨）</span>
+                <span className="text-xs text-muted-foreground">
+                  サブ口座だけを反映すると、反映先シナリオで収入イベントが作られず、入金力シナリオとしては成立しない可能性があります。
+                </span>
+              </span>
+            </label>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {linkedIncomeEventsForAssetSync.map((event) => {
+                const accountId = resolveIncomeEventOptionSubAccountId(assetSyncSourceScenario, event);
+                const account = assetSyncSourceScenario.optionSubAccounts.find((item) => item.id === accountId);
+                return (
+                  <div key={event.id} className="rounded-md border bg-white px-3 py-2">
+                    <div className="font-medium">{event.name || "名称未設定"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      月額 {compactYen(event.monthlyAmount)} / {account?.name ?? "関連サブ口座未特定"} /{" "}
+                      {event.sourceAssetPayoutMode === "retainInSourceAsset" ? "口座内積上" : "現金収入"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {!includeLinkedIncomeEventsWithAssetSync && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                サブ口座だけを反映すると、反映先シナリオで収入イベントが作られず、入金力シナリオとしては成立しない可能性があります。
+              </div>
+            )}
+          </div>
+        )}
         </ScenarioSyncDetails>
       </CardContent>
     </Card>
@@ -6612,10 +6806,12 @@ function IncomeSection({
   const [excludeCurrentScenarioFromIncomeSync, setExcludeCurrentScenarioFromIncomeSync] = useState(true);
   const [incomeSyncOptions, setIncomeSyncOptions] = useState<IncomeSyncOptions>({
     incomeEvents: true,
+    optionSubAccounts: false,
     pensionPlanner: true,
     retirementIncomeEvents: true,
     pensionAdjustmentRate: true,
   });
+  const [includeLinkedOptionSubAccountsWithIncomeSync, setIncludeLinkedOptionSubAccountsWithIncomeSync] = useState(true);
   const incomeSyncSourceScenario = scenarios.find((item) => item.id === incomeSyncSourceScenarioId) ?? scenario;
   const incomeSyncExcludedScenarioIds = useMemo(() => {
     const excludedIds = new Set<string>();
@@ -6628,6 +6824,12 @@ function IncomeSection({
   );
   const incomeEventIdsKey = incomeEventIds.join("|");
   const [selectedIncomeEventIds, setSelectedIncomeEventIds] = useState<string[]>(() => incomeEventIds);
+  const optionSubAccountIds = useMemo(
+    () => incomeSyncSourceScenario.optionSubAccounts.map((account) => account.id),
+    [incomeSyncSourceScenario.optionSubAccounts],
+  );
+  const optionSubAccountIdsKey = optionSubAccountIds.join("|");
+  const [selectedOptionSubAccountIds, setSelectedOptionSubAccountIds] = useState<string[]>(() => optionSubAccountIds);
   const [incomeSyncMessage, setIncomeSyncMessage] = useState<string | null>(null);
   const [targetedIncomeDetailId, setTargetedIncomeDetailId] = useState<string | null>(null);
   const incomePlannerMembers = getPensionPlannerMembers(scenario);
@@ -6652,6 +6854,14 @@ function IncomeSection({
     });
   }, [incomeEventIdsKey]);
   useEffect(() => {
+    setSelectedOptionSubAccountIds((current) => {
+      const availableIds = new Set(optionSubAccountIds);
+      const retainedIds = current.filter((id) => availableIds.has(id));
+      const addedIds = optionSubAccountIds.filter((id) => !current.includes(id));
+      return [...retainedIds, ...addedIds];
+    });
+  }, [optionSubAccountIdsKey]);
+  useEffect(() => {
     if (!targetedIncomeDetailId) return undefined;
     const timer = window.setTimeout(() => setTargetedIncomeDetailId(null), 4500);
     return () => window.clearTimeout(timer);
@@ -6673,18 +6883,60 @@ function IncomeSection({
   ).map((item) => item.name);
   const selectedIncomeEventIdSet = useMemo(() => new Set(selectedIncomeEventIds), [selectedIncomeEventIds]);
   const selectedIncomeEventCount = incomeSyncSourceScenario.incomeEvents.filter((event) => selectedIncomeEventIdSet.has(event.id)).length;
+  const selectedOptionSubAccountIdSet = useMemo(() => new Set(selectedOptionSubAccountIds), [selectedOptionSubAccountIds]);
+  const selectedOptionSubAccountCount = incomeSyncSourceScenario.optionSubAccounts.filter((account) =>
+    selectedOptionSubAccountIdSet.has(account.id),
+  ).length;
+  const linkedOptionSubAccountIdsForIncomeSync = useMemo(
+    () => getLinkedOptionSubAccountIdsForIncomeEvents(incomeSyncSourceScenario, selectedIncomeEventIds),
+    [incomeSyncSourceScenario, selectedIncomeEventIds],
+  );
+  const unresolvedOptionIncomeEventNames = useMemo(
+    () => getUnresolvedOptionIncomeEventNames(incomeSyncSourceScenario, selectedIncomeEventIds),
+    [incomeSyncSourceScenario, selectedIncomeEventIds],
+  );
+  const linkedOptionSubAccountsForIncomeSync = incomeSyncSourceScenario.optionSubAccounts.filter((account) =>
+    linkedOptionSubAccountIdsForIncomeSync.includes(account.id),
+  );
+  const shouldCopyLinkedOptionSubAccountsWithIncomeSync =
+    incomeSyncOptions.incomeEvents &&
+    includeLinkedOptionSubAccountsWithIncomeSync &&
+    linkedOptionSubAccountIdsForIncomeSync.length > 0;
+  const optionSubAccountIdsForIncomeSync = Array.from(
+    new Set([
+      ...(incomeSyncOptions.optionSubAccounts ? selectedOptionSubAccountIds : []),
+      ...(shouldCopyLinkedOptionSubAccountsWithIncomeSync ? linkedOptionSubAccountIdsForIncomeSync : []),
+    ]),
+  );
   const sourceIsCurrentScenario = incomeSyncSourceScenario.id === scenario.id;
   const hasIncomeSyncSelection =
     (incomeSyncOptions.incomeEvents && selectedIncomeEventCount > 0) ||
+    (incomeSyncOptions.optionSubAccounts && selectedOptionSubAccountCount > 0) ||
     incomeSyncOptions.pensionPlanner ||
     incomeSyncOptions.retirementIncomeEvents ||
     incomeSyncOptions.pensionAdjustmentRate;
   const selectedIncomeSyncLabels = [
     incomeSyncOptions.incomeEvents ? `収入イベント ${selectedIncomeEventCount}件` : "",
+    incomeSyncOptions.optionSubAccounts ? `CFD・米国株オプション設定 ${selectedOptionSubAccountCount}件` : "",
+    shouldCopyLinkedOptionSubAccountsWithIncomeSync ? `関連サブ口座 ${linkedOptionSubAccountIdsForIncomeSync.length}件` : "",
     incomeSyncOptions.pensionPlanner ? "年金プランナー設定" : "",
     incomeSyncOptions.retirementIncomeEvents ? "退職所得イベント" : "",
     incomeSyncOptions.pensionAdjustmentRate ? "年金改定率" : "",
   ].filter(Boolean);
+  const incomeSyncWarningText = [
+    incomeSyncOptions.incomeEvents
+      ? `下のメニューで選んだ収入イベント ${selectedIncomeEventCount} 件だけをコピーします。`
+      : "収入イベントは反映しません。",
+    incomeSyncOptions.optionSubAccounts
+      ? `CFD・米国株オプション設定は選んだ ${selectedOptionSubAccountCount} 件だけをコピーします。`
+      : "CFD・米国株オプション設定は反映しません。",
+    shouldCopyLinkedOptionSubAccountsWithIncomeSync
+      ? `関連する一般口座サブ口座 ${linkedOptionSubAccountIdsForIncomeSync.length} 件も一緒に反映します。`
+      : incomeSyncOptions.incomeEvents && linkedOptionSubAccountIdsForIncomeSync.length > 0
+        ? "関連する一般口座サブ口座は一緒に反映しません。"
+        : "",
+    "未選択または反映先にだけある項目は残します。",
+  ].filter(Boolean).join(" ");
   const incomeSyncTargetSummary =
     `コピー元自身を除く ${incomeSyncTargetCount} 件に反映します。` +
     (!sourceIsCurrentScenario && excludeCurrentScenarioFromIncomeSync
@@ -6699,6 +6951,11 @@ function IncomeSection({
       current.includes(eventId) ? current.filter((id) => id !== eventId) : [...current, eventId],
     );
   };
+  const toggleOptionSubAccountSyncTarget = (accountId: string) => {
+    setSelectedOptionSubAccountIds((current) =>
+      current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId],
+    );
+  };
   const toggleIncomeSyncTarget = (scenarioId: string) => {
     setIncomeSyncSelectedTargetIds((current) =>
       current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
@@ -6710,27 +6967,67 @@ function IncomeSection({
   const clearIncomeEventsForSync = () => {
     setSelectedIncomeEventIds([]);
   };
+  const selectAllOptionSubAccountsForSync = () => {
+    setSelectedOptionSubAccountIds(optionSubAccountIds);
+  };
+  const clearOptionSubAccountsForSync = () => {
+    setSelectedOptionSubAccountIds([]);
+  };
+  const getIncomeSyncEventOptionSubAccountName = (event: IncomeEvent) =>
+    event.sourceAssetKey === "ordinaryAccountForOptions"
+      ? incomeSyncSourceScenario.optionSubAccounts.find((account) => account.id === event.sourceOptionSubAccountId)?.name
+      : undefined;
+  const getIncomeSyncEventTitle = (event: IncomeEvent) => {
+    const optionSubAccountName = getIncomeSyncEventOptionSubAccountName(event);
+    if (optionSubAccountName && (!event.name.trim() || event.name === "新しい収入")) return `${optionSubAccountName}の収入イベント`;
+    return event.name || "名称未設定";
+  };
+  const getIncomeSyncEventSourceLabel = (event: IncomeEvent) => {
+    if (!event.sourceAssetKey) return "外部収入";
+    const baseLabel = `${growthAssetLabels[event.sourceAssetKey]}から受取`;
+    const optionSubAccountName = getIncomeSyncEventOptionSubAccountName(event);
+    return optionSubAccountName ? `${baseLabel}（${optionSubAccountName}）` : baseLabel;
+  };
   const applyIncomeSync = () => {
     if (incomeSyncTargetCount === 0 || !hasIncomeSyncSelection) return;
     const source = structuredClone(incomeSyncSourceScenario);
+    const copiedOptionNames = optionSubAccountIdsForIncomeSync
+      .map((accountId) => incomeSyncSourceScenario.optionSubAccounts.find((account) => account.id === accountId)?.name || "名称未設定")
+      .join("、");
     const confirmed = window.confirm(
       `「${source.name}」の ${selectedIncomeSyncLabels.join("、")} を、コピー元自身を除く ${incomeSyncTargetCount} 件のシナリオへ反映します。` +
         (!sourceIsCurrentScenario && excludeCurrentScenarioFromIncomeSync
           ? `現在開いている「${scenario.name}」は反映先から外します。`
           : "") +
         (incomeSyncOptions.incomeEvents
-          ? "チェックした収入イベントだけをコピーし、未選択または反映先にだけある収入イベントは残します。"
+          ? `\n\n主対象:\n・収入イベント ${selectedIncomeEventCount}件`
+          : "") +
+        (optionSubAccountIdsForIncomeSync.length > 0
+          ? `\n\n関連対象:\n・一般口座サブ口座 ${optionSubAccountIdsForIncomeSync.length}件（${copiedOptionNames}）`
+          : incomeSyncOptions.incomeEvents && linkedOptionSubAccountIdsForIncomeSync.length > 0
+            ? "\n\n注意:\n関連する一般口座サブ口座は一緒に反映しません。収入イベントだけでは原資口座の初期条件が未設定または古いままになる可能性があります。"
+            : "") +
+        (unresolvedOptionIncomeEventNames.length > 0
+          ? `\n\n注意:\n関連サブ口座を特定できない収入イベントがあります（${unresolvedOptionIncomeEventNames.join("、")}）。`
           : "") +
         `\n\n反映先:\n${formatScenarioNamesForConfirm(incomeSyncTargetNames)}\n\n実行しますか？`,
     );
     if (!confirmed) return;
     updateScenarios((target) => {
       if (!isAssetSyncTarget(target, source.id, incomeSyncTargetMode, incomeSyncExcludedScenarioIds, incomeSyncSelectedTargetIdSet)) return target;
-      applyIncomeSyncFromSource(target, source, incomeSyncOptions, selectedIncomeEventIds);
+      applyIncomeSyncFromSource(
+        target,
+        source,
+        { ...incomeSyncOptions, optionSubAccounts: incomeSyncOptions.optionSubAccounts || shouldCopyLinkedOptionSubAccountsWithIncomeSync },
+        selectedIncomeEventIds,
+        optionSubAccountIdsForIncomeSync,
+      );
       return target;
     });
     setIncomeSyncMessage(
-      `${incomeSyncTargetCount} 件のシナリオへ収入前提を反映しました: ${formatScenarioNamesForMessage(incomeSyncTargetNames)}。実行前の状態は履歴に保存されています。`,
+      `${incomeSyncTargetCount} 件のシナリオへ収入前提を反映しました: ${formatScenarioNamesForMessage(incomeSyncTargetNames)}。` +
+        (optionSubAccountIdsForIncomeSync.length > 0 ? `関連する一般口座サブ口座 ${optionSubAccountIdsForIncomeSync.length}件も反映しました。` : "") +
+        "実行前の状態は履歴に保存されています。",
     );
   };
   const livingArrangementEvents = scenario.householdLivingArrangementEvents ?? [];
@@ -7245,21 +7542,64 @@ function IncomeSection({
           targetSummary={incomeSyncTargetSummary}
           options={[
             { key: "incomeEvents", label: "収入イベント", description: "給与、年金、iDeCo受取、単発入金など" },
+            { key: "optionSubAccounts", label: "CFD・米国株オプション設定", description: "サブ口座、評価額、取得原価、保護・スイープ設定" },
             { key: "pensionPlanner", label: "年金プランナー", description: "受給開始年齢、標準年額、加給年金設定" },
             { key: "retirementIncomeEvents", label: "退職所得イベント", description: "退職金、iDeCo一時金など" },
             { key: "pensionAdjustmentRate", label: "年金改定率", description: "収入タブの年金改定率のみ" },
           ]}
           selectedOptions={incomeSyncOptions}
           toggleOption={updateIncomeSyncOption}
-          warningText={
-            incomeSyncOptions.incomeEvents
-              ? `下のメニューで選んだ収入イベント ${selectedIncomeEventCount} 件だけをコピーします。未選択または反映先にだけある収入イベントは残します。`
-              : "収入イベントは反映しません。年金プランナーや退職所得など、チェックした前提だけを反映します。"
-          }
+          warningText={incomeSyncWarningText}
           onApply={applyIncomeSync}
           message={incomeSyncMessage}
           applyDisabled={!hasIncomeSyncSelection}
+          optionGridClassName="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"
         />
+        {incomeSyncOptions.incomeEvents && (linkedOptionSubAccountsForIncomeSync.length > 0 || unresolvedOptionIncomeEventNames.length > 0) && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-950">
+            <div className="font-medium">関連する初期資産があります</div>
+            <p className="mt-1">
+              選択した収入イベントは、一般口座サブ口座を原資にしています。
+            </p>
+            {linkedOptionSubAccountsForIncomeSync.length > 0 && (
+              <label className="mt-3 flex items-start gap-2 rounded-md border bg-white/70 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={includeLinkedOptionSubAccountsWithIncomeSync}
+                  onChange={(event) => setIncludeLinkedOptionSubAccountsWithIncomeSync(event.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium">関連する一般口座サブ口座の初期条件も一緒に反映する（推奨）</span>
+                  <span className="text-xs text-muted-foreground">
+                    収入イベントだけを反映すると、反映先シナリオの一般口座サブ口座が未設定または古いままになる可能性があります。
+                  </span>
+                </span>
+              </label>
+            )}
+            {linkedOptionSubAccountsForIncomeSync.length > 0 && (
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {linkedOptionSubAccountsForIncomeSync.map((account) => (
+                  <div key={account.id} className="rounded-md border bg-white px-3 py-2">
+                    <div className="font-medium">{account.name || "名称未設定"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      評価額 {compactYen(account.initialValue)} / 取得原価 {compactYen(account.initialCostBasis)} / 最低維持証拠金 {compactYen(account.minimumBalance)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {unresolvedOptionIncomeEventNames.length > 0 && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                関連サブ口座未特定: {unresolvedOptionIncomeEventNames.join("、")}。収入イベント名またはサブ口座名を確認してください。
+              </div>
+            )}
+            {linkedOptionSubAccountsForIncomeSync.length > 0 && !includeLinkedOptionSubAccountsWithIncomeSync && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                収入イベントだけを反映すると、反映先シナリオの一般口座サブ口座が未設定または古いままになる可能性があります。
+              </div>
+            )}
+          </div>
+        )}
         {incomeSyncOptions.incomeEvents && (
           <div className="rounded-lg border bg-white px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -7283,15 +7623,66 @@ function IncomeSection({
                     onChange={() => toggleIncomeEventSyncTarget(event.id)}
                   />
                   <span>
-                    <span className="block font-medium">{event.name || "名称未設定"}</span>
+                    <span className="block font-medium">{getIncomeSyncEventTitle(event)}</span>
                     <span className="text-xs text-muted-foreground">
                       {incomeTypeLabels[event.type]} / 月額 {compactYen(event.monthlyAmount)}
-                      {event.sourceAssetKey ? ` / ${growthAssetLabels[event.sourceAssetKey]}から受取` : " / 外部収入"}
+                      {` / ${getIncomeSyncEventSourceLabel(event)}`}
                     </span>
                   </span>
                 </label>
               ))}
             </div>
+            {incomeSyncSourceScenario.optionSubAccounts.length > 0 && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-950">
+                CFDや米国株オプションは収入イベントではなく、一般口座オプションのサブ口座設定です。コピーする場合は上の「CFD・米国株オプション設定」にチェックを入れ、下の専用リストで選びます。
+              </div>
+            )}
+          </div>
+        )}
+        {incomeSyncOptions.optionSubAccounts && (
+          <div className="rounded-lg border bg-white px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">コピーするCFD・米国株オプション設定を選択</div>
+                <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                  チェックしたサブ口座の評価額、取得原価、開始月、保護・スイープ設定を他シナリオへ反映します。収入イベントとは別の設定です。
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={selectAllOptionSubAccountsForSync}>全選択</Button>
+                <Button variant="outline" size="sm" onClick={clearOptionSubAccountsForSync}>全解除</Button>
+              </div>
+            </div>
+            {incomeSyncSourceScenario.optionSubAccounts.length > 0 ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {incomeSyncSourceScenario.optionSubAccounts.map((account) => (
+                  <label
+                    key={account.id}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                      selectedOptionSubAccountIdSet.has(account.id) ? "border-teal-400 bg-teal-50" : "bg-slate-50",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedOptionSubAccountIdSet.has(account.id)}
+                      onChange={() => toggleOptionSubAccountSyncTarget(account.id)}
+                    />
+                    <span>
+                      <span className="block font-medium">{account.name || "名称未設定"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        評価額 {compactYen(account.initialValue)} / 取得原価 {compactYen(account.initialCostBasis)}
+                        {account.startYearMonth ? ` / 開始 ${account.startYearMonth}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-md border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
+                コピー元シナリオにCFD・米国株オプション設定がありません。
+              </div>
+            )}
           </div>
         )}
         </ScenarioSyncDetails>
@@ -8429,6 +8820,9 @@ function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
 
   const visibleAdvice = advice.filter((item) => item.status !== "notRequiredLikely" || item.pensionGrossAnnual > 0);
   if (visibleAdvice.length === 0) return null;
+  const priorityAdvice = visibleAdvice.filter((item) => item.status === "attention" || item.status === "review");
+  const routineAdvice = visibleAdvice.filter((item) => item.status === "notRequiredLikely");
+  const routineGroups = groupRoutineTaxFilingAdvice(routineAdvice);
 
   const styleByStatus: Record<TaxFilingAdvice["status"], string> = {
     attention: "border-amber-300 bg-amber-50 text-amber-950",
@@ -8450,40 +8844,101 @@ function TaxFilingAdviceSummary({ advice }: { advice: TaxFilingAdvice[] }) {
           本人・配偶者などメンバー別に判定します。
         </p>
       </div>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <thead>
-            <Tr>
-              <Th>年度</Th>
-              <Th>メンバー</Th>
-              <Th>判定</Th>
-              <Th>理由</Th>
-              <Th>年金収入</Th>
-              <Th>年金以外</Th>
-              <Th>所得税</Th>
-              <Th>住民税</Th>
-            </Tr>
-          </thead>
-          <tbody>
-        {visibleAdvice.map((item) => (
-          <Tr key={item.id} className={styleByStatus[item.status]}>
-            <Td>{item.fiscalYear}</Td>
-            <Td>{item.memberName}</Td>
-            <Td>
-              <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
-            </Td>
-            <Td className="min-w-[28rem] text-sm">{item.message}</Td>
-            <Td>{yen(item.pensionGrossAnnual)}</Td>
-            <Td>{yen(item.nonPensionIncomeAnnual)}</Td>
-            <Td>{yen(item.incomeTaxAnnual)}</Td>
-            <Td>{yen(item.residentTaxAnnual)}</Td>
-          </Tr>
-        ))}
-          </tbody>
-        </Table>
+      <div className="space-y-2">
+        {priorityAdvice.length === 0 ? (
+          <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            目立つ確認年はありません。申告不要制度の可能性がある年度は下の折りたたみで確認できます。
+          </div>
+        ) : (
+          priorityAdvice.map((item) => (
+            <div key={item.id} className={cn("rounded-md border px-4 py-3 text-sm leading-6", styleByStatus[item.status])}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{item.fiscalYear}年 {item.memberName}</span>
+                <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
+              </div>
+              <p className="mt-1">{item.message}</p>
+              <p className="mt-1 text-xs">
+                年金収入 {yen(item.pensionGrossAnnual)} / 年金以外 {yen(item.nonPensionIncomeAnnual)} / 所得税 {yen(item.incomeTaxAnnual)} / 住民税 {yen(item.residentTaxAnnual)}
+              </p>
+            </div>
+          ))
+        )}
       </div>
+      {routineGroups.length > 0 && (
+        <details className="rounded-lg border bg-slate-50 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">申告不要制度の可能性が続く年度を開く</summary>
+          <div className="mt-3 space-y-2">
+            {routineGroups.map((group) => (
+              <div key={group.id} className="rounded-md border bg-white px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium">{group.label}</span>
+                <span className="ml-2 text-muted-foreground">{group.memberName}: {group.message}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <details className="rounded-lg border bg-white px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium">全年度の判定表を開く</summary>
+        <div className="mt-3 overflow-x-auto rounded-lg border">
+          <Table>
+            <thead>
+              <Tr>
+                <Th>年度</Th>
+                <Th>メンバー</Th>
+                <Th>判定</Th>
+                <Th>理由</Th>
+                <Th>年金収入</Th>
+                <Th>年金以外</Th>
+                <Th>所得税</Th>
+                <Th>住民税</Th>
+              </Tr>
+            </thead>
+            <tbody>
+              {visibleAdvice.map((item) => (
+                <Tr key={item.id} className={styleByStatus[item.status]}>
+                  <Td>{item.fiscalYear}</Td>
+                  <Td>{item.memberName}</Td>
+                  <Td>
+                    <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs">{labelByStatus[item.status]}</span>
+                  </Td>
+                  <Td className="min-w-[28rem] text-sm">{item.message}</Td>
+                  <Td>{yen(item.pensionGrossAnnual)}</Td>
+                  <Td>{yen(item.nonPensionIncomeAnnual)}</Td>
+                  <Td>{yen(item.incomeTaxAnnual)}</Td>
+                  <Td>{yen(item.residentTaxAnnual)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      </details>
     </div>
   );
+}
+
+function groupRoutineTaxFilingAdvice(items: TaxFilingAdvice[]) {
+  const sorted = [...items].sort((a, b) => {
+    if (a.memberName !== b.memberName) return a.memberName.localeCompare(b.memberName);
+    return a.fiscalYear - b.fiscalYear;
+  });
+  const groups: Array<{ id: string; memberName: string; startYear: number; endYear: number; message: string; label: string }> = [];
+  for (const item of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && last.memberName === item.memberName && last.message === item.message && last.endYear + 1 === item.fiscalYear) {
+      last.endYear = item.fiscalYear;
+      last.label = `${last.startYear}〜${last.endYear}年`;
+    } else {
+      groups.push({
+        id: item.id,
+        memberName: item.memberName,
+        startYear: item.fiscalYear,
+        endYear: item.fiscalYear,
+        message: item.message,
+        label: `${item.fiscalYear}年`,
+      });
+    }
+  }
+  return groups;
 }
 
 function TaxCashTimingSummary({
