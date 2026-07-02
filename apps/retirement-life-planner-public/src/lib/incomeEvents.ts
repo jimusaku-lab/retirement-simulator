@@ -23,7 +23,7 @@ export function isIdecoMonexPensionEvent(event: IncomeEvent) {
 }
 
 export function isIdecoLumpSumCurrentBalanceMode(event: IncomeEvent) {
-  return event.type === "oneTime" && event.sourceAssetKey === "ideco" && event.idecoLumpSumAmountMode === "currentBalance";
+  return event.type === "oneTime" && event.sourceAssetKey === "ideco" && event.idecoLumpSumAmountMode !== "manual";
 }
 
 export function getIdecoLumpSumEstimatedGrossAmount(scenario: ScenarioData, event: IncomeEvent) {

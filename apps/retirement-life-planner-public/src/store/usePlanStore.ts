@@ -589,6 +589,10 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
       taxTreatment:
         event.taxTreatment ??
         (event.type === "unemployment" ? "nonTaxable" : event.taxable === false ? "nonTaxable" : event.taxable === true ? "taxable" : "taxable"),
+      idecoLumpSumAmountMode:
+        event.type === "oneTime" && event.sourceAssetKey === "ideco"
+          ? event.idecoLumpSumAmountMode ?? "currentBalance"
+          : event.idecoLumpSumAmountMode,
       idecoLumpSumContributionMonths: Number.isFinite(event.idecoLumpSumContributionMonths)
         ? Number(event.idecoLumpSumContributionMonths)
         : event.idecoLumpSumContributionMonths,

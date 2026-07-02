@@ -7747,7 +7747,7 @@ function IncomeSection({
           const eventMember = scenario.householdMembers.find((member) => member.id === event.memberId);
           const incomeTypeOptions = getIncomeTypeSelectOptions(event.sourceAssetKey, event.type);
           const isIdecoLumpSumEvent = event.type === "oneTime" && event.sourceAssetKey === "ideco";
-          const idecoLumpSumAmountMode = event.idecoLumpSumAmountMode ?? "manual";
+          const idecoLumpSumAmountMode = event.idecoLumpSumAmountMode ?? "currentBalance";
           const isIdecoLumpSumFullWithdrawal = isIdecoLumpSumCurrentBalanceMode({
             ...event,
             idecoLumpSumAmountMode,

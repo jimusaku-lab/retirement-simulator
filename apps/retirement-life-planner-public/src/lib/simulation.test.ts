@@ -2268,6 +2268,7 @@ describe("simulation", () => {
           monthlyAmount: 12_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 25,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2319,6 +2320,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 15,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2403,6 +2405,84 @@ describe("simulation", () => {
     expect(taxDetail?.memberDetails[0].retirementGrossAnnual).toBe(8_000_000);
     expect(taxDetail?.memberDetails[0].retirementIncomeTaxAnnual).toBe(51_050);
     expect(taxDetail?.memberDetails[0].retirementResidentTaxAnnual).toBe(100_000);
+  });
+
+  it("iDeCo一時金のモード未設定データは全額受取扱いになり、年末評価額と取得原価が0になる", () => {
+    for (const receiptMonth of ["2026-11", "2027-01"] as const) {
+      const scenario = simpleScenario({
+        userProfile: {
+          birthDate: "1966-01-01",
+          simulationStartYearMonth: "2026-07",
+          simulationEndMode: "yearMonth",
+          simulationEndYearMonth: "2027-12",
+          targetBalanceAge: 61,
+          cashReserve: 0,
+        },
+        initialAssets: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 21_975_264,
+          excludedAssets: 0,
+          debt: 0,
+        },
+        initialAssetCostBasis: {
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 21_975_264,
+        },
+        assetGrowthSettings: {
+          enabled: true,
+          rates: {
+            cash: 0,
+            timeDeposit: 0,
+            nisa: 0,
+            specificAccount: 0,
+            ordinaryAccountForOptions: 0,
+            ideco: 0.07,
+            bankDeposit: 0,
+          },
+        },
+        monthlyExpenses: { ...simpleScenario().monthlyExpenses, housing: 0 },
+        incomeEvents: [
+          {
+            id: "ideco-lump-sum",
+            memberId: "member-self",
+            name: "iDeCo一時金",
+            type: "oneTime",
+            startYearMonth: receiptMonth,
+            endYearMonth: receiptMonth,
+            monthlyAmount: 21_974_959,
+            taxTreatment: "taxable",
+            sourceAssetKey: "ideco",
+            idecoLumpSumContributionYears: 20,
+            idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+          },
+        ],
+      });
+
+      const result = simulateScenario(scenario);
+      const receiptRow = result.monthly.find((row) => row.yearMonth === receiptMonth);
+      const year2026 = result.annual.find((row) => row.year === 2026);
+      const year2027 = result.annual.find((row) => row.year === 2027);
+
+      expect(receiptRow?.sourceAssetIncomeBreakdown.ideco).toBeGreaterThan(21_974_959);
+      expect(receiptRow?.endingTrackedAssetBalances.ideco).toBe(0);
+      expect(receiptRow?.endingTrackedAssetCostBasis.ideco).toBe(0);
+      if (receiptMonth === "2026-11") {
+        expect(year2026?.endingTrackedAssetBalances.ideco).toBe(0);
+        expect(year2026?.endingTrackedAssetCostBasis.ideco).toBe(0);
+      } else {
+        expect(year2026?.endingTrackedAssetBalances.ideco).toBeGreaterThan(0);
+        expect(year2026?.endingTrackedAssetCostBasis.ideco).toBeGreaterThan(0);
+      }
+      expect(year2027?.endingTrackedAssetBalances.ideco).toBe(0);
+      expect(year2027?.endingTrackedAssetCostBasis.ideco).toBe(0);
+    }
   });
 
   it("iDeCo一時金の手入力モードは入力見込額だけを引き出し、残高があれば残す", () => {
@@ -2528,6 +2608,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 15,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2619,6 +2700,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 10,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2710,6 +2792,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 20,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2771,6 +2854,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 20,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
@@ -2843,6 +2927,7 @@ describe("simulation", () => {
           monthlyAmount: 8_000_000,
           taxTreatment: "taxable",
           sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
           idecoLumpSumContributionYears: 20,
           idecoLumpSumTaxMode: "retirementIncomeDeclaration",
         },
