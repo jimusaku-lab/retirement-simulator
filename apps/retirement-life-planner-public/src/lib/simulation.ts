@@ -43,11 +43,14 @@ import type {
   OptionSubAccount,
   RealizedGainDetail,
   RealizedGainReason,
+  RecurringTaxSocialPaymentTemplate,
   ScenarioData,
   SimulationResult,
   SpecialExpenseEvent,
   TaxCashBreakdown,
   TaxInsuranceByFiscalYear,
+  TaxSocialPaymentCategory,
+  TaxSocialPaymentScheduleItem,
   YearMonth,
 } from "@/types";
 
@@ -479,6 +482,7 @@ function createTaxCashBreakdown(overrides: Partial<TaxCashBreakdown> = {}): TaxC
     lateElderlyMedical: 0,
     nationalPension: 0,
     nursingCare: 0,
+    propertyTax: 0,
     otherPublicCost: 0,
     deferredCapitalGainsTax: 0,
     ...overrides,
@@ -493,6 +497,7 @@ function sumTaxCashBreakdown(breakdown: TaxCashBreakdown) {
     breakdown.lateElderlyMedical +
     breakdown.nationalPension +
     breakdown.nursingCare +
+    breakdown.propertyTax +
     breakdown.otherPublicCost +
     breakdown.deferredCapitalGainsTax
   );
@@ -505,6 +510,7 @@ function addTaxCashBreakdown(target: TaxCashBreakdown, source: TaxCashBreakdown)
   target.lateElderlyMedical += source.lateElderlyMedical;
   target.nationalPension += source.nationalPension;
   target.nursingCare += source.nursingCare;
+  target.propertyTax += source.propertyTax;
   target.otherPublicCost += source.otherPublicCost;
   target.deferredCapitalGainsTax += source.deferredCapitalGainsTax;
 }
@@ -517,6 +523,7 @@ function roundTaxCashBreakdown(breakdown: TaxCashBreakdown): TaxCashBreakdown {
     lateElderlyMedical: Math.round(breakdown.lateElderlyMedical),
     nationalPension: Math.round(breakdown.nationalPension),
     nursingCare: Math.round(breakdown.nursingCare),
+    propertyTax: Math.round(breakdown.propertyTax),
     otherPublicCost: Math.round(breakdown.otherPublicCost),
     deferredCapitalGainsTax: Math.round(breakdown.deferredCapitalGainsTax),
   };
@@ -556,6 +563,115 @@ function getAutoTaxCashPaymentBreakdownForMonth(
   });
 }
 
+const taxSocialCategoryBreakdownKey: Record<TaxSocialPaymentCategory, keyof TaxCashBreakdown> = {
+  residentTax: "residentTax",
+  nationalHealthInsurance: "nationalHealthInsurance",
+  nationalPension: "nationalPension",
+  lateElderlyMedical: "lateElderlyMedical",
+  nursingCare: "nursingCare",
+  propertyTax: "propertyTax",
+  otherPublicCost: "otherPublicCost",
+};
+
+function isValidTaxSocialPaymentItem(item: TaxSocialPaymentScheduleItem | undefined): item is TaxSocialPaymentScheduleItem {
+  return Boolean(item?.dueYearMonth && item?.category && Number.isFinite(item?.amount));
+}
+
+function getActualPaymentScheduleGroups(schedule: TaxSocialPaymentScheduleItem[]) {
+  const groups = new Map<string, { category: TaxSocialPaymentCategory; fiscalYear?: number; minMonth: YearMonth; maxMonth: YearMonth }>();
+  for (const item of schedule.filter(isValidTaxSocialPaymentItem)) {
+    const key = `${item.category}:${item.fiscalYear ?? "no-fiscal-year"}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        category: item.category,
+        fiscalYear: item.fiscalYear,
+        minMonth: item.dueYearMonth,
+        maxMonth: item.dueYearMonth,
+      });
+      continue;
+    }
+    if (item.dueYearMonth < existing.minMonth) existing.minMonth = item.dueYearMonth;
+    if (item.dueYearMonth > existing.maxMonth) existing.maxMonth = item.dueYearMonth;
+  }
+  return [...groups.values()];
+}
+
+function applyActualTaxSocialPayments(
+  breakdown: TaxCashBreakdown,
+  schedule: TaxSocialPaymentScheduleItem[] | undefined,
+  yearMonth: YearMonth,
+) {
+  const items = (schedule ?? []).filter(isValidTaxSocialPaymentItem);
+  if (items.length === 0) return breakdown;
+
+  for (const group of getActualPaymentScheduleGroups(items)) {
+    if (yearMonth < group.minMonth || yearMonth > group.maxMonth) continue;
+    const key = taxSocialCategoryBreakdownKey[group.category];
+    breakdown[key] = 0;
+  }
+
+  for (const item of items) {
+    if (item.dueYearMonth !== yearMonth) continue;
+    const key = taxSocialCategoryBreakdownKey[item.category];
+    breakdown[key] += item.amount;
+  }
+  return breakdown;
+}
+
+function getActualPaymentCategoriesForMonth(
+  schedule: TaxSocialPaymentScheduleItem[] | undefined,
+  yearMonth: YearMonth,
+) {
+  return new Set(
+    (schedule ?? [])
+      .filter((item) => isValidTaxSocialPaymentItem(item) && item.dueYearMonth === yearMonth)
+      .map((item) => item.category),
+  );
+}
+
+function getRecurringTemplatePaymentYearMonth(template: RecurringTaxSocialPaymentTemplate, fiscalYear: number, dueMonth: number, offset = 0) {
+  return `${fiscalYear + offset}-${String(dueMonth).padStart(2, "0")}`;
+}
+
+function getRecurringTemplateAmount(template: RecurringTaxSocialPaymentTemplate, fiscalYear: number, amount: number) {
+  const annualIncreaseRate = template.annualIncreaseRate ?? 0;
+  const yearsFromStart = Math.max(0, fiscalYear - template.startFiscalYear);
+  return Math.round(amount * Math.pow(1 + annualIncreaseRate, yearsFromStart));
+}
+
+function getRecurringTaxSocialPaymentBreakdownForMonth(
+  templates: RecurringTaxSocialPaymentTemplate[] | undefined,
+  actualSchedule: TaxSocialPaymentScheduleItem[] | undefined,
+  yearMonth: YearMonth,
+): TaxCashBreakdown {
+  const breakdown = createTaxCashBreakdown();
+  const actualCategories = getActualPaymentCategoriesForMonth(actualSchedule, yearMonth);
+  const paymentDate = ym(yearMonth);
+  const paymentYear = paymentDate.year();
+
+  for (const template of templates ?? []) {
+    if (!template.category || !template.startYearMonth || yearMonth < template.startYearMonth) continue;
+    if (template.endYearMonth && yearMonth > template.endYearMonth) continue;
+    if (actualCategories.has(template.category)) continue;
+    const key = taxSocialCategoryBreakdownKey[template.category];
+    const candidateFiscalYears = [paymentYear - 1, paymentYear, paymentYear + 1].filter(
+      (fiscalYear) => fiscalYear >= template.startFiscalYear,
+    );
+
+    for (const fiscalYear of candidateFiscalYears) {
+      for (const item of template.items ?? []) {
+        if (!Number.isFinite(item.dueMonth) || !Number.isFinite(item.amount)) continue;
+        const dueYearMonth = getRecurringTemplatePaymentYearMonth(template, fiscalYear, item.dueMonth, item.fiscalYearOffset ?? 0);
+        if (dueYearMonth !== yearMonth) continue;
+        breakdown[key] += getRecurringTemplateAmount(template, fiscalYear, item.amount);
+      }
+    }
+  }
+
+  return breakdown;
+}
+
 function getTaxInsuranceCashPaymentBreakdownForMonth(
   scenario: ScenarioData,
   taxRows: TaxInsuranceByFiscalYear[],
@@ -563,15 +679,30 @@ function getTaxInsuranceCashPaymentBreakdownForMonth(
   idecoWithholdingByIncomeYear: Map<number, number>,
   deferredCapitalGainsTaxByIncomeYear: Map<number, number>,
 ): TaxCashBreakdown {
+  const addRecurringPayments = (breakdown: TaxCashBreakdown) => {
+    addTaxCashBreakdown(
+      breakdown,
+      getRecurringTaxSocialPaymentBreakdownForMonth(
+        scenario.recurringTaxSocialPaymentTemplates,
+        scenario.taxSocialPaymentSchedule,
+        yearMonth,
+      ),
+    );
+    return breakdown;
+  };
   if (scenario.householdProfile.taxCalculationMode === "manual") {
-    return createTaxCashBreakdown({ otherPublicCost: getTaxInsuranceForMonth(taxRows, yearMonth, "fiscal") });
+    return addRecurringPayments(applyActualTaxSocialPayments(
+      createTaxCashBreakdown({ otherPublicCost: getTaxInsuranceForMonth(taxRows, yearMonth, "fiscal") }),
+      scenario.taxSocialPaymentSchedule,
+      yearMonth,
+    ));
   }
   const breakdown = getAutoTaxCashPaymentBreakdownForMonth(taxRows, yearMonth, idecoWithholdingByIncomeYear);
   breakdown.deferredCapitalGainsTax = allocateAnnualCashAmountToMonth(
     deferredCapitalGainsTaxByIncomeYear.get(ym(yearMonth).year() - 1) ?? 0,
     ym(yearMonth).month() + 1,
   );
-  return breakdown;
+  return addRecurringPayments(applyActualTaxSocialPayments(breakdown, scenario.taxSocialPaymentSchedule, yearMonth));
 }
 
 function getEffectiveOptionSubAccounts(scenario: ScenarioData): OptionSubAccount[] {

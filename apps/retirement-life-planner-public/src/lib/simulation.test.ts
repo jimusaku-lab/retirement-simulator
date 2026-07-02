@@ -390,7 +390,7 @@ describe("simulation", () => {
       householdProfile: {
         municipality: "東京都大田区",
         headMemberId: "member-self",
-        taxCalculationMode: "auto",
+        taxCalculationMode: "autoWithAdjustment",
       },
       householdMembers: [
         {
@@ -635,7 +635,7 @@ describe("simulation", () => {
             type: "salary",
             startYearMonth: "2026-01",
             endYearMonth: "2026-12",
-            monthlyAmount: 110_000,
+            monthlyAmount: 115_000,
             taxTreatment: "taxable",
           },
         ],
@@ -5151,6 +5151,130 @@ describe("simulation", () => {
     expect(expectedPriorYearCosts).toBeGreaterThan(0);
     expect(taxMonth2027).toBe(Math.round(expectedPriorYearCosts / 12));
     expect(tax2027).toBe(Math.round(expectedPriorYearCosts));
+  });
+
+  it("通知書実額支払スケジュールは月次キャッシュフローで自動概算より優先し、未登録月は自動概算へ戻る", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-01",
+        simulationEndYearMonth: "2027-07",
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      incomeEvents: [
+        {
+          id: "salary-2026",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2026-01",
+          endYearMonth: "2026-12",
+          monthlyAmount: 800_000,
+          taxTreatment: "taxable",
+        },
+      ],
+      taxSocialPaymentSchedule: [
+        { id: "notice-resident", name: "住民税 任意入力", category: "residentTax", dueYearMonth: "2027-06", amount: 13_000, fiscalYear: 2026, source: "notice" },
+        { id: "notice-nhi", name: "国保 任意入力", category: "nationalHealthInsurance", dueYearMonth: "2027-06", amount: 9_000, fiscalYear: 2026, source: "notice" },
+        { id: "notice-property", name: "固定資産税 任意入力", category: "propertyTax", dueYearMonth: "2027-06", amount: 6_000, fiscalYear: 2027, source: "notice" },
+      ],
+    });
+
+    const result = simulateScenario(scenario);
+    const monthly = new Map(result.monthly.map((row) => [row.yearMonth, row]));
+
+    expect(monthly.get("2027-06")?.taxCashBreakdown.residentTax).toBe(13_000);
+    expect(monthly.get("2027-06")?.taxCashBreakdown.nationalHealthInsurance).toBe(9_000);
+    expect(monthly.get("2027-06")?.taxCashBreakdown.propertyTax).toBe(6_000);
+    expect(monthly.get("2027-07")?.taxCashBreakdown.residentTax).toBeGreaterThan(0);
+    expect(monthly.get("2027-07")?.taxCashBreakdown.residentTax).not.toBe(13_000);
+    expect(monthly.get("2027-07")?.taxCashBreakdown.nationalHealthInsurance).toBeGreaterThan(0);
+    expect(monthly.get("2027-07")?.taxCashBreakdown.nationalHealthInsurance).not.toBe(9_000);
+    expect(monthly.get("2027-06")?.taxCashBreakdown.otherPublicCost).toBe(0);
+  });
+
+  it("固定資産税の継続テンプレートは翌年度以降も反映し、同月同カテゴリでは通知書実額を優先する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2029-12",
+      },
+      householdProfile: {
+        municipality: "東京都大田区",
+        headMemberId: "member-self",
+        taxCalculationMode: "auto",
+      },
+      incomeEvents: [
+        {
+          id: "salary-2027",
+          memberId: "member-self",
+          name: "給与",
+          type: "salary",
+          startYearMonth: "2027-01",
+          endYearMonth: "2027-12",
+          monthlyAmount: 300_000,
+          taxTreatment: "taxable",
+        },
+      ],
+      taxInsurance: [
+        {
+          id: "tax-2026",
+          fiscalYear: 2026,
+          residentTaxAnnual: 120_000,
+          incomeTaxAnnual: 0,
+          nationalHealthInsuranceAnnual: 96_000,
+          nationalPensionMonthly: 0,
+          nursingCareAnnual: 24_000,
+          otherPublicCostAnnual: 0,
+        },
+      ],
+      taxSocialPaymentSchedule: [
+        { id: "property-2026-1", name: "固定資産税 任意入力", category: "propertyTax", dueYearMonth: "2026-06", amount: 6_000, fiscalYear: 2026, source: "notice" },
+        { id: "property-2026-2", name: "固定資産税 任意入力", category: "propertyTax", dueYearMonth: "2026-09", amount: 3_000, fiscalYear: 2026, source: "notice" },
+        { id: "property-2026-3", name: "固定資産税 任意入力", category: "propertyTax", dueYearMonth: "2026-12", amount: 3_000, fiscalYear: 2026, source: "notice" },
+        { id: "property-2026-4", name: "固定資産税 任意入力", category: "propertyTax", dueYearMonth: "2027-03", amount: 3_000, fiscalYear: 2026, source: "notice" },
+        { id: "property-priority", name: "固定資産税 通知書優先確認", category: "propertyTax", dueYearMonth: "2028-06", amount: 7_000, fiscalYear: 2028, source: "notice" },
+      ],
+      recurringTaxSocialPaymentTemplates: [
+        {
+          id: "property-recurring-anonymous",
+          name: "固定資産税・都市計画税（任意入力ベース）",
+          category: "propertyTax",
+          startFiscalYear: 2027,
+          startYearMonth: "2027-06",
+          annualIncreaseRate: 0,
+          source: "noticeBasedEstimate",
+          items: [
+            { dueMonth: 6, amount: 6_000, fiscalYearOffset: 0, label: "第1期" },
+            { dueMonth: 9, amount: 4_000, fiscalYearOffset: 0, label: "第2期" },
+            { dueMonth: 12, amount: 4_000, fiscalYearOffset: 0, label: "第3期" },
+            { dueMonth: 3, amount: 4_000, fiscalYearOffset: 1, label: "第4期" },
+          ],
+        },
+      ],
+    });
+
+    const result = simulateScenario(scenario);
+    const monthly = new Map(result.monthly.map((row) => [row.yearMonth, row]));
+    const annual = new Map(result.annual.map((row) => [row.year, row]));
+
+    expect(monthly.get("2027-06")?.taxCashBreakdown.propertyTax).toBe(6_000);
+    expect(monthly.get("2027-09")?.taxCashBreakdown.propertyTax).toBe(4_000);
+    expect(monthly.get("2027-12")?.taxCashBreakdown.propertyTax).toBe(4_000);
+    expect(monthly.get("2028-03")?.taxCashBreakdown.propertyTax).toBe(4_000);
+    expect(monthly.get("2028-06")?.taxCashBreakdown.propertyTax).toBe(7_000);
+    expect(annual.get(2027)?.taxCashBreakdown.propertyTax).toBe(17_000);
+    expect(annual.get(2028)?.taxCashBreakdown.propertyTax).toBe(19_000);
+    expect(annual.get(2029)?.taxCashBreakdown.propertyTax).toBe(18_000);
+    expect(annual.get(2028)?.taxCashBreakdown.residentTax).toBeGreaterThan(0);
+    expect(annual.get(2028)?.taxCashBreakdown.nationalHealthInsurance).toBeGreaterThan(0);
+    expect(annual.get(2028)?.taxCashBreakdown.nursingCare).toBeGreaterThan(0);
+    expect(calculateAutoTaxRows(scenario).some((row) => row.otherPublicCostAnnual > 0)).toBe(false);
   });
 
   it("iDeCo年金と公的年金の合算所得は翌年の税社保支払いに反映する", () => {

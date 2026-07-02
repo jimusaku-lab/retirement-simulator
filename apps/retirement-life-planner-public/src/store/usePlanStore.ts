@@ -26,6 +26,7 @@ import type {
   AssetContributionEvent,
   RetirementIncomeEvent,
   TaxDeductionByFiscalYear,
+  RecurringTaxSocialPaymentTemplate,
   SpecialExpenseEvent,
   TimeBucketItem,
 } from "@/types";
@@ -34,7 +35,7 @@ type PlanStore = RetirementPlanState & {
   setActiveScenario: (id: string) => void;
   setBaselineScenario: (id: string) => void;
   updateActiveScenario: (updater: (scenario: ScenarioData) => ScenarioData) => void;
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
   duplicateScenario: (id: string) => void;
   deleteScenario: (id: string) => void;
   moveScenario: (id: string, direction: "up" | "down") => void;
@@ -60,6 +61,7 @@ type LegacyMonthlyExpenses = Partial<ScenarioData["monthlyExpenses"]> & {
 type LegacyIncomeEvent = Partial<ScenarioData["incomeEvents"][number]> & { taxable?: boolean };
 type LegacyRetirementIncomeEvent = Partial<RetirementIncomeEvent> & { alreadyReceived?: boolean };
 type LegacyTaxDeductionEvent = Partial<TaxDeductionByFiscalYear>;
+type LegacyRecurringTaxSocialPaymentTemplate = Partial<RecurringTaxSocialPaymentTemplate>;
 type LegacySpecialExpenseEvent = Partial<SpecialExpenseEvent> & { category?: unknown };
 type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpenses" | "incomeEvents" | "retirementIncomeEvents" | "growthSettings"> & {
   initialAssets?: LegacyInitialAssets;
@@ -67,6 +69,7 @@ type LegacyScenario = Omit<Partial<ScenarioData>, "initialAssets" | "monthlyExpe
   incomeEvents?: LegacyIncomeEvent[];
   retirementIncomeEvents?: LegacyRetirementIncomeEvent[];
   taxDeductionEvents?: LegacyTaxDeductionEvent[];
+  recurringTaxSocialPaymentTemplates?: LegacyRecurringTaxSocialPaymentTemplate[];
   growthSettings?: {
     enabled?: boolean;
     annualGrowthRate?: number;
@@ -156,6 +159,36 @@ function normalizeTimeBucketItems(source: TimeBucketItem[] | undefined): TimeBuc
       typeof item.convertedSpecialExpenseId === "string" && item.convertedSpecialExpenseId ? item.convertedSpecialExpenseId : undefined,
     note: item.note,
   }));
+}
+
+function normalizeRecurringTaxSocialPaymentTemplates(
+  source: LegacyRecurringTaxSocialPaymentTemplate[] | undefined,
+): RecurringTaxSocialPaymentTemplate[] {
+  return (source ?? []).flatMap((template, index) => {
+    if (!template.category || !Number.isFinite(template.startFiscalYear) || !template.startYearMonth) return [];
+    const items = (template.items ?? []).flatMap((item, itemIndex) => {
+      if (!Number.isFinite(item?.dueMonth) || !Number.isFinite(item?.amount)) return [];
+      return [{
+        dueMonth: Number(item.dueMonth),
+        amount: Number(item.amount),
+        fiscalYearOffset: item.fiscalYearOffset === 1 ? 1 as const : 0 as const,
+        label: item.label ?? `第${itemIndex + 1}期`,
+      }];
+    });
+    if (items.length === 0) return [];
+    return [{
+      id: template.id ?? `recurring-tax-social-payment-${index}`,
+      name: template.name ?? "継続支払予定",
+      category: template.category,
+      startFiscalYear: Number(template.startFiscalYear),
+      startYearMonth: template.startYearMonth,
+      endYearMonth: template.endYearMonth,
+      annualIncreaseRate: Number.isFinite(template.annualIncreaseRate) ? Number(template.annualIncreaseRate) : 0,
+      items,
+      source: template.source === "manual" ? "manual" : "noticeBasedEstimate",
+      note: template.note,
+    }];
+  });
 }
 
 function nowIso() {
@@ -387,6 +420,7 @@ function normalizeHouseholdMembers(source: LegacyScenario): HouseholdMember[] {
     isLongTermCareInsured: member.isLongTermCareInsured ?? false,
     isDependent: (member.relationship ?? (index === 0 ? "self" : "other")) === "self" ? false : (member.isDependent ?? false),
     dependsOnMemberId: (member.relationship ?? (index === 0 ? "self" : "other")) === "self" ? undefined : member.dependsOnMemberId,
+    workplaceSocialInsurance: member.workplaceSocialInsurance,
     notes: member.notes,
   }));
 
@@ -402,6 +436,7 @@ function normalizeHouseholdMembers(source: LegacyScenario): HouseholdMember[] {
       isLongTermCareInsured: false,
       isDependent: false,
       dependsOnMemberId: undefined,
+      workplaceSocialInsurance: undefined,
       notes: undefined,
     });
   }
@@ -545,6 +580,11 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
       ...event,
       id: event.id ?? `income-${index}-${eventIndex}`,
       memberId: memberIds.has(event.memberId ?? "") ? event.memberId! : defaultMemberId,
+      amountInputMode:
+        event.amountInputMode === "annual" || event.amountInputMode === "periodTotal" || event.amountInputMode === "monthly"
+          ? event.amountInputMode
+          : "monthly",
+      inputAmount: Number.isFinite(event.inputAmount) ? Number(event.inputAmount) : event.inputAmount,
       sourceAssetPayoutMode: event.sourceAssetPayoutMode ?? "cash",
       taxTreatment:
         event.taxTreatment ??
@@ -567,6 +607,14 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
     specialExpenses: normalizeSpecialExpenses(source.specialExpenses),
     timeBucketItems: normalizeTimeBucketItems(source.timeBucketItems),
     taxInsurance: source.taxInsurance ?? [],
+    taxSocialPaymentSchedule: Array.isArray(source.taxSocialPaymentSchedule)
+      ? source.taxSocialPaymentSchedule.map((item, itemIndex) => ({
+          ...item,
+          id: item.id ?? `tax-social-payment-${index}-${itemIndex}`,
+          amount: Number.isFinite(item.amount) ? Number(item.amount) : 0,
+        }))
+      : [],
+    recurringTaxSocialPaymentTemplates: normalizeRecurringTaxSocialPaymentTemplates(source.recurringTaxSocialPaymentTemplates),
     taxDeductionEvents: normalizeTaxDeductionEvents(source),
     assetGrowthSettings: {
       enabled: source.assetGrowthSettings?.enabled ?? source.growthSettings?.enabled ?? true,
@@ -716,7 +764,7 @@ export const usePlanStore = create<PlanStore>()(
           ),
           lastSavedAt: nowIso(),
         })),
-      updateScenarios: (updater) =>
+      updateScenarios: (updater, backupLabel) =>
         set((state) => ({
           scenarios: state.scenarios.map((scenario) => {
             const nextScenario = updater(structuredClone(scenario));
@@ -724,7 +772,7 @@ export const usePlanStore = create<PlanStore>()(
             return nextScenario;
           }),
           lastSavedAt: nowIso(),
-          backups: rotateBackups(state.backups, createBackupEntry(state, "シナリオ一括反映前")),
+          backups: rotateBackups(state.backups, createBackupEntry(state, backupLabel ?? "シナリオ一括反映前")),
         })),
       duplicateScenario: (id) =>
         set((state) => {

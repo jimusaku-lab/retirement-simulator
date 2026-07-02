@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   CheckCircle2,
   Copy,
@@ -38,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field, FormGrid } from "@/components/Field";
 import { OnboardingWizard, applyOnboardingDraftToScenario, type OnboardingDraft } from "@/components/OnboardingWizard";
 import { TimeBucketPlanner } from "@/components/TimeBucketPlanner";
+import { NoticePaymentScheduleEditor } from "@/components/NoticePaymentScheduleEditor";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows, type AutoTaxYearDetail } from "@/lib/taxEngine";
 import {
   buildRetirementIncomeRecords,
@@ -73,10 +75,33 @@ import {
   getIdecoMonexEstimatedPerPayment,
   getIdecoMonexFirstPayoutYearMonth,
 } from "@/lib/incomeEvents";
+import {
+  applyIncomeEventAmountInput,
+  describeIncomeEventAmountConversion,
+  getIncomeEventInputAmount,
+  type IncomeEventAmountInputMode,
+} from "@/lib/incomeEventAmountInput";
 import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
 import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
+import {
+  getNextNoticePaymentMonthSummary,
+  summarizeNoticePaymentsByPaymentYear,
+  type NoticePaymentYearSummary,
+} from "@/lib/taxSocialPaymentDisplay";
+import {
+  judgeWorkplaceSocialInsurance,
+  type WorkplaceSocialInsuranceSettings,
+  type WorkplaceSocialInsuranceJudgment,
+} from "@/lib/spouseWorkstyleTaxSocial";
+import {
+  buildSpousePartIncomeEfficiencyRows,
+  getDefaultSpousePartIncomeCompareYear,
+  getSpousePartIncomeCompareYears,
+  type SpousePartIncomeAggregationMode,
+  type SpousePartIncomeEfficiencyRow,
+} from "@/lib/spousePartIncomeEfficiency";
 import {
   KAKYU_PENSION_STANDARD_AMOUNT,
   PENSION_STANDARD_CLAIM_AGE,
@@ -122,6 +147,9 @@ import type {
   ScenarioData,
   SpecialExpenseEvent,
   TaxInsuranceByFiscalYear,
+  TaxSocialPaymentCategory,
+  TaxSocialPaymentScheduleItem,
+  RecurringTaxSocialPaymentTemplate,
   YearMonth,
   GrowthAssetKey,
   PlanBackup,
@@ -542,6 +570,27 @@ function getIncomeTypeSelectLabel(type: IncomeEventType, sourceAssetKey: GrowthA
   return incomeTypeLabels[type];
 }
 
+function incomeAmountInputLabel(mode: IncomeEventAmountInputMode) {
+  if (mode === "annual") return "金額（年額）";
+  if (mode === "periodTotal") return "金額（期間合計）";
+  return "金額（月額）";
+}
+
+function incomeAmountConversionText(event: IncomeEvent) {
+  const conversion = describeIncomeEventAmountConversion(event);
+  if (conversion.warning) return conversion.warning;
+  if (conversion.mode === "annual") return `月額換算 ${yen(conversion.monthlyEquivalent)}`;
+  if (conversion.mode === "periodTotal") {
+    return `対象期間 ${event.startYearMonth}〜${event.endYearMonth} / ${conversion.periodMonths}か月、月額換算 約${yen(conversion.monthlyEquivalent)}`;
+  }
+  return `年換算 ${yen(conversion.annualEquivalent)}`;
+}
+
+function applyIncomeEventCurrentAmountInput(event: IncomeEvent) {
+  const mode = event.amountInputMode ?? "monthly";
+  applyIncomeEventAmountInput(event, mode, getIncomeEventInputAmount(event));
+}
+
 const editableGrowthAssetKeys: GrowthAssetKey[] = [
   "timeDeposit",
   "nisa",
@@ -611,6 +660,7 @@ function App() {
   const [trustNoticeCollapsed, setTrustNoticeCollapsed] = useState(false);
   const [trustNoticeExpandCount, setTrustNoticeExpandCount] = useState(0);
   const [targetedInputCardId, setTargetedInputCardId] = useState<InputCardId | null>(null);
+  const [spouseWorkstyleHighlightKey, setSpouseWorkstyleHighlightKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     scenarios,
@@ -880,6 +930,44 @@ function App() {
     window.setTimeout(() => {
       document.getElementById("input-guidance-summary")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 120);
+  };
+  const openTaxCashPaymentTiming = () => {
+    setAppModeHash("safety");
+    setActiveTab("results");
+    window.setTimeout(() => {
+      const detail = document.getElementById("results-diagnostics-details") as HTMLDetailsElement | null;
+      if (detail && !detail.open) {
+        detail.open = true;
+        detail.dispatchEvent(new Event("toggle"));
+      }
+      window.setTimeout(() => {
+        document.getElementById("tax-cash-payment-timing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }, 120);
+  };
+  const openSpouseIncomeEvents = () => {
+    openInputCard("income-pension");
+  };
+  const openSpousePartIncomeCompare = () => {
+    setAppModeHash("safety");
+    setActiveTab("compare");
+    window.setTimeout(() => {
+      const detail = document.getElementById("spouse-part-income-efficiency-compare") as HTMLDetailsElement | null;
+      if (detail && !detail.open) {
+        detail.open = true;
+        detail.dispatchEvent(new Event("toggle", { bubbles: true }));
+      }
+      document.getElementById("spouse-part-income-efficiency-compare")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  };
+  const openSpouseWorkstyleSettings = (scenarioId: string) => {
+    if (scenarioId && scenarioId !== activeScenarioId) setActiveScenario(scenarioId);
+    setAppModeHash("safety");
+    setActiveTab("tax");
+    setSpouseWorkstyleHighlightKey((current) => current + 1);
+    window.setTimeout(() => {
+      document.getElementById("spouse-workstyle-tax-social-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 160);
   };
   const nextInputCard = getNextInputCard(inputCards);
   const requiredInputComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
@@ -1154,7 +1242,19 @@ function App() {
                 targetCardId={targetedInputCardId}
               />
             )}
-            {activeTab === "tax" && <TaxSection scenario={activeScenario} updateScenario={updateScenario} targetCardId={targetedInputCardId} />}
+            {activeTab === "tax" && (
+              <TaxSection
+                scenario={activeScenario}
+                scenarios={scenarios}
+                updateScenario={updateScenario}
+                updateScenarios={updateScenarios}
+                targetCardId={targetedInputCardId}
+                onOpenTaxCashPaymentTiming={openTaxCashPaymentTiming}
+                onOpenSpouseIncomeEvents={openSpouseIncomeEvents}
+                onOpenSpousePartIncomeCompare={openSpousePartIncomeCompare}
+                spouseWorkstyleHighlightKey={spouseWorkstyleHighlightKey}
+              />
+            )}
             {activeTab === "special" && (
               <SpecialSection
                 scenario={activeScenario}
@@ -1197,6 +1297,7 @@ function App() {
                 setBaselineScenarioId={setBaselineScenario}
                 periodSourceScenario={activeScenario}
                 updateScenario={updateScenario}
+                onOpenSpouseWorkstyleSettings={openSpouseWorkstyleSettings}
               />
             )}
             {activeTab === "manual" && <ManualSection />}
@@ -1336,7 +1437,7 @@ function AssetUseWorkspace({
   activeScenarioId: string;
   setActiveScenario: (id: string) => void;
   updateScenario: (updater: (scenario: ScenarioData) => void) => void;
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
   onOpenSpecialExpenses: () => void;
   onOpenFlexibleFreeCashSettings: () => void;
   activeAssetUseTab: AssetUseTab;
@@ -2492,6 +2593,11 @@ function Dashboard({
     (flexibleFreeCashSummary.cashLikeIncomeTotal - flexibleFreeCashSummary.livingExpenseTotal - flexibleFreeCashSummary.taxAndSocialTotal) /
     periodMonthCount;
   const monthlyAfterAllSpending = flexibleFreeCashSummary.averageAnnualFreeCash / 12;
+  const monthlyIncomeOnlyCashflowDescription =
+    monthlyAfterLivingAndTax < 0
+      ? `${flexibleFreeCashLabel}の通常収入だけでは、生活費と税社保に月平均${compactYen(Math.abs(monthlyAfterLivingAndTax))}不足します。不足分は下の資産活用額で補う計画です。楽しみ支出や追加投資は別に見ます。`
+      : `${flexibleFreeCashLabel}の通常収入だけで、生活費と税社保を払った後に月平均${compactYen(monthlyAfterLivingAndTax)}の余力があります。楽しみ支出や追加投資は別に見ます。`;
+  const showMonthlyCashflowAssetUseNote = monthlyAfterLivingAndTax < 0 && assetLifeValue === "期間内維持";
   const balanceAt60 = getAnnualBalanceAtAge(result, 60);
   const balanceAt65 = getAnnualBalanceAtAge(result, 65);
   const salaryEndAge = getSalaryEndAge(scenario, result);
@@ -2614,12 +2720,12 @@ function Dashboard({
               </p>
             </div>
             <div className="rounded-md border bg-blue-50 px-4 py-4">
-              <div className="text-sm font-medium text-blue-900">生活費・税社保後の月次余力</div>
+              <div className="text-sm font-medium text-blue-900">通常収入だけで見た月平均収支</div>
               <div className={`mt-2 text-3xl font-semibold ${monthlyAfterLivingAndTax >= 0 ? "text-blue-950" : "text-red-700"}`}>
                 {compactYen(monthlyAfterLivingAndTax)}
               </div>
               <p className="mt-2 text-sm leading-6 text-blue-900">
-                {flexibleFreeCashLabel} の現金収入等から生活費と税社保を引いた目安です。楽しみ支出や追加投資は別に見ます。
+                {monthlyIncomeOnlyCashflowDescription}
               </p>
             </div>
             <div className="rounded-md border bg-amber-50 px-4 py-4">
@@ -2655,6 +2761,11 @@ function Dashboard({
               </Button>
             </div>
           </div>
+          {showMonthlyCashflowAssetUseNote && (
+            <p className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+              退職後は月次収支がマイナスでも、資産活用額と将来残高が十分なら計画上は維持できます。
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -2664,7 +2775,11 @@ function Dashboard({
         <Metric
           title={`${flexibleFreeCashLabel} 資産活用額`}
           value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)}
-          sub={flexibleFreeCashSummary.totalFreeCash < 0 ? "現金収入等で足りず資産で補った額" : `現金収支余力 ${compactYen(flexibleFreeCashSummary.totalFreeCash)}`}
+          sub={
+            flexibleFreeCashSummary.totalFreeCash < 0
+              ? "通常収入だけでは足りない生活費・税社保・特別支出などを資産で補う総額"
+              : `通常収入ベースの現金収支余力 ${compactYen(flexibleFreeCashSummary.totalFreeCash)}`
+          }
         />
         <Metric title={`${flexibleFreeCashSummary.period.endAge}歳時点残高`} value={compactYen(flexibleFreeCashSummary.periodEndBalance)} sub="指定期間末の年末資産" />
         <Metric title={`${flexibleFreeCashLabel} 楽しみ支出`} value={compactYen(specialExpenseCategoryTotals.enjoyment)} sub="特別支出カテゴリが楽しみの合計" />
@@ -3002,7 +3117,7 @@ function ProfileSection({
   updateScenarios,
 }: SectionProps & {
   scenarios: ScenarioData[];
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
 }) {
   const [profileSyncTargetMode, setProfileSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [profileSyncSelectedTargetIds, setProfileSyncSelectedTargetIds] = useState<string[]>([]);
@@ -4387,6 +4502,11 @@ type SpecialSyncOptions = {
   specialExpenses: boolean;
 };
 
+type TaxSocialPaymentSyncOptions = {
+  taxSocialPaymentSchedule: boolean;
+  recurringTaxSocialPaymentTemplates: boolean;
+};
+
 function countAssetSyncTargets(
   scenarios: ScenarioData[],
   sourceScenarioId: string,
@@ -4725,9 +4845,24 @@ function applyIncomeSyncFromSource(
   }
 }
 
+function applyTaxSocialPaymentSyncFromSource(
+  target: ScenarioData,
+  source: ScenarioData,
+  options: TaxSocialPaymentSyncOptions,
+) {
+  if (options.taxSocialPaymentSchedule) {
+    target.taxSocialPaymentSchedule = structuredClone(source.taxSocialPaymentSchedule ?? []);
+  }
+
+  if (options.recurringTaxSocialPaymentTemplates) {
+    target.recurringTaxSocialPaymentTemplates = structuredClone(source.recurringTaxSocialPaymentTemplates ?? []);
+  }
+}
+
 export const __testHooks = {
   applyAssetSyncFromSource,
   applyIncomeSyncFromSource,
+  applyTaxSocialPaymentSyncFromSource,
   countAssetSyncTargets,
   getLinkedIncomeEventIdsForOptionSubAccounts,
   getLinkedOptionSubAccountIdsForIncomeEvents,
@@ -5007,18 +5142,22 @@ function DataTrustModal({ onClose }: { onClose: () => void }) {
 }
 
 function ScenarioSyncDetails({
+  id,
   title,
   description,
+  defaultOpen = false,
   children,
 }: {
+  id?: string;
   title: string;
   description: string;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <details className="rounded-lg border bg-white px-4 py-3" onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+    <details id={id} className="rounded-lg border bg-white px-4 py-3" open={isOpen} onToggle={(event) => setIsOpen(event.currentTarget.open)}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
         <span>
           <span className="block font-medium">{title}</span>
@@ -5281,7 +5420,7 @@ function AssetsSection({
   targetCardId,
 }: SectionProps & {
   scenarios: ScenarioData[];
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
 }) {
   const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [assetSyncSelectedTargetIds, setAssetSyncSelectedTargetIds] = useState<string[]>([]);
@@ -6324,7 +6463,7 @@ function ExpensesSection({
   updateScenarios,
 }: SectionProps & {
   scenarios: ScenarioData[];
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
 }) {
   const [expenseSyncTargetMode, setExpenseSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [expenseSyncSelectedTargetIds, setExpenseSyncSelectedTargetIds] = useState<string[]>([]);
@@ -7257,7 +7396,7 @@ function IncomeSection({
   targetCardId,
 }: SectionProps & {
   scenarios: ScenarioData[];
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
 }) {
   const [incomeSyncTargetMode, setIncomeSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [incomeSyncSelectedTargetIds, setIncomeSyncSelectedTargetIds] = useState<string[]>([]);
@@ -7673,7 +7812,16 @@ function IncomeSection({
                 </Select>
               </Field>
               <Field label="開始年月">
-                <Input type="month" value={event.startYearMonth} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].startYearMonth = e.target.value))} />
+                <Input
+                  type="month"
+                  value={event.startYearMonth}
+                  onChange={(e) =>
+                    updateScenario((s) => {
+                      s.incomeEvents[index].startYearMonth = e.target.value;
+                      applyIncomeEventCurrentAmountInput(s.incomeEvents[index]);
+                    })
+                  }
+                />
               </Field>
               <Field label="原資資産">
                 <Select
@@ -7950,11 +8098,47 @@ function IncomeSection({
                       type="month"
                       value={event.endYearMonth ?? ""}
                       readOnly={Boolean(event.linkedHouseholdLivingArrangementEventId)}
-                      onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].endYearMonth = e.target.value || undefined))}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          s.incomeEvents[index].endYearMonth = e.target.value || undefined;
+                          applyIncomeEventCurrentAmountInput(s.incomeEvents[index]);
+                        })
+                      }
                     />
                   </Field>
-                  <Field label="月額">
-                    <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
+                  <Field label="入力単位">
+                    <Select
+                      value={event.amountInputMode ?? "monthly"}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          const nextMode = e.target.value as IncomeEventAmountInputMode;
+                          applyIncomeEventAmountInput(s.incomeEvents[index], nextMode, getIncomeEventInputAmount(s.incomeEvents[index]));
+                        })
+                      }
+                    >
+                      <option value="monthly">月額</option>
+                      <option value="annual">年額</option>
+                      <option value="periodTotal">期間合計</option>
+                    </Select>
+                  </Field>
+                  <Field label={incomeAmountInputLabel(event.amountInputMode ?? "monthly")}>
+                    <Input
+                      type="number"
+                      value={getIncomeEventInputAmount(event)}
+                      onChange={(e) =>
+                        updateScenario((s) =>
+                          applyIncomeEventAmountInput(s.incomeEvents[index], s.incomeEvents[index].amountInputMode ?? "monthly", numberOrZero(e.target.value)),
+                        )
+                      }
+                    />
+                    <p
+                      className={cn(
+                        "mt-1 text-xs",
+                        describeIncomeEventAmountConversion(event).warning ? "text-amber-700" : "text-muted-foreground",
+                      )}
+                    >
+                      {incomeAmountConversionText(event)}
+                    </p>
                   </Field>
                 </>
               )}
@@ -8596,7 +8780,298 @@ function TaxPublicSummary({
   );
 }
 
-function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
+const spouseWorkstyleBoundaries = [
+  { amount: 1_170_000, label: "117万円", note: "給与所得43万円。国保の所得割基礎が0円に収まる目安。" },
+  { amount: 1_190_000, label: "119万円", note: "給与所得45万円。大田区/23区の単身住民税非課税の目安。" },
+  { amount: 1_300_000, label: "130万円", note: "勤務先社保に入らない場合の扶養・国保判定で確認されやすい収入帯。" },
+  { amount: 1_360_000, label: "136万円", note: "所得税・住民税の配偶者控除から配偶者特別控除へ名称が変わる境界。" },
+  { amount: 1_690_000, label: "169万円", note: "所得税の配偶者特別控除が最大額から下がり始める境界。" },
+  { amount: 1_740_000, label: "174万円", note: "住民税の配偶者特別控除が最大額から下がり始める境界。" },
+  { amount: 1_780_000, label: "178万円", note: "2026/2027年分の所得税で、給与所得と基礎控除が並ぶ目安。" },
+  { amount: 2_070_000, label: "207万円", note: "配偶者特別控除が0円になる目安。" },
+] as const;
+
+type WorkplaceApplicabilityValue = "unknown" | "notApplicable" | "applicable";
+
+function workplaceApplicabilityValue(settings: WorkplaceSocialInsuranceSettings): WorkplaceApplicabilityValue {
+  if (settings.isApplicableWorkplace === undefined) return "unknown";
+  return settings.isApplicableWorkplace ? "applicable" : "notApplicable";
+}
+
+function workplaceSocialInsuranceReasonLabel(judgment: WorkplaceSocialInsuranceJudgment) {
+  if (judgment.reason === "threeQuarter") return "通常労働者の4分の3以上のため加入対象";
+  if (judgment.reason === "shortTimeWorker") return "短時間労働者の拡大要件で加入対象";
+  if (judgment.reason === "notApplicableWorkplace") return "適用事業所ではない";
+  return "勤務先社保の加入要件未満";
+}
+
+function workplaceSocialInsuranceStatusLabel(
+  spouse: HouseholdMember | undefined,
+  settings: WorkplaceSocialInsuranceSettings,
+  judgment: WorkplaceSocialInsuranceJudgment,
+) {
+  if (!spouse) return "配偶者が未登録です";
+  if (settings.isApplicableWorkplace === undefined) return "要確認: 適用事業所未確認";
+  if (settings.isApplicableWorkplace === false) return "適用事業所ではない";
+  return workplaceSocialInsuranceReasonLabel(judgment);
+}
+
+function updateWorkplaceSocialInsuranceSetting(
+  updateScenario: SectionProps["updateScenario"],
+  memberId: string,
+  updater: (current: WorkplaceSocialInsuranceSettings) => WorkplaceSocialInsuranceSettings,
+) {
+  updateScenario((s) => {
+    const member = s.householdMembers.find((item) => item.id === memberId);
+    if (!member) return;
+    member.workplaceSocialInsurance = updater(member.workplaceSocialInsurance ?? {});
+  });
+}
+
+function SpouseWorkstyleTaxSocialCard({
+  scenario,
+  scenarios,
+  updateScenario,
+  updateScenarios,
+  highlightKey,
+  onOpenSpouseIncomeEvents,
+  onOpenSpousePartIncomeCompare,
+}: {
+  scenario: ScenarioData;
+  scenarios: ScenarioData[];
+  updateScenario: SectionProps["updateScenario"];
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
+  highlightKey: number;
+  onOpenSpouseIncomeEvents: () => void;
+  onOpenSpousePartIncomeCompare: () => void;
+}) {
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const spouse = scenario.householdMembers.find((member) => member.relationship === "spouse");
+  const settings = spouse?.workplaceSocialInsurance ?? {};
+  const judgmentYearMonth = settings.joinStartYearMonth || scenario.userProfile.simulationStartYearMonth;
+  const judgment = judgeWorkplaceSocialInsurance(settings, judgmentYearMonth);
+  const applicabilityValue = workplaceApplicabilityValue(settings);
+  const statusLabel = workplaceSocialInsuranceStatusLabel(spouse, settings, judgment);
+  const compareTargetScenarios = scenarios.filter((item) => item.compare && item.id !== scenario.id);
+  useEffect(() => {
+    if (highlightKey <= 0) return undefined;
+    setIsHighlighted(true);
+    const timer = window.setTimeout(() => setIsHighlighted(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [highlightKey]);
+  const setSetting = (updater: (current: WorkplaceSocialInsuranceSettings) => WorkplaceSocialInsuranceSettings) => {
+    if (!spouse) return;
+    updateWorkplaceSocialInsuranceSetting(updateScenario, spouse.id, updater);
+  };
+  const updateNumber = (key: keyof WorkplaceSocialInsuranceSettings, value: string) => {
+    setSetting((current) => ({ ...current, [key]: value === "" ? undefined : numberOrZero(value) }));
+  };
+  const updateBoolean = (key: keyof WorkplaceSocialInsuranceSettings, value: boolean) => {
+    setSetting((current) => ({ ...current, [key]: value }));
+  };
+  const updateApplicability = (value: WorkplaceApplicabilityValue) => {
+    setSetting((current) => {
+      const next = { ...current };
+      if (value === "unknown") {
+        delete next.isApplicableWorkplace;
+      } else {
+        next.isApplicableWorkplace = value === "applicable";
+      }
+      return next;
+    });
+  };
+  const applySpouseWorkstyleToCompareTargets = () => {
+    if (!spouse || compareTargetScenarios.length === 0) return;
+    const targetIds = new Set(compareTargetScenarios.map((item) => item.id));
+    const targetNames = compareTargetScenarios.map((item) => item.name);
+    const sourceSettings = spouse.workplaceSocialInsurance ? structuredClone(spouse.workplaceSocialInsurance) : undefined;
+    updateScenarios((target) => {
+      if (!targetIds.has(target.id)) return target;
+      const targetSpouse = target.householdMembers.find((member) => member.relationship === "spouse");
+      if (!targetSpouse) return target;
+      targetSpouse.workplaceSocialInsurance = sourceSettings ? structuredClone(sourceSettings) : undefined;
+      return target;
+    }, "配偶者社保設定反映前");
+    setSyncMessage(`${targetNames.length}件の比較対象へ配偶者社保設定を反映しました: ${formatScenarioNamesForMessage(targetNames)}。`);
+  };
+
+  return (
+    <div
+      id="spouse-workstyle-tax-social-card"
+      className={cn(
+        "rounded-lg border bg-white px-4 py-4 space-y-4 transition-shadow",
+        isHighlighted ? "border-sky-300 ring-2 ring-sky-200 ring-offset-2" : "",
+      )}
+    >
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="font-medium">配偶者の働き方・社保判定</h3>
+          <p className="text-sm text-muted-foreground">
+            年収130万円だけでは判定しません。国保世帯か、勤務先社保の加入要件を満たすかで変わります。
+          </p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            妻のパート収入そのものは収入タブで入力します。このカードは、勤務先社保に入るか、配偶者控除・国保・国民年金の判定がどう変わるかを確認するための条件入力です。
+            年収別の損得は、比較タブの「配偶者パート収入の実質手残り比較」で確認します。
+          </p>
+        </div>
+        <div className="space-y-2">
+          <div
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm",
+              settings.isApplicableWorkplace === undefined
+                ? "bg-amber-50 text-amber-900"
+                : judgment.covered
+                  ? "bg-sky-50 text-sky-900"
+                  : "bg-slate-50 text-slate-700",
+            )}
+          >
+            {statusLabel}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onOpenSpouseIncomeEvents}>
+              妻の収入イベントを開く
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={onOpenSpousePartIncomeCompare}>
+              比較で手残りを見る
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" disabled={!spouse || compareTargetScenarios.length === 0} onClick={applySpouseWorkstyleToCompareTargets}>
+              この配偶者社保設定を比較対象へ反映
+            </Button>
+          </div>
+          {syncMessage && <p className="text-xs leading-5 text-teal-700">{syncMessage}</p>}
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-4">
+        {spouseWorkstyleBoundaries.map((item) => (
+          <div key={item.amount} className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
+            <div className="font-semibold text-slate-900">{item.label}</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.note}</p>
+          </div>
+        ))}
+      </div>
+
+      {spouse ? (
+        <FormGrid>
+          <Field label="勤務先社保 加入開始年月">
+            <Input
+              type="month"
+              value={settings.joinStartYearMonth ?? ""}
+              onChange={(event) => setSetting((current) => ({ ...current, joinStartYearMonth: event.target.value || undefined }))}
+            />
+          </Field>
+          <Field label="週所定労働時間">
+            <Input type="number" value={settings.weeklyScheduledHours ?? ""} onChange={(event) => updateNumber("weeklyScheduledHours", event.target.value)} />
+          </Field>
+          <Field label="月所定労働日数">
+            <Input type="number" value={settings.monthlyScheduledDays ?? ""} onChange={(event) => updateNumber("monthlyScheduledDays", event.target.value)} />
+          </Field>
+          <Field label="通常労働者 週時間">
+            <Input
+              type="number"
+              value={settings.regularWorkerWeeklyHours ?? 40}
+              onChange={(event) => updateNumber("regularWorkerWeeklyHours", event.target.value)}
+            />
+          </Field>
+          <Field label="通常労働者 月日数">
+            <Input
+              type="number"
+              value={settings.regularWorkerMonthlyDays ?? 20}
+              onChange={(event) => updateNumber("regularWorkerMonthlyDays", event.target.value)}
+            />
+          </Field>
+          <Field label="所定内賃金 月額">
+            <Input type="number" value={settings.monthlyStandardWage ?? ""} onChange={(event) => updateNumber("monthlyStandardWage", event.target.value)} />
+          </Field>
+          <Field label="厚生年金被保険者数">
+            <Input type="number" value={settings.workplaceEmployeeCount ?? ""} onChange={(event) => updateNumber("workplaceEmployeeCount", event.target.value)} />
+          </Field>
+          <Field label="勤務先保険料 月額（手入力時）">
+            <Input type="number" value={settings.manualPremiumMonthly ?? ""} onChange={(event) => updateNumber("manualPremiumMonthly", event.target.value)} />
+          </Field>
+          <Field label="勤務先は社会保険の適用事業所ですか">
+            <Select value={applicabilityValue} onChange={(event) => updateApplicability(event.target.value as WorkplaceApplicabilityValue)}>
+              <option value="unknown">未確認</option>
+              <option value="notApplicable">適用事業所ではない</option>
+              <option value="applicable">適用事業所である</option>
+            </Select>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              勤務先が社会保険の適用事業所ではない場合は「適用事業所ではない」を選びます。未確認のままだと、比較表では要確認として表示します。
+            </p>
+          </Field>
+          <Field label="任意特定適用事業所">
+            <label className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.isVoluntarySpecifiedWorkplace ?? false}
+                onChange={(event) => updateBoolean("isVoluntarySpecifiedWorkplace", event.target.checked)}
+              />
+              <span>短時間労働者の企業規模要件を満たす</span>
+            </label>
+          </Field>
+          <Field label="学生">
+            <label className="flex items-center gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+              <input type="checkbox" checked={settings.isStudent ?? false} onChange={(event) => updateBoolean("isStudent", event.target.checked)} />
+              <span>学生として扱う</span>
+            </label>
+          </Field>
+          <Field label="保険料方式">
+            <Select
+              value={settings.premiumMode ?? "estimate"}
+              onChange={(event) =>
+                setSetting((current) => ({
+                  ...current,
+                  premiumMode: event.target.value as WorkplaceSocialInsuranceSettings["premiumMode"],
+                }))
+              }
+            >
+              <option value="estimate">概算</option>
+              <option value="manual">手入力</option>
+              <option value="detail">詳細</option>
+            </Select>
+          </Field>
+        </FormGrid>
+      ) : (
+        <p className="text-sm text-muted-foreground">配偶者を基本情報に追加すると、勤務先社保の加入判定を入力できます。</p>
+      )}
+      <p className="text-xs leading-5 text-muted-foreground">
+        4分の3基準は週時間と月日数の両方で判定します。短時間労働者は、2026年は厚生年金被保険者51人以上または任意特定適用事業所、週20時間以上、学生でないこと、
+        2026年9月までは月額賃金8.8万円以上を確認します。
+      </p>
+    </div>
+  );
+}
+
+function TaxSection({
+  scenario,
+  scenarios,
+  updateScenario,
+  updateScenarios,
+  targetCardId,
+  onOpenTaxCashPaymentTiming,
+  onOpenSpouseIncomeEvents,
+  onOpenSpousePartIncomeCompare,
+  spouseWorkstyleHighlightKey,
+}: SectionProps & {
+  scenarios: ScenarioData[];
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
+  onOpenTaxCashPaymentTiming: () => void;
+  onOpenSpouseIncomeEvents: () => void;
+  onOpenSpousePartIncomeCompare: () => void;
+  spouseWorkstyleHighlightKey: number;
+}) {
+  const [taxSocialPaymentSyncTargetMode, setTaxSocialPaymentSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
+  const [taxSocialPaymentSyncSelectedTargetIds, setTaxSocialPaymentSyncSelectedTargetIds] = useState<string[]>([]);
+  const [taxSocialPaymentSyncSourceScenarioId, setTaxSocialPaymentSyncSourceScenarioId] = useState(scenario.id);
+  const [excludeCurrentScenarioFromTaxSocialPaymentSync, setExcludeCurrentScenarioFromTaxSocialPaymentSync] = useState(true);
+  const [taxSocialPaymentSyncOptions, setTaxSocialPaymentSyncOptions] = useState<TaxSocialPaymentSyncOptions>({
+    taxSocialPaymentSchedule: true,
+    recurringTaxSocialPaymentTemplates: true,
+  });
+  const [taxSocialPaymentSyncMessage, setTaxSocialPaymentSyncMessage] = useState<string | null>(null);
   const mode = scenario.householdProfile.taxCalculationMode;
   const simulationResult = useMemo(() => simulateScenario(scenario), [scenario]);
   const autoDetails = useMemo(() => calculateAutoTaxDetails(scenario), [scenario]);
@@ -8678,6 +9153,87 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
       (event.type === "investmentIncome" || event.type === "dividend" || event.type === "other") &&
       event.sourceAssetPayoutMode === "retainInSourceAsset",
   ).length;
+  const taxSocialPaymentSyncSourceScenario = scenarios.find((item) => item.id === taxSocialPaymentSyncSourceScenarioId) ?? scenario;
+  const taxSocialPaymentSyncSourceIsCurrentScenario = taxSocialPaymentSyncSourceScenario.id === scenario.id;
+  const taxSocialPaymentSyncExcludedScenarioIds = useMemo(() => {
+    const excludedIds = new Set<string>();
+    if (excludeCurrentScenarioFromTaxSocialPaymentSync && !taxSocialPaymentSyncSourceIsCurrentScenario) excludedIds.add(scenario.id);
+    return excludedIds;
+  }, [excludeCurrentScenarioFromTaxSocialPaymentSync, scenario.id, taxSocialPaymentSyncSourceIsCurrentScenario]);
+  useEffect(() => {
+    if (!scenarios.some((item) => item.id === taxSocialPaymentSyncSourceScenarioId)) {
+      setTaxSocialPaymentSyncSourceScenarioId(scenario.id);
+    }
+  }, [scenario.id, scenarios, taxSocialPaymentSyncSourceScenarioId]);
+  const taxSocialPaymentSyncSelectedTargetIdSet = useMemo(
+    () => new Set(taxSocialPaymentSyncSelectedTargetIds),
+    [taxSocialPaymentSyncSelectedTargetIds],
+  );
+  const taxSocialPaymentSyncTargetCount = countAssetSyncTargets(
+    scenarios,
+    taxSocialPaymentSyncSourceScenario.id,
+    taxSocialPaymentSyncTargetMode,
+    taxSocialPaymentSyncExcludedScenarioIds,
+    taxSocialPaymentSyncSelectedTargetIdSet,
+  );
+  const taxSocialPaymentSyncTargetNames = getAssetSyncTargets(
+    scenarios,
+    taxSocialPaymentSyncSourceScenario.id,
+    taxSocialPaymentSyncTargetMode,
+    taxSocialPaymentSyncExcludedScenarioIds,
+    taxSocialPaymentSyncSelectedTargetIdSet,
+  ).map((item) => item.name);
+  const hasTaxSocialPaymentSyncSelection = Object.values(taxSocialPaymentSyncOptions).some(Boolean);
+  const taxSocialPaymentScheduleCount = taxSocialPaymentSyncSourceScenario.taxSocialPaymentSchedule?.length ?? 0;
+  const recurringTaxSocialPaymentTemplateCount = taxSocialPaymentSyncSourceScenario.recurringTaxSocialPaymentTemplates?.length ?? 0;
+  const updateTaxSocialPaymentSyncOption = (key: keyof TaxSocialPaymentSyncOptions) => {
+    setTaxSocialPaymentSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleTaxSocialPaymentSyncTarget = (scenarioId: string) => {
+    setTaxSocialPaymentSyncSelectedTargetIds((current) =>
+      current.includes(scenarioId) ? current.filter((id) => id !== scenarioId) : [...current, scenarioId],
+    );
+  };
+  const selectedTaxSocialPaymentSyncLabels = [
+    taxSocialPaymentSyncOptions.taxSocialPaymentSchedule ? `通知書実額支払 ${taxSocialPaymentScheduleCount}件` : "",
+    taxSocialPaymentSyncOptions.recurringTaxSocialPaymentTemplates
+      ? `固定資産税などの継続支払見込み ${recurringTaxSocialPaymentTemplateCount}件`
+      : "",
+  ].filter(Boolean);
+  const applyTaxSocialPaymentSync = () => {
+    if (taxSocialPaymentSyncTargetCount === 0 || !hasTaxSocialPaymentSyncSelection) return;
+    const source = structuredClone(taxSocialPaymentSyncSourceScenario);
+    const confirmed = window.confirm(
+      `コピー元「${source.name}」の税・社会保険通知書実額支払を、コピー元自身を除く ${taxSocialPaymentSyncTargetCount} 件のシナリオへ反映します。` +
+        (!taxSocialPaymentSyncSourceIsCurrentScenario && excludeCurrentScenarioFromTaxSocialPaymentSync
+          ? `\n現在開いている「${scenario.name}」は反映先から外します。`
+          : "") +
+        `\n\n反映するもの:\n${formatScenarioNamesForConfirm(selectedTaxSocialPaymentSyncLabels)}` +
+        "\n\n反映しないもの:\n・収入\n・生活費\n・初期資産\n・iDeCo受取\n・退職所得イベント\n・制度上の自動概算" +
+        `\n\n反映先:\n${formatScenarioNamesForConfirm(taxSocialPaymentSyncTargetNames)}\n\n実行しますか？`,
+    );
+    if (!confirmed) return;
+    updateScenarios((target) => {
+      if (
+        !isAssetSyncTarget(
+          target,
+          source.id,
+          taxSocialPaymentSyncTargetMode,
+          taxSocialPaymentSyncExcludedScenarioIds,
+          taxSocialPaymentSyncSelectedTargetIdSet,
+        )
+      ) {
+        return target;
+      }
+      applyTaxSocialPaymentSyncFromSource(target, source, taxSocialPaymentSyncOptions);
+      return target;
+    }, "税・社会保険通知書実額反映前");
+    setTaxSocialPaymentSyncMessage(
+      `${taxSocialPaymentSyncTargetCount} 件のシナリオへ税・社会保険通知書実額支払を反映しました: ${formatScenarioNamesForMessage(taxSocialPaymentSyncTargetNames)}。` +
+        `通知書実額支払 ${taxSocialPaymentScheduleCount}件、固定資産税などの継続支払見込み ${recurringTaxSocialPaymentTemplateCount}件をコピーしました。` +
+        "実行前の状態は履歴に保存されています。",
+    );
+  };
 
   const add = () =>
     updateScenario((s) =>
@@ -8768,7 +9324,7 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="font-medium">通常見るところ</div>
-            <p className="mt-1 text-muted-foreground">モード説明、自動計算結果、反映後の税・社会保険を確認します。</p>
+            <p className="mt-1 text-muted-foreground">モード説明、通知書実額、制度上の自動概算、反映後の税・社会保険を確認します。</p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
             <div className="font-medium">詳細確認</div>
@@ -8780,7 +9336,7 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
             <div className="text-muted-foreground">計算モード</div>
             <div className="mt-1 font-semibold text-slate-900">{taxModeHelp[mode].label}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {mode === "manual" ? "入力年度の金額をそのまま使用" : mode === "auto" ? "自動計算結果を使用" : "自動計算 + 補正額を使用"}
+              {mode === "manual" ? "入力年度の金額をそのまま使用" : mode === "auto" ? "制度上の自動概算を使用" : "自動概算 + 補正額を使用"}
             </p>
           </div>
           <div className="rounded-md border bg-slate-50 px-4 py-3">
@@ -8821,9 +9377,101 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
             課税口座の取り崩しでは、譲渡益部分に 20.315% の課税を掛けて差し引きます。NISA には掛けません。
           </p>
           <p className="mt-2">
-            反復計算が収束しない年度が出た場合は、このタブの詳細根拠で警告として扱います。現時点の自動計算結果には未収束警告はありません。
+            反復計算が収束しない年度が出た場合は、このタブの詳細根拠で警告として扱います。現時点の制度上の自動概算には未収束警告はありません。
           </p>
         </div>
+
+        <NoticeActualTaxSocialPaymentCard
+          scenario={scenario}
+          updateScenario={updateScenario}
+          effectiveRows={effectiveRows}
+          simulationResult={simulationResult}
+          onOpenTaxCashPaymentTiming={onOpenTaxCashPaymentTiming}
+        />
+
+        <SpouseWorkstyleTaxSocialCard
+          scenario={scenario}
+          scenarios={scenarios}
+          updateScenario={updateScenario}
+          updateScenarios={updateScenarios}
+          highlightKey={spouseWorkstyleHighlightKey}
+          onOpenSpouseIncomeEvents={onOpenSpouseIncomeEvents}
+          onOpenSpousePartIncomeCompare={onOpenSpousePartIncomeCompare}
+        />
+
+        <ScenarioSyncDetails
+          title="他シナリオへ反映（必要時のみ）"
+          description="通知書実額支払と固定資産税などの継続前提を、他のシナリオへ反映します。収入・生活費・iDeCo受取・退職所得イベントは変更しません。"
+        >
+          <div className="space-y-4">
+            <Field label="コピー元シナリオ">
+              <Select
+                value={taxSocialPaymentSyncSourceScenario.id}
+                onChange={(event) => setTaxSocialPaymentSyncSourceScenarioId(event.target.value)}
+              >
+                {scenarios.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                現在のコピー元は「{taxSocialPaymentSyncSourceScenario.name}」です。通知書実額支払と継続支払見込みだけを反映します。
+              </p>
+            </Field>
+            {!taxSocialPaymentSyncSourceIsCurrentScenario && (
+              <label className="flex items-start gap-2 rounded-md border bg-slate-50 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={excludeCurrentScenarioFromTaxSocialPaymentSync}
+                  onChange={(event) => setExcludeCurrentScenarioFromTaxSocialPaymentSync(event.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium">表示中シナリオを反映先から外す</span>
+                  <span className="text-xs text-muted-foreground">
+                    「{scenario.name}」を見ながら別シナリオをコピー元にする場合の誤反映を防ぎます。意図して現在のシナリオにも反映する場合だけ外してください。
+                  </span>
+                </span>
+              </label>
+            )}
+            <ScenarioSyncCard<keyof TaxSocialPaymentSyncOptions>
+              title="税・社会保険通知書実額支払の反映"
+              description="コピー元シナリオを選び、通知書実額支払と固定資産税などの継続前提だけを他シナリオへ反映します。"
+              targetMode={taxSocialPaymentSyncTargetMode}
+              setTargetMode={setTaxSocialPaymentSyncTargetMode}
+              targetCount={taxSocialPaymentSyncTargetCount}
+              targetNames={taxSocialPaymentSyncTargetNames}
+              targetSummary={
+                `コピー元「${taxSocialPaymentSyncSourceScenario.name}」自身を除く ${taxSocialPaymentSyncTargetCount} 件に反映します。` +
+                (!taxSocialPaymentSyncSourceIsCurrentScenario && excludeCurrentScenarioFromTaxSocialPaymentSync ? `「${scenario.name}」は除外中です。` : "")
+              }
+              allScenarios={scenarios}
+              sourceScenarioId={taxSocialPaymentSyncSourceScenario.id}
+              excludedScenarioIds={taxSocialPaymentSyncExcludedScenarioIds}
+              selectedTargetIds={taxSocialPaymentSyncSelectedTargetIdSet}
+              toggleSelectedTarget={toggleTaxSocialPaymentSyncTarget}
+              options={[
+                {
+                  key: "taxSocialPaymentSchedule",
+                  label: "通知書実額支払",
+                  description: `${taxSocialPaymentScheduleCount}件。反映先の既存データはコピー元で置き換えます。`,
+                },
+                {
+                  key: "recurringTaxSocialPaymentTemplates",
+                  label: "固定資産税などの継続支払見込み",
+                  description: `${recurringTaxSocialPaymentTemplateCount}件。将来の継続前提をコピーします。`,
+                },
+              ]}
+              selectedOptions={taxSocialPaymentSyncOptions}
+              toggleOption={updateTaxSocialPaymentSyncOption}
+              warningText="反映先の既存の通知書実額支払と継続支払見込みは、コピー元の内容で置き換わります。収入・生活費・初期資産・iDeCo受取・退職所得イベント・制度上の自動概算は変更しません。"
+              onApply={applyTaxSocialPaymentSync}
+              message={taxSocialPaymentSyncMessage}
+              applyDisabled={!hasTaxSocialPaymentSyncSelection}
+              optionGridClassName="grid gap-2 md:grid-cols-2"
+            />
+          </div>
+        </ScenarioSyncDetails>
 
         <GuidedDetails
           id="tax-retirement-overlap"
@@ -8985,9 +9633,9 @@ function TaxSection({ scenario, updateScenario, targetCardId }: SectionProps) {
         {(isAuto || mode === "autoWithAdjustment") && (
           <div className="space-y-4">
             <div>
-              <h3 className="font-medium">自動計算結果</h3>
+              <h3 className="font-medium">制度上の自動概算（所得発生年度ベース）</h3>
               <p className="text-sm text-muted-foreground">
-                現時点では、所得税・住民税・国民年金・大田区の国民健康保険・東京都の後期高齢者医療の概算に加え、課税口座の取り崩し時の譲渡益課税を反映します。収入集計は暦年ベースです。通知書との差がある場合は補正してください。
+                この表は所得が発生した年度ごとの制度概算です。通知書・実額支払はここには混ぜず、実際の現金支出は通知書カードと結果タブの「税金・社会保険のキャッシュ支払タイミング」に反映します。
               </p>
             </div>
             <TaxRowsSummary rows={autoRows} capitalGainsTaxByFiscalYear={capitalGainsTaxByFiscalYear} emptyLabel="自動計算できる年度がまだありません。" />
@@ -9760,7 +10408,7 @@ function FormulaBlock({ title, lines }: { title: string; lines: string[] }) {
     <div className="rounded-md border bg-slate-50 px-3 py-3">
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="mt-2 space-y-1 font-mono text-xs leading-6 text-slate-700">
-        {lines.map((line, index) => (
+        {lines.filter(Boolean).map((line, index) => (
           <div key={`${title}-${index}`}>{line}</div>
         ))}
       </div>
@@ -10374,16 +11022,20 @@ function TaxCalculationDetails({
                     const nhi = detail.nationalHealthInsuranceBreakdown;
                     const medicalCalculated =
                       Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.medicalIncomeRate) +
-                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.medicalPerCapita);
+                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.medicalPerCapita) -
+                      nhi.medicalEqualReductionAmount;
                     const supportCalculated =
                       Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.supportIncomeRate) +
-                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.supportPerCapita);
+                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.supportPerCapita) -
+                      nhi.supportEqualReductionAmount;
                     const childSupportCalculated =
                       Math.round(nhi.totalBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.childSupportIncomeRate) +
-                      Math.round(nhi.childMemberCount * OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita);
+                      Math.round(nhi.insuredMemberCount * OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita) -
+                      nhi.childSupportEqualReductionAmount;
                     const careCalculated =
                       Math.round(nhi.careBaseIncome * OTA_NHI_RATES_FOR_DISPLAY.careIncomeRate) +
-                      Math.round(nhi.careMemberCount * OTA_NHI_RATES_FOR_DISPLAY.carePerCapita);
+                      Math.round(nhi.careMemberCount * OTA_NHI_RATES_FOR_DISPLAY.carePerCapita) -
+                      nhi.careEqualReductionAmount;
                     return (
                       <>
                         <FormulaBlock
@@ -10392,6 +11044,9 @@ function TaxCalculationDetails({
                             "医療分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
                             `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.medicalIncomeRate * 100).toFixed(2)}%`,
                             `均等割 = ${personMonthLabel(nhi.insuredMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.medicalPerCapita)}`,
+                            nhi.medicalEqualReductionAmount > 0
+                              ? `${nhi.equalReductionLabel} = -${yen(nhi.medicalEqualReductionAmount)}（判定所得 ${yen(nhi.equalReductionJudgmentIncome)} / 閾値 ${yen(nhi.equalReductionThreshold)}）`
+                              : "",
                             ...capSelectionLines("医療分", medicalCalculated, OTA_NHI_RATES_FOR_DISPLAY.medicalCap, nhi.medical),
                           ]}
                         />
@@ -10401,6 +11056,9 @@ function TaxCalculationDetails({
                             "支援分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
                             `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.supportIncomeRate * 100).toFixed(2)}%`,
                             `均等割 = ${personMonthLabel(nhi.insuredMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.supportPerCapita)}`,
+                            nhi.supportEqualReductionAmount > 0
+                              ? `${nhi.equalReductionLabel} = -${yen(nhi.supportEqualReductionAmount)}（判定所得 ${yen(nhi.equalReductionJudgmentIncome)} / 閾値 ${yen(nhi.equalReductionThreshold)}）`
+                              : "",
                             ...capSelectionLines("支援分", supportCalculated, OTA_NHI_RATES_FOR_DISPLAY.supportCap, nhi.support),
                           ]}
                         />
@@ -10409,7 +11067,10 @@ function TaxCalculationDetails({
                           lines={[
                             "こども分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
                             `所得割 = 加入者基礎所得合計 ${yen(nhi.totalBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.childSupportIncomeRate * 100).toFixed(2)}%`,
-                            `均等割 = ${personMonthLabel(nhi.childMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita)}`,
+                            `均等割 = ${personMonthLabel(nhi.insuredMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.childSupportPerCapita)}`,
+                            nhi.childSupportEqualReductionAmount > 0
+                              ? `${nhi.equalReductionLabel} = -${yen(nhi.childSupportEqualReductionAmount)}（判定所得 ${yen(nhi.equalReductionJudgmentIncome)} / 閾値 ${yen(nhi.equalReductionThreshold)}）`
+                              : "",
                             ...capSelectionLines("こども分", childSupportCalculated, OTA_NHI_RATES_FOR_DISPLAY.childSupportCap, nhi.childSupport),
                           ]}
                         />
@@ -10419,6 +11080,9 @@ function TaxCalculationDetails({
                             "介護分 = 所得割 + 均等割。ただし上限額を超えた分は切り捨てます",
                             `所得割 = 40-64歳対象基礎所得 ${yen(nhi.careBaseIncome)} × ${(OTA_NHI_RATES_FOR_DISPLAY.careIncomeRate * 100).toFixed(2)}%`,
                             `均等割 = ${personMonthLabel(nhi.careMemberCount)} × ${yen(OTA_NHI_RATES_FOR_DISPLAY.carePerCapita)}`,
+                            nhi.careEqualReductionAmount > 0
+                              ? `${nhi.equalReductionLabel} = -${yen(nhi.careEqualReductionAmount)}（判定所得 ${yen(nhi.equalReductionJudgmentIncome)} / 閾値 ${yen(nhi.equalReductionThreshold)}）`
+                              : "",
                             ...capSelectionLines("介護分", careCalculated, OTA_NHI_RATES_FOR_DISPLAY.careCap, detail.nursingCareAnnual),
                           ]}
                         />
@@ -10575,6 +11239,258 @@ const taxFields: [TaxNumberKey, string][] = [
   ["otherPublicCostAnnual", "その他公的負担年額"],
 ];
 
+const taxSocialPaymentCategoryLabels: Record<TaxSocialPaymentCategory, string> = {
+  residentTax: "住民税",
+  nationalHealthInsurance: "国民健康保険料",
+  nationalPension: "国民年金",
+  lateElderlyMedical: "後期高齢者医療",
+  nursingCare: "介護保険",
+  propertyTax: "固定資産税・都市計画税",
+  otherPublicCost: "その他公的負担",
+};
+
+const taxSocialPaymentCategoryShortLabels: Record<TaxSocialPaymentCategory, string> = {
+  residentTax: "住民税",
+  nationalHealthInsurance: "国保",
+  nationalPension: "国民年金",
+  lateElderlyMedical: "後期高齢者",
+  nursingCare: "介護",
+  propertyTax: "固定資産税",
+  otherPublicCost: "その他公的負担",
+};
+
+const taxSocialPaymentCategoryAnnualKey: Partial<Record<TaxSocialPaymentCategory, keyof TaxInsuranceByFiscalYear>> = {
+  residentTax: "residentTaxAnnual",
+  nationalHealthInsurance: "nationalHealthInsuranceAnnual",
+  lateElderlyMedical: "lateElderlyMedicalAnnual",
+  nursingCare: "nursingCareAnnual",
+  otherPublicCost: "otherPublicCostAnnual",
+};
+
+function getTaxSocialPaymentAutoAnnualAmount(category: TaxSocialPaymentCategory, row: TaxInsuranceByFiscalYear | undefined) {
+  if (!row) return 0;
+  if (category === "nationalPension") return row.nationalPensionAnnual ?? row.nationalPensionMonthly * 12;
+  if (category === "propertyTax") return 0;
+  const key = taxSocialPaymentCategoryAnnualKey[category];
+  return key ? Number(row[key] ?? 0) : 0;
+}
+
+function getTaxSocialPaymentMemberLabel(scenario: ScenarioData, item: TaxSocialPaymentScheduleItem) {
+  const memberId = item.coveredMemberId ?? item.memberId;
+  if (!memberId) return "";
+  const member = scenario.householdMembers.find((candidate) => candidate.id === memberId);
+  return member ? ` / ${member.name}` : "";
+}
+
+function getRecurringTemplateAnnualAmount(template: RecurringTaxSocialPaymentTemplate) {
+  return (template.items ?? []).reduce((sum, item) => sum + item.amount, 0);
+}
+
+function formatRecurringTemplateMonths(template: RecurringTaxSocialPaymentTemplate) {
+  return (template.items ?? [])
+    .map((item) => `${item.fiscalYearOffset === 1 ? "翌" : ""}${item.dueMonth}月 ${yen(item.amount)}`)
+    .join(" / ");
+}
+
+function NoticeActualTaxSocialPaymentCard({
+  scenario,
+  updateScenario,
+  effectiveRows,
+  simulationResult,
+  onOpenTaxCashPaymentTiming,
+}: {
+  scenario: ScenarioData;
+  updateScenario: (updater: (scenario: ScenarioData) => void) => void;
+  effectiveRows: TaxInsuranceByFiscalYear[];
+  simulationResult: ReturnType<typeof simulateScenario>;
+  onOpenTaxCashPaymentTiming: () => void;
+}) {
+  const schedule = (scenario.taxSocialPaymentSchedule ?? [])
+    .filter((item) => item.dueYearMonth && item.category && Number.isFinite(item.amount))
+    .sort((a, b) => a.dueYearMonth.localeCompare(b.dueYearMonth) || a.category.localeCompare(b.category));
+  const recurringPropertyTaxTemplates = (scenario.recurringTaxSocialPaymentTemplates ?? []).filter(
+    (template) => template.category === "propertyTax",
+  );
+  const nextPaymentSummary = getNextNoticePaymentMonthSummary(schedule, scenario.userProfile.simulationStartYearMonth);
+  const paymentYearSummaries = summarizeNoticePaymentsByPaymentYear(schedule);
+  const groups = new Map<string, {
+    fiscalYear?: number;
+    category: TaxSocialPaymentCategory;
+    total: number;
+    months: Set<string>;
+    notes: string[];
+    members: Set<string>;
+  }>();
+  for (const item of schedule) {
+    const key = `${item.fiscalYear ?? "年度未設定"}-${item.category}`;
+    const group = groups.get(key) ?? {
+      fiscalYear: item.fiscalYear,
+      category: item.category,
+      total: 0,
+      months: new Set<string>(),
+      notes: [],
+      members: new Set<string>(),
+    };
+    group.total += item.amount;
+    group.months.add(item.dueYearMonth);
+    if (item.note) group.notes.push(item.note);
+    const memberLabel = getTaxSocialPaymentMemberLabel(scenario, item).replace(" / ", "");
+    if (memberLabel) group.members.add(memberLabel);
+    groups.set(key, group);
+  }
+  const pensionNeedsReview = schedule.some(
+    (item) => item.category === "nationalPension" && (item.note?.includes("要確認") || item.note?.includes("確認")),
+  );
+  const formatCategoryTotals = (items: { category: TaxSocialPaymentCategory; total: number }[]) =>
+    items.map((item) => `${taxSocialPaymentCategoryShortLabels[item.category]} ${compactYen(item.total)}`).join(" / ");
+  const formatResultCashBreakdown = (summary: NoticePaymentYearSummary) => {
+    const annualRow = simulationResult.annual.find((row) => row.year === summary.year);
+    if (!annualRow) return "";
+    const breakdown = annualRow.taxCashBreakdown;
+    const parts = summary.categories.flatMap((item) => {
+      if (item.category === "residentTax") return [`住民税 ${compactYen(breakdown.residentTax)}`];
+      if (item.category === "nationalHealthInsurance") return [`国保 ${compactYen(breakdown.nationalHealthInsurance)}`];
+      if (item.category === "nationalPension") return [`国民年金 ${compactYen(breakdown.nationalPension)}`];
+      if (item.category === "propertyTax") return [`固定資産税 ${compactYen(breakdown.propertyTax)}`];
+      return [];
+    });
+    return parts.length ? `結果タブ確認: ${parts.join(" / ")}` : "";
+  };
+
+  return (
+    <div className="rounded-lg border bg-white px-4 py-4 space-y-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="font-medium">通知書・実額支払</h3>
+          <p className="text-sm text-muted-foreground">
+            住民税、国保、国民年金、固定資産税など、通知書どおりに支払う金額を任意で登録できます。通知書がある期間は、こちらを現金支出として優先します。
+          </p>
+        </div>
+        <div className={cn("rounded-md border px-3 py-2 text-sm", pensionNeedsReview ? "border-amber-300 bg-amber-50 text-amber-950" : "bg-slate-50 text-slate-700")}>
+          国民年金: {pensionNeedsReview ? "要確認" : schedule.some((item) => item.category === "nationalPension") ? "登録済み" : "未登録"}
+        </div>
+      </div>
+      <div>
+        <Button type="button" variant="outline" onClick={onOpenTaxCashPaymentTiming}>
+          <ArrowDown className="h-4 w-4" />
+          実際の支払タイミングを見る
+        </Button>
+      </div>
+      <NoticePaymentScheduleEditor scenario={scenario} updateScenario={updateScenario} />
+
+      {schedule.length === 0 ? (
+        <div className="rounded-md border bg-slate-50 px-3 py-3 text-sm text-muted-foreground">
+          通知書実額はまだ登録されていません。通知書が届いたら、住民税・国保・国民年金・固定資産税などを支払月ごとに保存用JSONで補正できます。未登録でも通常の自動概算は利用できます。
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border bg-slate-50 px-3 py-3 text-sm">
+              <div className="text-muted-foreground">次回支払</div>
+              <div className="mt-1 font-semibold text-slate-900">
+                {nextPaymentSummary ? `${nextPaymentSummary.yearMonth} 合計 ${compactYen(nextPaymentSummary.total)}` : "なし"}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {nextPaymentSummary ? formatCategoryTotals(nextPaymentSummary.categories) : "支払予定はありません。"}
+              </div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-3 py-3 text-sm">
+              <div className="text-muted-foreground">登録件数</div>
+              <div className="mt-1 font-semibold text-slate-900">{schedule.length}件</div>
+              <div className="mt-1 text-xs text-muted-foreground">同じ月の複数通知は月次計算で合算します。</div>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-3 py-3 text-sm">
+              <div className="text-muted-foreground">実額支払合計</div>
+              <div className="mt-1 font-semibold text-slate-900">{compactYen(schedule.reduce((sum, item) => sum + item.amount, 0))}</div>
+              <div className="mt-1 text-xs text-muted-foreground">固定資産税は「その他」ではなく別枠で集計します。</div>
+            </div>
+          </div>
+          <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+            <div className="font-medium">通知書実額の反映先</div>
+            <div className="mt-2 space-y-2">
+              {paymentYearSummaries.map((summary) => {
+                const resultLine = formatResultCashBreakdown(summary);
+                return (
+                  <div key={summary.year}>
+                    <div>
+                      {summary.year}年の現金支払に反映済み: {formatCategoryTotals(summary.categories)}
+                    </div>
+                    {resultLine && <div className="text-xs text-sky-800">{resultLine}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-sky-800">
+              ここは支払年ベースです。下の制度上の自動概算は所得発生年度ベースなので、通知書実額は混ぜていません。
+            </p>
+          </div>
+        </>
+      )}
+
+      {recurringPropertyTaxTemplates.length > 0 && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <div className="font-medium">固定資産税・都市計画税の将来見込み</div>
+          <div className="mt-2 space-y-2">
+            {recurringPropertyTaxTemplates.map((template) => (
+              <div key={template.id}>
+                <div>{template.startFiscalYear}年度以降: 年{yen(getRecurringTemplateAnnualAmount(template))}を同じ期別で継続</div>
+                <div className="text-xs text-emerald-800">
+                  {formatRecurringTemplateMonths(template)} / 増減率 {((template.annualIncreaseRate ?? 0) * 100).toFixed(1)}%
+                </div>
+                {template.note && <div className="text-xs text-emerald-800">{template.note}</div>}
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-emerald-800">
+            ここは通知書実額ではなく、登録した通知書などを基準にした将来見込みです。固定資産税は所得連動の自動概算には含めません。
+          </p>
+        </div>
+      )}
+
+      {schedule.length > 0 && (
+        <>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <thead>
+                <Tr>
+                  <Th>年度</Th>
+                  <Th>カテゴリ</Th>
+                  <Th>支払月</Th>
+                  <Th>対象者</Th>
+                  <Th>実額合計</Th>
+                  <Th>通知書年額 − 自動概算</Th>
+                  <Th>確認</Th>
+                </Tr>
+              </thead>
+              <tbody>
+                {[...groups.values()].map((group) => {
+                  const annualRow = group.fiscalYear === undefined
+                    ? undefined
+                    : effectiveRows.find((row) => row.fiscalYear === group.fiscalYear);
+                  const autoAnnual = getTaxSocialPaymentAutoAnnualAmount(group.category, annualRow);
+                  const needsReview = group.notes.some((note) => note.includes("要確認") || note.includes("確認"));
+                  return (
+                    <Tr key={`${group.fiscalYear ?? "none"}-${group.category}`}>
+                      <Td>{group.fiscalYear ? `${group.fiscalYear}年度` : "年度未設定"}</Td>
+                      <Td>{taxSocialPaymentCategoryLabels[group.category]}</Td>
+                      <Td>{[...group.months].sort().join(" / ")}</Td>
+                      <Td>{group.members.size > 0 ? [...group.members].join(" / ") : "-"}</Td>
+                      <Td>{compactYen(group.total)}</Td>
+                      <Td>{compactYen(group.total - autoAnnual)}</Td>
+                      <Td>{needsReview ? <span className="font-medium text-amber-700">要確認</span> : "登録済み"}</Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+          <p className="text-xs text-muted-foreground">差額は比較用です。現金支払には通知書実額を優先しています。</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SpecialSection({
   scenario,
   scenarios,
@@ -10583,7 +11499,7 @@ function SpecialSection({
   onOpenTimeBucket,
 }: SectionProps & {
   scenarios: ScenarioData[];
-  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData) => void;
+  updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
   onOpenTimeBucket: () => void;
 }) {
   const [specialSyncTargetMode, setSpecialSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
@@ -11323,6 +12239,7 @@ function ResultsSection({
           taxCash.nationalHealthInsurance +
           taxCash.lateElderlyMedical +
           taxCash.nursingCare +
+          taxCash.propertyTax +
           taxCash.otherPublicCost
         : 0;
 
@@ -11342,6 +12259,7 @@ function ResultsSection({
         lateElderlyMedical: taxCash?.lateElderlyMedical ?? 0,
         nursingCare: taxCash?.nursingCare ?? 0,
         nationalPension: taxCash?.nationalPension ?? 0,
+        propertyTax: taxCash?.propertyTax ?? 0,
         otherPublicCost: taxCash?.otherPublicCost ?? 0,
         taxTotal,
         socialInsuranceTotal,
@@ -11359,6 +12277,7 @@ function ResultsSection({
         taxCash.nationalHealthInsurance +
         taxCash.lateElderlyMedical +
         taxCash.nursingCare +
+        taxCash.propertyTax +
         taxCash.otherPublicCost;
 
       return {
@@ -11375,6 +12294,7 @@ function ResultsSection({
         nationalHealthInsurance: taxCash.nationalHealthInsurance,
         lateElderlyMedical: taxCash.lateElderlyMedical,
         nursingCare: taxCash.nursingCare,
+        propertyTax: taxCash.propertyTax,
         socialInsuranceTotal,
         taxAndSocialTotal: taxTotal + socialInsuranceTotal,
       };
@@ -11487,6 +12407,7 @@ function ResultsSection({
       </ScenarioSyncDetails>
 
       <ScenarioSyncDetails
+        id="results-diagnostics-details"
         title="原因調査用の詳細表・チャート"
         description="投資計画、税支払タイミング、NISA枠、月次・年次表などは必要な時だけ開きます。"
       >
@@ -11554,12 +12475,13 @@ function ResultsSection({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="tax-cash-payment-timing" className="scroll-mt-28">
         <CardHeader>
           <CardTitle>税金・社会保険のキャッシュ支払タイミング</CardTitle>
           <CardDescription>
             実際に現金が出ていく年で、税金と社会保険等を分けて確認します。所得税精算・住民税・国保・介護は原則として前年所得に対する当年支払いです。
             一般口座（オプション用）の申告対象損益は、翌年の所得税精算・住民税・国保などの全所得計算に入ります。申告分離の税相当額は目安として別表示します。
+            固定資産税は所得連動ではなく、登録した通知書実額または継続支払予定をそのまま反映します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll max-h-[520px] overflow-auto">
@@ -11567,6 +12489,7 @@ function ResultsSection({
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className={resultStickyHeaderClass}>支払年</Th>
+                <Th>対象所得年</Th>
                 <Th>前年一般口座<br />申告対象損益</Th>
                 <Th>一般口座申告分<br />税相当目安</Th>
                 <Th>所得税精算<br />全所得</Th>
@@ -11579,6 +12502,7 @@ function ResultsSection({
                 <Th>国保</Th>
                 <Th>後期高齢者</Th>
                 <Th>介護</Th>
+                <Th>固定資産税<br />都市計画税</Th>
                 <Th>その他公的負担</Th>
                 <Th>社会保険等合計</Th>
                 <Th>支払合計</Th>
@@ -11600,11 +12524,13 @@ function ResultsSection({
                   row.taxCashBreakdown.nationalHealthInsurance +
                   row.taxCashBreakdown.lateElderlyMedical +
                   row.taxCashBreakdown.nursingCare +
+                  row.taxCashBreakdown.propertyTax +
                   row.taxCashBreakdown.otherPublicCost;
                 const cashPaymentTotal = taxTotal + socialInsuranceTotal;
                 return (
                   <Tr key={`tax-cash-${row.year}`}>
                     <Td className={resultStickyCellClass}>{yearEndAgeLabel(row.year, row.ageYears)}</Td>
+                    <Td>{row.year - 1}年</Td>
                     <Td>{compactYen(previousDeclaredGain)}</Td>
                     <Td>
                       <div>{compactYen(declaredOptionTax.totalEquivalent)}</div>
@@ -11625,6 +12551,7 @@ function ResultsSection({
                     <Td>{compactYen(row.taxCashBreakdown.nationalHealthInsurance)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.lateElderlyMedical)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.nursingCare)}</Td>
+                    <Td>{compactYen(row.taxCashBreakdown.propertyTax)}</Td>
                     <Td>{compactYen(row.taxCashBreakdown.otherPublicCost)}</Td>
                     <Td className="font-medium">{compactYen(socialInsuranceTotal)}</Td>
                     <Td className="font-medium">{compactYen(cashPaymentTotal)}</Td>
@@ -12205,6 +13132,7 @@ function CompareSection({
   setBaselineScenarioId,
   periodSourceScenario,
   updateScenario,
+  onOpenSpouseWorkstyleSettings,
 }: {
   items: { scenario: ScenarioData; result: ReturnType<typeof simulateScenario> }[];
   scenarios: ScenarioData[];
@@ -12213,6 +13141,7 @@ function CompareSection({
   setBaselineScenarioId: (id: string) => void;
   periodSourceScenario: ScenarioData;
   updateScenario: SectionProps["updateScenario"];
+  onOpenSpouseWorkstyleSettings: (scenarioId: string) => void;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(periodSourceScenario);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashPeriod);
@@ -12329,6 +13258,60 @@ function CompareSection({
       afterLivingCapacityDelta: row.afterLivingCapacity - baselineAfterLivingCapacity,
     };
   });
+  const spousePartCompareScenarios = useMemo(() => items.map((item) => item.scenario), [items]);
+  const spousePartFallbackYear = Number(baselineScenario.userProfile.simulationStartYearMonth.slice(0, 4));
+  const spousePartCompareYears = useMemo(
+    () => getSpousePartIncomeCompareYears(spousePartCompareScenarios.length > 0 ? spousePartCompareScenarios : [baselineScenario]),
+    [baselineScenario, spousePartCompareScenarios],
+  );
+  const spousePartDefaultCompareYear = useMemo(
+    () => getDefaultSpousePartIncomeCompareYear(spousePartCompareScenarios.length > 0 ? spousePartCompareScenarios : [baselineScenario], spousePartFallbackYear),
+    [baselineScenario, spousePartCompareScenarios, spousePartFallbackYear],
+  );
+  const [spousePartCompareYear, setSpousePartCompareYear] = useState(spousePartDefaultCompareYear);
+  const [spousePartAggregationMode, setSpousePartAggregationMode] = useState<SpousePartIncomeAggregationMode>("incomeYear");
+  const [highlightedDiffScenarioId, setHighlightedDiffScenarioId] = useState<string | null>(null);
+  const spousePartCompareYearKey = spousePartCompareYears.join(",");
+  useEffect(() => {
+    setSpousePartCompareYear((current) => (spousePartCompareYears.includes(current) ? current : spousePartDefaultCompareYear));
+  }, [spousePartCompareYearKey, spousePartCompareYears, spousePartDefaultCompareYear]);
+  useEffect(() => {
+    if (!highlightedDiffScenarioId) return undefined;
+    const timer = window.setTimeout(() => setHighlightedDiffScenarioId(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [highlightedDiffScenarioId]);
+  const openScenarioDiffDetails = (scenarioId: string) => {
+    setHighlightedDiffScenarioId(scenarioId);
+    window.setTimeout(() => {
+      const detail = document.getElementById("scenario-input-diff-details") as HTMLDetailsElement | null;
+      if (detail && !detail.open) {
+        detail.open = true;
+        detail.dispatchEvent(new Event("toggle", { bubbles: true }));
+      }
+      window.setTimeout(() => {
+        document.getElementById(`scenario-input-diff-${scenarioId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    }, 20);
+  };
+  const spousePartRows = useMemo(
+    () =>
+      buildSpousePartIncomeEfficiencyRows(
+        spousePartCompareScenarios.length > 0 ? spousePartCompareScenarios : [baselineScenario],
+        baselineScenario.id,
+        spousePartCompareYear,
+        spousePartAggregationMode,
+      ),
+    [baselineScenario, spousePartAggregationMode, spousePartCompareScenarios, spousePartCompareYear],
+  );
+  const hasSpousePartSalaryDifferences = new Set(spousePartRows.map((row) => row.spouseSalaryIncome)).size > 1;
+  const spousePartRateClass = (row: SpousePartIncomeEfficiencyRow) => {
+    if (row.incomeDelta > 0 && row.netTakeHomeDelta <= 0) return "text-red-600";
+    if (row.takeHomeRate === null) return "";
+    if (row.takeHomeRate >= 0.8) return "text-teal-700";
+    if (row.takeHomeRate >= 0.6) return "";
+    if (row.takeHomeRate >= 0.4) return "text-amber-700";
+    return "text-red-600";
+  };
   const getOptionImpactSummary = (row: (typeof optionTaxSocialImpactRows)[number]) => {
     if (baselineCompareRow?.scenario.id === row.scenario.id) {
       return "比較基準です。";
@@ -12478,6 +13461,119 @@ function CompareSection({
         </CardContent>
       </Card>
 
+      <ScenarioSyncDetails
+        id="spouse-part-income-efficiency-compare"
+        title="配偶者パート収入の実質手残り比較"
+        description="基準シナリオに対して、配偶者の給与収入増、税・社会保険料増、世帯の実質手残りを比較します。妻のパート年収別シナリオを作ったときに使います。"
+        defaultOpen={hasSpousePartSalaryDifferences}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>配偶者給与収入の手残り効率</CardTitle>
+            <CardDescription>
+              既存の比較基準「{baselineScenario.name}」との差分です。主計算では、妻の給与・働き方設定だけを基準シナリオへ差し替えて比較します。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="比較対象年">
+                <Select value={String(spousePartCompareYear)} onChange={(event) => setSpousePartCompareYear(numberOrZero(event.target.value))}>
+                  {spousePartCompareYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}年
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="集計モード">
+                <Select
+                  value={spousePartAggregationMode}
+                  onChange={(event) => setSpousePartAggregationMode(event.target.value as SpousePartIncomeAggregationMode)}
+                >
+                  <option value="incomeYear">所得発生年ベース</option>
+                  <option value="cashPaymentYear">現金支払年ベース</option>
+                </Select>
+              </Field>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6 text-muted-foreground">
+              所得発生年ベースは、その年の給与収入に対する所得税・住民税・国保・勤務先社保などの制度上の判定で見ます。
+              現金支払年ベースは、結果タブの支払タイミングに合わせ、その年に実際に出ていく税・社会保険の現金流出で見ます。
+              妻の給与以外にも条件差がある行は、主計算ではその差を除外し、入力差分セクションで確認できるようにしています。
+            </div>
+            <div className="table-scroll overflow-auto">
+              <Table className="min-w-[1800px]">
+                <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                  <Tr>
+                    <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
+                    <Th>配偶者<br />給与収入</Th>
+                    <Th>収入増<br />基準比</Th>
+                    <Th>税・社保増<br />基準比</Th>
+                    <Th>うち所得税<br />住民税</Th>
+                    <Th>うち<br />社会保険料</Th>
+                    <Th>控除影響</Th>
+                    <Th>実質手残り増<br />基準比</Th>
+                    <Th>実質<br />手残り率</Th>
+                    <Th>負担率</Th>
+                    <Th>社保判定</Th>
+                    <Th className="min-w-[420px]">読み方</Th>
+                  </Tr>
+                </thead>
+                <tbody>
+                  {spousePartRows.map((row) => (
+                    <Tr key={`spouse-part-${row.scenarioId}`}>
+                      <Td className="sticky-col left-0 z-20 bg-white font-medium">
+                        <div>{row.scenarioName}</div>
+                        {row.hasOtherConditionDifferences && !row.isBaseline && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span
+                              className="inline-flex rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900"
+                              title="この行は妻の給与以外にも条件差があります。手残り効率の主計算では、妻の給与・働き方設定だけを基準シナリオへ差し替えて比較しています。"
+                            >
+                              他条件差あり（主計算から除外）
+                            </span>
+                            <Button variant="outline" size="sm" onClick={() => openScenarioDiffDetails(row.scenarioId)}>
+                              他条件を見る
+                            </Button>
+                          </div>
+                        )}
+                      </Td>
+                      <Td>{compactYen(row.spouseSalaryIncome)}</Td>
+                      <Td className={row.incomeDelta > 0 ? "text-teal-700" : row.incomeDelta < 0 ? "text-red-600" : ""}>{preciseSmallDeltaYen(row.incomeDelta)}</Td>
+                      <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
+                        {preciseSmallDeltaYen(row.taxSocialDelta)}
+                      </Td>
+                      <Td className={row.incomeResidentTaxDelta > 0 ? "text-red-600" : row.incomeResidentTaxDelta < 0 ? "text-teal-700" : ""}>
+                        {preciseSmallDeltaYen(row.incomeResidentTaxDelta)}
+                      </Td>
+                      <Td className={row.socialInsuranceDelta > 0 ? "text-red-600" : row.socialInsuranceDelta < 0 ? "text-teal-700" : ""}>
+                        {preciseSmallDeltaYen(row.socialInsuranceDelta)}
+                      </Td>
+                      <Td>{row.deductionImpactLabel}</Td>
+                      <Td className={row.netTakeHomeDelta > 0 ? "text-teal-700" : row.netTakeHomeDelta < 0 ? "text-red-600" : ""}>
+                        {preciseSmallDeltaYen(row.netTakeHomeDelta)}
+                      </Td>
+                      <Td className={spousePartRateClass(row)}>{row.takeHomeRate === null ? "-" : compactPercent(row.takeHomeRate)}</Td>
+                      <Td className={row.burdenRate !== null && row.burdenRate > 0.4 ? "text-red-600" : ""}>
+                        {row.burdenRate === null ? "-" : compactPercent(row.burdenRate)}
+                      </Td>
+                      <Td>
+                        <div>{row.socialInsuranceJudgmentLabel}</div>
+                        {row.socialInsuranceJudgmentLabel.includes("要確認") && (
+                          <Button variant="outline" size="sm" className="mt-2" onClick={() => onOpenSpouseWorkstyleSettings(row.scenarioId)}>
+                            社保設定を確認
+                          </Button>
+                        )}
+                      </Td>
+                      <Td className="min-w-[420px] text-sm text-muted-foreground">{row.reading}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </ScenarioSyncDetails>
+
       <Card>
         <CardHeader>
           <CardTitle>複数シナリオ詳細比較表</CardTitle>
@@ -12544,6 +13640,7 @@ function CompareSection({
         </CardContent>
       </Card>
       <ScenarioSyncDetails
+        id="scenario-input-diff-details"
         title={`比較基準と入力差分（基準: ${baselineScenario.name}）`}
         description="基準シナリオの変更と、各シナリオの入力条件差分を必要な時だけ確認します。"
       >
@@ -12566,7 +13663,14 @@ function CompareSection({
             </Field>
             <div className="grid gap-3 md:grid-cols-2">
               {compareRows.map((row) => (
-                <div key={`diff-${row.scenario.id}`} className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6">
+                <div
+                  id={`scenario-input-diff-${row.scenario.id}`}
+                  key={`diff-${row.scenario.id}`}
+                  className={cn(
+                    "scroll-mt-28 rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6 transition-shadow",
+                    highlightedDiffScenarioId === row.scenario.id ? "border-amber-300 ring-2 ring-amber-200 ring-offset-2" : "",
+                  )}
+                >
                   <div className="font-medium">{row.scenario.name}</div>
                   <div className="mt-1 text-muted-foreground">
                     {row.scenario.id === baselineScenario.id ? "比較基準です。" : formatScenarioDiffHeadline(row.scenarioDiff)}
@@ -13328,6 +14432,14 @@ function compactLimitYen(value: number) {
 
 function compactPercent(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function preciseSmallDeltaYen(value: number) {
+  const rounded = Math.round(value);
+  const absolute = Math.abs(rounded);
+  if (absolute < 100_000) return `${rounded.toLocaleString("ja-JP")}円`;
+  if (absolute < 1_000_000) return `${(rounded / 10_000).toFixed(1)}万円`;
+  return compactYen(rounded);
 }
 
 function ResultTable(props: { rows: MonthlyResult[]; period: "month" } | { rows: AnnualResult[]; period: "year" }) {

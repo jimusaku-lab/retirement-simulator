@@ -31,6 +31,20 @@ export type HouseholdMember = {
   isLongTermCareInsured: boolean;
   isDependent: boolean;
   dependsOnMemberId?: string;
+  workplaceSocialInsurance?: {
+    joinStartYearMonth?: YearMonth;
+    weeklyScheduledHours?: number;
+    monthlyScheduledDays?: number;
+    regularWorkerWeeklyHours?: number;
+    regularWorkerMonthlyDays?: number;
+    monthlyStandardWage?: number;
+    isStudent?: boolean;
+    workplaceEmployeeCount?: number;
+    isVoluntarySpecifiedWorkplace?: boolean;
+    isApplicableWorkplace?: boolean;
+    premiumMode?: "estimate" | "manual" | "detail";
+    manualPremiumMonthly?: number;
+  };
   notes?: string;
 };
 
@@ -192,7 +206,8 @@ export type IncomeEvent = {
   startYearMonth: YearMonth;
   endYearMonth?: YearMonth;
   monthlyAmount: number;
-  amountInputMode?: "monthly" | "annual";
+  amountInputMode?: "monthly" | "annual" | "periodTotal";
+  inputAmount?: number;
   taxTreatment?: "taxable" | "withholding" | "nonTaxable";
   sourceAssetKey?: GrowthAssetKey;
   sourceOptionSubAccountId?: string;
@@ -288,6 +303,48 @@ export type TaxDeductionByFiscalYear = {
   memberId: string;
   socialInsuranceDeductionAnnual: number;
   medicalExpenseDeductionAnnual: number;
+  note?: string;
+};
+
+export type TaxSocialPaymentCategory =
+  | "residentTax"
+  | "nationalHealthInsurance"
+  | "nationalPension"
+  | "lateElderlyMedical"
+  | "nursingCare"
+  | "propertyTax"
+  | "otherPublicCost";
+
+export type TaxSocialPaymentScheduleItem = {
+  id: string;
+  name: string;
+  category: TaxSocialPaymentCategory;
+  dueYearMonth: YearMonth;
+  amount: number;
+  fiscalYear?: number;
+  incomeYear?: number;
+  memberId?: string;
+  coveredMemberId?: string;
+  deductionPayerMemberId?: string;
+  source?: "notice" | "manual" | "autoAdjustment";
+  note?: string;
+};
+
+export type RecurringTaxSocialPaymentTemplate = {
+  id: string;
+  name: string;
+  category: TaxSocialPaymentCategory;
+  startFiscalYear: number;
+  startYearMonth: YearMonth;
+  endYearMonth?: YearMonth;
+  annualIncreaseRate?: number;
+  items: Array<{
+    dueMonth: number;
+    amount: number;
+    fiscalYearOffset?: 0 | 1;
+    label?: string;
+  }>;
+  source?: "noticeBasedEstimate" | "manual";
   note?: string;
 };
 
@@ -405,6 +462,8 @@ export type ScenarioData = {
   specialExpenses: SpecialExpenseEvent[];
   timeBucketItems: TimeBucketItem[];
   taxInsurance: TaxInsuranceByFiscalYear[];
+  taxSocialPaymentSchedule?: TaxSocialPaymentScheduleItem[];
+  recurringTaxSocialPaymentTemplates?: RecurringTaxSocialPaymentTemplate[];
   taxDeductionEvents: TaxDeductionByFiscalYear[];
   assetGrowthSettings: GrowthSettings;
   inflationSettings: InflationSettings;
@@ -550,6 +609,7 @@ export type TaxCashBreakdown = {
   lateElderlyMedical: number;
   nationalPension: number;
   nursingCare: number;
+  propertyTax: number;
   otherPublicCost: number;
   deferredCapitalGainsTax: number;
 };

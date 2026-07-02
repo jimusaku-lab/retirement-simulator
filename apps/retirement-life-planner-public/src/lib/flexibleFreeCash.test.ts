@@ -39,6 +39,7 @@ function annualRow(overrides: Partial<AnnualResult>): AnnualResult {
       lateElderlyMedical: 0,
       nationalPension: 0,
       nursingCare: 0,
+      propertyTax: 0,
       otherPublicCost: 0,
       deferredCapitalGainsTax: 0,
     },
