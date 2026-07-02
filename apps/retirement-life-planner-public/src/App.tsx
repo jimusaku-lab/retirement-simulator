@@ -13161,6 +13161,7 @@ function CompareSection({
     const declaredOptionProfit = result.annual.reduce((sum, row) => sum + row.declaredCapitalGainsIncomeTotal, 0);
     const optionIncomeSuspended = result.annual.reduce((sum, row) => sum + row.optionIncomeSuspendedTotal, 0);
     const cashIncome = result.annual.reduce((sum, row) => sum + row.incomeTotal, 0);
+    const assetGrowth = result.annual.reduce((sum, row) => sum + row.growthAmount, 0);
     const nisaExecuted = result.annual.reduce((sum, row) => sum + row.nisaContributionTotal, 0);
     const nisaSkipped = result.annual.reduce((sum, row) => sum + row.nisaContributionSkippedTotal, 0);
     const finalNisaRemainingLifetimeLimit = result.annual.at(-1)?.nisaRemainingLifetimeLimit ?? 0;
@@ -13210,6 +13211,7 @@ function CompareSection({
       declaredOptionProfit,
       optionIncomeSuspended,
       cashIncome,
+      assetGrowth,
       nisaExecuted,
       nisaSkipped,
       finalNisaRemainingLifetimeLimit,
@@ -13246,6 +13248,7 @@ function CompareSection({
     const baselineNisaRemainingLifetimeLimit = baselineCompareRow?.finalNisaRemainingLifetimeLimit ?? 0;
     const baselineTargetBalance = baselineCompareRow?.result.targetAgeBalance ?? 0;
     const baselineAfterLivingCapacity = baselineCompareRow?.afterLivingCapacity ?? 0;
+    const baselineAssetGrowth = baselineCompareRow?.assetGrowth ?? 0;
     const referenceTax = declaredOptionTaxBreakdownForDisplay(row.declaredOptionProfit).totalEquivalent;
     const taxSocialDelta = row.taxSocial - baselineTaxSocial;
     return {
@@ -13258,6 +13261,7 @@ function CompareSection({
       nisaSkippedDelta: row.nisaSkipped - baselineNisaSkipped,
       nisaRemainingLifetimeLimitDelta: row.finalNisaRemainingLifetimeLimit - baselineNisaRemainingLifetimeLimit,
       targetBalanceDelta: (row.result.targetAgeBalance ?? 0) - baselineTargetBalance,
+      assetGrowthDelta: row.assetGrowth - baselineAssetGrowth,
       afterLivingCapacityDelta: row.afterLivingCapacity - baselineAfterLivingCapacity,
     };
   });
@@ -13319,8 +13323,14 @@ function CompareSection({
     if (baselineCompareRow?.scenario.id === row.scenario.id) {
       return "比較基準です。";
     }
+    const idecoReceiptDiff = row.scenarioDiff.items.find((item) => item.summary.includes("iDeCo一時金受取年月"));
+    if (idecoReceiptDiff) {
+      const match = idecoReceiptDiff.summary.match(/基準 ([0-9/]+) \/ このシナリオ ([0-9/]+)/);
+      const timing = match ? `iDeCo一括を${match[1]}から${match[2]}へ変更。` : "iDeCo一括の受取年月を変更。";
+      return `${timing}資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}。指定年齢残高差は、運用期間と税支払タイミングの差を分けて確認してください。公的年金等控除の年齢切替は、税・社会保険タブ > 所得税・住民税の計算式確認 > メンバー別の課税対象収入と控除 で確認できます。`;
+    }
     if (row.declaredOptionProfit <= 0 && row.optionToLiquidDelta <= 0) {
-      return "一般口座オプション利益はありません。";
+      return `一般口座オプション利益はありません。指定年齢残高差は、資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}、NISA実行差を分けて確認してください。`;
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta && row.nisaSkippedDelta > 0) {
       return row.nisaExecutedDelta > 0
@@ -13336,6 +13346,22 @@ function CompareSection({
         : "利益移動は増えていますが、NISA未実行も増えています。生活費・税社保・投資枠の配分を確認してください。";
     }
     return "一般口座利益により流動資金が増え、税社保増分を上回っています。";
+  };
+  const getScenarioInputDiffLabel = (row: (typeof optionTaxSocialImpactRows)[number]) => {
+    if (baselineCompareRow?.scenario.id === row.scenario.id) return "比較基準";
+    const items = row.scenarioDiff.headlineItems.length > 0 ? row.scenarioDiff.headlineItems : row.scenarioDiff.items;
+    if (items.length === 0) return "入力差分なし";
+    return items.slice(0, 2).map((item) => item.summary).join(" / ");
+  };
+  const getMainCauseMemo = (row: (typeof optionTaxSocialImpactRows)[number]) => {
+    if (baselineCompareRow?.scenario.id === row.scenario.id) return "比較基準";
+    const parts = [
+      `運用 ${signedCompactYen(row.assetGrowthDelta)}`,
+      `税社保 ${signedCompactYen(-row.taxSocialDelta)}`,
+    ];
+    if (row.nisaExecutedDelta !== 0) parts.push(`NISA実行 ${signedCompactYen(row.nisaExecutedDelta)}`);
+    if (row.nisaSkippedDelta !== 0) parts.push(`NISA未実行 ${signedCompactYen(-row.nisaSkippedDelta)}`);
+    return parts.join(" / ");
   };
   const decisionRows = optionTaxSocialImpactRows.map((row) => {
     const isBaseline = baselineCompareRow?.scenario.id === row.scenario.id;
@@ -13428,6 +13454,7 @@ function CompareSection({
                   <Th>判定</Th>
                   <Th>資産寿命</Th>
                   <Th>目標残高差</Th>
+                  <Th>主因メモ</Th>
                   <Th>税社保増分</Th>
                   <Th>生活後余力差</Th>
                   <Th>NISA未実行差</Th>
@@ -13443,6 +13470,7 @@ function CompareSection({
                     <Td className={row.targetBalanceDelta < 0 ? "text-red-600" : row.targetBalanceDelta > 0 ? "text-teal-700" : ""}>
                       {row.isBaseline ? "-" : compactYen(row.targetBalanceDelta)}
                     </Td>
+                    <Td className="min-w-[260px] text-sm text-muted-foreground">{getMainCauseMemo(row)}</Td>
                     <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
                       {row.isBaseline ? "-" : compactYen(row.taxSocialDelta)}
                     </Td>
@@ -13460,6 +13488,7 @@ function CompareSection({
           </div>
           <p className="text-xs leading-6 text-muted-foreground">
             赤は基準より悪化または負担増、青緑は基準より改善または負担減です。税社保増分は支出の増減、生活後余力差は税社保を払った後に残る余力の増減として分けています。
+            主因メモでは税社保増を残高へのマイナス影響として表示します。
           </p>
         </CardContent>
       </Card>
@@ -13601,6 +13630,8 @@ function CompareSection({
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>{periodSourceScenario.userProfile.targetBalanceAge}歳<br />残高</Th>
+                <Th>指定年齢残高差<br />基準比</Th>
+                <Th>主因メモ</Th>
                 <Th>目標残高<br />との差額</Th>
                 <Th>{flexibleFreeCashLabel}<br />資産活用額</Th>
                 <Th>{flexibleFreeCashPeriod.endAge}歳<br />期間末残高</Th>
@@ -13625,6 +13656,17 @@ function CompareSection({
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
+                  {(() => {
+                    const detailRow = optionTaxSocialImpactRows.find((row) => row.scenario.id === scenario.id);
+                    return (
+                      <>
+                        <Td className={(detailRow?.targetBalanceDelta ?? 0) < 0 ? "text-red-600" : (detailRow?.targetBalanceDelta ?? 0) > 0 ? "text-teal-700" : ""}>
+                          {detailRow && baselineCompareRow?.scenario.id !== scenario.id ? compactYen(detailRow.targetBalanceDelta) : "-"}
+                        </Td>
+                        <Td className="min-w-[260px] text-sm text-muted-foreground">{detailRow ? getMainCauseMemo(detailRow) : "-"}</Td>
+                      </>
+                    );
+                  })()}
                   <Td className={targetBalanceStatusClassNames[targetBalanceAnalysis.status]}>{compactYen(targetBalanceAnalysis.gap)}</Td>
                   <Td className={flexibleFreeCash.assetUtilizationAmount > 0 ? "text-amber-700" : "text-teal-700"}>{compactYen(flexibleFreeCash.assetUtilizationAmount)}</Td>
                   <Td>{compactYen(flexibleFreeCash.periodEndBalance)}</Td>
@@ -13704,35 +13746,30 @@ function CompareSection({
         </div>
       </ScenarioSyncDetails>
       <ScenarioSyncDetails
-        title="運用利益・税社保・NISAの詳細比較"
-        description="基準シナリオとの差分原因を確認する時だけ開きます。"
+        title="差分分解（税社保・運用・NISA）"
+        description="基準シナリオとの差分を、指定年齢残高、資産成長、税・社会保険等、生活後余力、NISAに分けて確認します。"
       >
       <Card>
         <CardHeader>
-          <CardTitle>申告対象の運用利益と税社保増分</CardTitle>
+          <CardTitle>差分分解（税社保・運用・NISA）</CardTitle>
           <CardDescription>
-            選択した基準シナリオ「{baselineScenario.name}」に対して、申告対象の運用損益が、税社保・NISA未実行・指定年齢残高にどう影響したかを確認します。
+            選択した基準シナリオ「{baselineScenario.name}」に対して、シナリオ全体の差分が指定年齢残高へどう影響したかを確認します。一般口座オプションだけでなく、iDeCo受取年月、税支払タイミング、NISA実行差もここで分解します。
           </CardDescription>
         </CardHeader>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1600px]">
+          <Table className="min-w-[1880px]">
             <thead className="sticky top-0 z-10 bg-white shadow-sm">
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
-                <Th>申告対象<br />運用損益</Th>
-                <Th>参考税額<br />20.315%</Th>
-                <Th>運用口座から<br />現金・普通預金へ</Th>
-                <Th>税社保増分<br />基準比</Th>
-                <Th>税社保<br />負担率</Th>
-                <Th>生活後余力</Th>
+                <Th className="min-w-[360px]">主な入力差分</Th>
+                <Th>指定年齢残高差<br />基準比</Th>
+                <Th>資産成長差<br />基準比</Th>
+                <Th>税・社会保険等差<br />基準比</Th>
                 <Th>生活後余力差<br />基準比</Th>
-                <Th>NISA実行額</Th>
                 <Th>NISA実行額差<br />基準比</Th>
                 <Th>NISA未実行差<br />基準比</Th>
-                <Th>NISA残り生涯枠</Th>
-                <Th>NISA残り生涯枠差<br />基準比</Th>
-                <Th>指定年齢残高差<br />基準比</Th>
-                <Th>証拠金不足停止</Th>
+                <Th>申告対象<br />運用損益</Th>
+                <Th>運用口座から<br />現金・普通預金へ</Th>
                 <Th className="min-w-[420px]">読み方</Th>
               </Tr>
             </thead>
@@ -13740,43 +13777,35 @@ function CompareSection({
               {optionTaxSocialImpactRows.map((row) => (
                 <Tr key={`option-impact-${row.scenario.id}`}>
                   <Td className="sticky-col left-0 z-20 bg-white font-medium">{row.scenario.name}</Td>
-                  <Td>{compactYen(row.declaredOptionProfit)}</Td>
-                  <Td>{compactYen(row.referenceTax)}</Td>
-                  <Td>{compactYen(row.optionToLiquid)}</Td>
+                  <Td className="min-w-[360px] text-sm text-muted-foreground">{getScenarioInputDiffLabel(row)}</Td>
+                  <Td className={row.targetBalanceDelta < 0 ? "text-red-600" : row.targetBalanceDelta > 0 ? "text-teal-700" : ""}>
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.targetBalanceDelta)}
+                  </Td>
+                  <Td className={row.assetGrowthDelta < 0 ? "text-red-600" : row.assetGrowthDelta > 0 ? "text-teal-700" : ""}>
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.assetGrowthDelta)}
+                  </Td>
                   <Td className={row.taxSocialDelta > 0 ? "text-red-600" : row.taxSocialDelta < 0 ? "text-teal-700" : ""}>
-                    {compactYen(row.taxSocialDelta)}
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.taxSocialDelta)}
                   </Td>
-                  <Td className={row.taxSocialBurdenRate !== null && row.taxSocialBurdenRate > 0.35 ? "text-red-600" : ""}>
-                    {row.taxSocialBurdenRate === null ? "-" : compactPercent(row.taxSocialBurdenRate)}
-                  </Td>
-                  <Td>{compactYen(row.afterLivingCapacity)}</Td>
                   <Td className={row.afterLivingCapacityDelta < 0 ? "text-red-600" : row.afterLivingCapacityDelta > 0 ? "text-teal-700" : ""}>
-                    {compactYen(row.afterLivingCapacityDelta)}
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.afterLivingCapacityDelta)}
                   </Td>
-                  <Td>{compactYen(row.nisaExecuted)}</Td>
                   <Td className={row.nisaExecutedDelta < 0 ? "text-red-600" : row.nisaExecutedDelta > 0 ? "text-teal-700" : ""}>
-                    {compactYen(row.nisaExecutedDelta)}
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.nisaExecutedDelta)}
                   </Td>
                   <Td className={row.nisaSkippedDelta > 0 ? "text-red-600" : row.nisaSkippedDelta < 0 ? "text-teal-700" : ""}>
-                    {compactYen(row.nisaSkippedDelta)}
+                    {baselineCompareRow?.scenario.id === row.scenario.id ? "-" : compactYen(row.nisaSkippedDelta)}
                   </Td>
-                  <Td>{compactLimitYen(row.finalNisaRemainingLifetimeLimit)}</Td>
-                  <Td className={row.nisaRemainingLifetimeLimitDelta < 0 ? "text-red-600" : row.nisaRemainingLifetimeLimitDelta > 0 ? "text-teal-700" : ""}>
-                    {compactLimitYen(row.nisaRemainingLifetimeLimitDelta)}
-                  </Td>
-                  <Td className={row.targetBalanceDelta < 0 ? "text-red-600" : row.targetBalanceDelta > 0 ? "text-teal-700" : ""}>
-                    {compactYen(row.targetBalanceDelta)}
-                  </Td>
-                  <Td className={row.optionIncomeSuspended > 0 ? "text-red-600" : ""}>{compactYen(row.optionIncomeSuspended)}</Td>
+                  <Td>{compactYen(row.declaredOptionProfit)}</Td>
+                  <Td>{compactYen(row.optionToLiquid)}</Td>
                   <Td className="min-w-[420px] text-sm text-muted-foreground">{getOptionImpactSummary(row)}</Td>
                 </Tr>
               ))}
             </tbody>
           </Table>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            ここは「運用利益だけの税額」ではなく、シナリオ全体の差分です。申告対象利益は翌年の所得税精算・住民税・国保等に合算されるため、
-            税社保増分として見ます。参考税額20.315%は申告対象損益だけに税率を掛けた目安で、実際の所得税・住民税・国保等の増分とは一致しない場合があります。
-            NISA未実行差は基準シナリオに対する未実行額の差で、NISA実行額そのものの増減ではありません。資金不足と枠上限を切り分けるため、NISA実行額とNISA残り生涯枠を併せて確認します。
+            税・社会保険等差は支出増なら赤、支出減なら青緑です。主因メモでは残高への影響として符号を反転し、税社保増をマイナス要因として読めるようにしています。
+            申告対象の運用損益は後方列に置き、関係する比較だけで確認します。公的年金等控除の年齢切替は、税・社会保険タブ &gt; 所得税・住民税の計算式確認 &gt; メンバー別の課税対象収入と控除 で確認できます。
           </p>
         </CardContent>
       </Card>
@@ -14435,6 +14464,11 @@ function compactLimitYen(value: number) {
 
 function compactPercent(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function signedCompactYen(value: number) {
+  if (value > 0) return `+${compactYen(value)}`;
+  return compactYen(value);
 }
 
 function preciseSmallDeltaYen(value: number) {
