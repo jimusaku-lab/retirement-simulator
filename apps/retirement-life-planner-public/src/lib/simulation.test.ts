@@ -2344,6 +2344,120 @@ describe("simulation", () => {
     expect(detail?.nationalHealthInsuranceBreakdown.totalBaseIncome).toBe(0);
   });
 
+  it("iDeCo一時金の全額受取モードは受取月時点の残高を全額引き出して普通預金へ入れる", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-01-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-05",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      initialAssets: {
+        cash: 0,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 8_000_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 8_000_000,
+      },
+      monthlyExpenses: { ...simpleScenario().monthlyExpenses, housing: 0 },
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-04",
+          monthlyAmount: 1,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "currentBalance",
+          idecoLumpSumContributionYears: 15,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const result = simulateScenario(scenario);
+    const receiptMonth = result.monthly.find((row) => row.yearMonth === "2026-04");
+    const taxDetail = calculateAutoTaxDetails({ ...scenario, householdProfile: { ...scenario.householdProfile, taxCalculationMode: "auto" } }).find(
+      (row) => row.fiscalYear === 2026,
+    );
+
+    expect(receiptMonth?.sourceAssetIncomeBreakdown.ideco).toBe(8_000_000);
+    expect(receiptMonth?.idecoWithholdingTaxTotal).toBe(151_050);
+    expect(receiptMonth?.endingTrackedAssetBalances.ideco).toBe(0);
+    expect(receiptMonth?.endingLiquidBuffer).toBe(7_848_950);
+    expect(taxDetail?.memberDetails[0].retirementGrossAnnual).toBe(8_000_000);
+    expect(taxDetail?.memberDetails[0].retirementIncomeTaxAnnual).toBe(51_050);
+    expect(taxDetail?.memberDetails[0].retirementResidentTaxAnnual).toBe(100_000);
+  });
+
+  it("iDeCo一時金の手入力モードは入力見込額だけを引き出し、残高があれば残す", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        birthDate: "1966-01-01",
+        simulationStartYearMonth: "2026-04",
+        simulationEndMode: "yearMonth",
+        simulationEndYearMonth: "2026-05",
+        targetBalanceAge: 60,
+        cashReserve: 0,
+      },
+      initialAssets: {
+        cash: 0,
+        bankDeposit: 0,
+        timeDeposit: 0,
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 8_500_000,
+        excludedAssets: 0,
+        debt: 0,
+      },
+      initialAssetCostBasis: {
+        nisa: 0,
+        specificAccount: 0,
+        ordinaryAccountForOptions: 0,
+        ideco: 8_500_000,
+      },
+      monthlyExpenses: { ...simpleScenario().monthlyExpenses, housing: 0 },
+      incomeEvents: [
+        {
+          id: "ideco-lump-sum",
+          memberId: "member-self",
+          name: "iDeCo一時金",
+          type: "oneTime",
+          startYearMonth: "2026-04",
+          endYearMonth: "2026-04",
+          monthlyAmount: 8_000_000,
+          taxTreatment: "taxable",
+          sourceAssetKey: "ideco",
+          idecoLumpSumAmountMode: "manual",
+          idecoLumpSumContributionYears: 15,
+          idecoLumpSumTaxMode: "retirementIncomeDeclaration",
+        },
+      ],
+    });
+
+    const receiptMonth = simulateScenario(scenario).monthly.find((row) => row.yearMonth === "2026-04");
+
+    expect(receiptMonth?.sourceAssetIncomeBreakdown.ideco).toBe(8_000_000);
+    expect(receiptMonth?.endingTrackedAssetBalances.ideco).toBe(500_000);
+    expect(receiptMonth?.endingLiquidBuffer).toBe(7_848_950);
+  });
+
   it("iDeCo拠出期間は日付を優先し、月数は1年未満切上げで年数化する", () => {
     expect(
       getIdecoLumpSumContributionYears(

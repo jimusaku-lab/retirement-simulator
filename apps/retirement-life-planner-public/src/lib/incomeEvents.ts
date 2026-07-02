@@ -22,6 +22,19 @@ export function isIdecoMonexPensionEvent(event: IncomeEvent) {
   return event.type === "pension" && event.sourceAssetKey === "ideco" && event.idecoPensionPayoutMode === "monexSchedule";
 }
 
+export function isIdecoLumpSumCurrentBalanceMode(event: IncomeEvent) {
+  return event.type === "oneTime" && event.sourceAssetKey === "ideco" && event.idecoLumpSumAmountMode === "currentBalance";
+}
+
+export function getIdecoLumpSumEstimatedGrossAmount(scenario: ScenarioData, event: IncomeEvent) {
+  if (!isIdecoLumpSumCurrentBalanceMode(event)) return getBaseAmount(event);
+  const start = ym(scenario.userProfile.simulationStartYearMonth);
+  const receipt = ym(event.startYearMonth);
+  const monthsFromStart = Math.max(0, receipt.diff(start, "month"));
+  const annualRate = scenario.assetGrowthSettings.enabled ? scenario.assetGrowthSettings.rates.ideco : 0;
+  return Math.max(0, scenario.initialAssets.ideco) * Math.pow(1 + annualRate, monthsFromStart / 12);
+}
+
 export function getIdecoMonexEstimatedPerPayment(scenario: ScenarioData, event: IncomeEvent) {
   if (!isIdecoMonexPensionEvent(event)) return getBaseAmount(event);
   const years = event.idecoPensionYears ?? 10;
@@ -103,6 +116,10 @@ export function getIncomeEventAmountForMonth(
   }
 
   if (event.type === "oneTime" && yearMonth !== event.startYearMonth) return 0;
+
+  if (isIdecoLumpSumCurrentBalanceMode(event)) {
+    return getIdecoLumpSumEstimatedGrossAmount(scenario, event);
+  }
 
   const base = getBaseAmount(event);
   if (event.type !== "pension" || pensionAdjustmentRate === 0) return base;

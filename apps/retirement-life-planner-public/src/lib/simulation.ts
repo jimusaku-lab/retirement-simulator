@@ -8,6 +8,7 @@ import {
   getIdecoMonexRemainingActiveMonthCount,
   getIdecoMonexRemainingPayoutCount,
   getIncomeEventAmountForMonth,
+  isIdecoLumpSumCurrentBalanceMode,
   isIdecoMonexPensionEvent,
 } from "@/lib/incomeEvents";
 import {
@@ -1552,6 +1553,7 @@ function simulateScenarioCore(
     const pensionAdjustmentRate = scenario.inflationSettings.enabled ? scenario.inflationSettings.pensionAnnualAdjustmentRate : 0;
     let externalIncomeTotal = 0;
     let transferredIncomeTotal = 0;
+    let transferredBankDepositIncomeTotal = 0;
     let retainedSourceAssetIncomeTotal = 0;
     let optionIncomeSuspendedTotal = 0;
     let capitalGainsTaxTotal = 0;
@@ -1601,7 +1603,9 @@ function simulateScenarioCore(
         : event;
       const desiredAmount = isIdecoMonexPensionEvent(effectiveIncomeEvent)
         ? (isIdecoMonexPayoutMonth(effectiveIncomeEvent, yearMonth) ? getDynamicIdecoMonexPayoutAmount(balances, effectiveIncomeEvent, yearMonth) : 0)
-        : getIncomeEventAmountForMonth(effectiveIncomeEvent, yearMonth, scenario, pensionAdjustmentRate);
+        : isIdecoLumpSumCurrentBalanceMode(effectiveIncomeEvent)
+          ? Math.max(0, balances.ideco)
+          : getIncomeEventAmountForMonth(effectiveIncomeEvent, yearMonth, scenario, pensionAdjustmentRate);
       if (
         isOptionIncome &&
         optionSourceAccount &&
@@ -1711,7 +1715,11 @@ function simulateScenarioCore(
           );
           netCashAdded = Math.max(0, netCashAdded - withholdingTax);
         }
-        transferredIncomeTotal += netCashAdded;
+        if (event.sourceAssetKey === "ideco" && event.type === "oneTime") {
+          transferredBankDepositIncomeTotal += netCashAdded;
+        } else {
+          transferredIncomeTotal += netCashAdded;
+        }
         capitalGainsTaxTotal += withdrawal.capitalGainsTax;
         deferredCapitalGainsTaxTotal += withdrawal.deferredCapitalGainsTax;
         declaredCapitalGainsIncomeTotal += withdrawal.declaredCapitalGainsIncome;
@@ -1726,8 +1734,9 @@ function simulateScenarioCore(
         externalIncomeTotal += desiredAmount;
       }
     }
-    const incomeTotal = externalIncomeTotal + transferredIncomeTotal;
-    balances.cash += incomeTotal;
+    const incomeTotal = externalIncomeTotal + transferredIncomeTotal + transferredBankDepositIncomeTotal;
+    balances.cash += externalIncomeTotal + transferredIncomeTotal;
+    balances.bankDeposit += transferredBankDepositIncomeTotal;
     let assetTransferTotal = 0;
     const assetTransferDetails: string[] = [];
     const optionStartFundingTotal = optionSubAccounts.length

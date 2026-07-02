@@ -71,9 +71,11 @@ import {
   type TargetBalanceStatus,
 } from "@/lib/assetUseAnalysis";
 import {
+  getIdecoLumpSumEstimatedGrossAmount,
   getIdecoMonexEndYearMonth,
   getIdecoMonexEstimatedPerPayment,
   getIdecoMonexFirstPayoutYearMonth,
+  isIdecoLumpSumCurrentBalanceMode,
 } from "@/lib/incomeEvents";
 import {
   applyIncomeEventAmountInput,
@@ -7725,7 +7727,7 @@ function IncomeSection({
           <div id="income-ideco-lump" data-input-card-id="income-ideco-lump" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
             <div className="font-medium">iDeCo一時金の確認</div>
             <p className="mt-1">
-              受取年月、一時金受取額、iDeCo拠出年数（1年未満切上げ）、退職所得の申告を確認してください。加入開始日/終了日を入力すると、拠出月数から控除年数を自動計算します。
+              受取年月、受取額モード、iDeCo拠出年数（1年未満切上げ）、退職所得の申告を確認してください。推奨モードでは受取月時点のiDeCo残高を全額一括受取として計算します。
             </p>
           </div>
         )}
@@ -7745,6 +7747,18 @@ function IncomeSection({
           const eventMember = scenario.householdMembers.find((member) => member.id === event.memberId);
           const incomeTypeOptions = getIncomeTypeSelectOptions(event.sourceAssetKey, event.type);
           const isIdecoLumpSumEvent = event.type === "oneTime" && event.sourceAssetKey === "ideco";
+          const idecoLumpSumAmountMode = event.idecoLumpSumAmountMode ?? "manual";
+          const isIdecoLumpSumFullWithdrawal = isIdecoLumpSumCurrentBalanceMode({
+            ...event,
+            idecoLumpSumAmountMode,
+          });
+          const estimatedIdecoLumpSumGross = getIdecoLumpSumEstimatedGrossAmount(scenario, {
+            ...event,
+            idecoLumpSumAmountMode: "currentBalance",
+          });
+          const idecoLumpSumEstimatedGrowth = estimatedIdecoLumpSumGross - scenario.initialAssets.ideco;
+          const manualIdecoLumpSumMayLeaveBalance =
+            isIdecoLumpSumEvent && idecoLumpSumAmountMode === "manual" && event.monthlyAmount > 0 && event.monthlyAmount < estimatedIdecoLumpSumGross - 1;
           const editor = (
             <EventEditor
               key={event.id}
@@ -7799,6 +7813,7 @@ function IncomeSection({
                         }
                         if (nextType === "oneTime" && s.incomeEvents[index].sourceAssetKey === "ideco") {
                         s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
+                        s.incomeEvents[index].idecoLumpSumAmountMode ??= "currentBalance";
                         s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
                         s.incomeEvents[index].idecoLumpSumTaxMode ??= "retirementIncomeDeclaration";
                       }
@@ -7855,6 +7870,7 @@ function IncomeSection({
                       if (nextValue === "ideco" && s.incomeEvents[index].type === "oneTime") {
                         s.incomeEvents[index].sourceAssetPayoutMode = "cash";
                         s.incomeEvents[index].endYearMonth = s.incomeEvents[index].startYearMonth;
+                        s.incomeEvents[index].idecoLumpSumAmountMode ??= "currentBalance";
                         s.incomeEvents[index].idecoLumpSumContributionYears ??= 20;
                         s.incomeEvents[index].idecoLumpSumTaxMode ??= "retirementIncomeDeclaration";
                       }
@@ -8023,9 +8039,47 @@ function IncomeSection({
                       }
                     />
                   </Field>
-                  <Field label="一時金受取額">
-                    <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
+                  <Field label="受取額モード">
+                    <Select
+                      value={idecoLumpSumAmountMode}
+                      onChange={(e) =>
+                        updateScenario((s) => {
+                          s.incomeEvents[index].idecoLumpSumAmountMode = e.target.value as "currentBalance" | "manual";
+                        })
+                      }
+                    >
+                      <option value="currentBalance">受取月時点のiDeCo残高を全額受取（推奨）</option>
+                      <option value="manual">一時金額を手入力する</option>
+                    </Select>
                   </Field>
+                  {isIdecoLumpSumFullWithdrawal ? (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950 md:col-span-2">
+                      <div className="font-medium">受取月時点の残高を一括受取として計算します</div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        <div>現在のiDeCo評価額: {yen(scenario.initialAssets.ideco)}</div>
+                        <div>受取月時点の見込一時金額: {yen(estimatedIdecoLumpSumGross)}</div>
+                        <div>受取月までの見込成長額: {yen(idecoLumpSumEstimatedGrowth)}</div>
+                        <div>税概算対象額: {yen(estimatedIdecoLumpSumGross)}</div>
+                      </div>
+                      <p className="mt-2 text-xs text-sky-800">
+                        現在のiDeCo評価額を初期資産に入れておけば、受取月まで年率設定で成長させた見込残高を一括受取として計算します。税引後の受取額は普通預金へ入ります。
+                      </p>
+                    </div>
+                  ) : (
+                    <Field label="受取月時点の一時金見込額（手入力）">
+                      <Input type="number" value={event.monthlyAmount} onChange={(e) => updateScenario((s) => void (s.incomeEvents[index].monthlyAmount = numberOrZero(e.target.value)))} />
+                    </Field>
+                  )}
+                  {!isIdecoLumpSumFullWithdrawal && (
+                    <div className={cn("rounded-lg border px-4 py-3 text-sm leading-6 md:col-span-2", manualIdecoLumpSumMayLeaveBalance ? "border-amber-300 bg-amber-50 text-amber-950" : "bg-slate-50 text-muted-foreground")}>
+                      現在残高ではなく、受取月時点で実際に受け取る見込額を入れてください。現在残高から自動試算したい場合は「受取月時点のiDeCo残高を全額受取」を選びます。
+                      {manualIdecoLumpSumMayLeaveBalance && (
+                        <div className="mt-1 font-medium">
+                          手入力額が受取月時点の見込iDeCo残高を下回るため、受取後もiDeCo残高が残ります。一括受取のつもりなら全額受取モードを使ってください。
+                        </div>
+                      )}
+                    </div>
+                  )}
                     <Field label="iDeCo拠出年数（1年未満切上げ）">
                       <Input
                         type="number"
@@ -13327,10 +13381,10 @@ function CompareSection({
     if (idecoReceiptDiff) {
       const match = idecoReceiptDiff.summary.match(/基準 ([0-9/]+) \/ このシナリオ ([0-9/]+)/);
       const timing = match ? `iDeCo一括を${match[1]}から${match[2]}へ変更。` : "iDeCo一括の受取年月を変更。";
-      return `${timing}資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}。指定年齢残高差は、運用期間と税支払タイミングの差を分けて確認してください。公的年金等控除の年齢切替は、税・社会保険タブ > 所得税・住民税の計算式確認 > メンバー別の課税対象収入と控除 で確認できます。`;
+      return `${timing}全期間の資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}。指定年齢残高差は、受取月までの差だけでなく、その後に残った資産が指定年齢まで運用された影響も含めて確認してください。公的年金等控除の年齢切替は、税・社会保険タブ > 所得税・住民税の計算式確認 > メンバー別の課税対象収入と控除 で確認できます。`;
     }
     if (row.declaredOptionProfit <= 0 && row.optionToLiquidDelta <= 0) {
-      return `一般口座オプション利益はありません。指定年齢残高差は、資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}、NISA実行差を分けて確認してください。`;
+      return `一般口座オプション利益はありません。指定年齢残高差は、全期間の資産成長差 ${signedCompactYen(row.assetGrowthDelta)}、税・社会保険等影響 ${signedCompactYen(-row.taxSocialDelta)}、NISA実行差を分けて確認してください。`;
     }
     if (row.taxSocialDelta > row.optionToLiquidDelta && row.nisaSkippedDelta > 0) {
       return row.nisaExecutedDelta > 0
@@ -13763,7 +13817,7 @@ function CompareSection({
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th className="min-w-[360px]">主な入力差分</Th>
                 <Th>指定年齢残高差<br />基準比</Th>
-                <Th>資産成長差<br />基準比</Th>
+                <Th>全期間の<br />資産成長差<br />基準比</Th>
                 <Th>税・社会保険等差<br />基準比</Th>
                 <Th>生活後余力差<br />基準比</Th>
                 <Th>NISA実行額差<br />基準比</Th>

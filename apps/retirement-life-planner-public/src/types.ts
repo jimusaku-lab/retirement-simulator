@@ -219,6 +219,7 @@ export type IncomeEvent = {
   idecoLumpSumContributionYears?: number;
   idecoLumpSumContributionStartDate?: string;
   idecoLumpSumContributionEndDate?: string;
+  idecoLumpSumAmountMode?: "currentBalance" | "manual";
   idecoLumpSumTaxMode?: "retirementIncomeDeclaration" | "noDeclaration";
   linkedHouseholdLivingArrangementEventId?: string;
   note?: string;
