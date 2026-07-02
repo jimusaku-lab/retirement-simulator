@@ -61,6 +61,68 @@ describe("scenarioDiff", () => {
     );
   });
 
+  it("shows iDeCo lump-sum changes as receipt month and ignores hidden end month", () => {
+    const baseline = cloneSampleScenario();
+    baseline.incomeEvents = [
+      {
+        id: "ideco-lump-sum",
+        memberId: baseline.householdMembers[0].id,
+        name: "iDeCo一時金",
+        type: "oneTime",
+        startYearMonth: "2026-11",
+        endYearMonth: "2027-02",
+        monthlyAmount: 3_000_000,
+        sourceAssetKey: "ideco",
+        sourceAssetPayoutMode: "cash",
+        taxTreatment: "taxable",
+      },
+    ];
+    const target = structuredClone(baseline);
+    target.id = "target";
+    target.incomeEvents[0] = {
+      ...target.incomeEvents[0],
+      startYearMonth: "2027-01",
+      endYearMonth: "2027-02",
+    };
+
+    const diff = buildScenarioDiffSummary(baseline, target);
+    const item = diff.items.find((candidate) => candidate.id === "income-changed-ideco-lump-sum");
+
+    expect(item?.summary).toContain("iDeCo一時金受取年月: 基準 2026/11 / このシナリオ 2027/01");
+    expect(item?.summary).not.toContain("期間");
+    expect(item?.summary).not.toContain("2027/02");
+    expect(item?.baselineValue).not.toContain("2027/02");
+    expect(item?.targetValue).not.toContain("2027/02");
+  });
+
+  it("does not report iDeCo lump-sum differences when only hidden end month differs", () => {
+    const baseline = cloneSampleScenario();
+    baseline.incomeEvents = [
+      {
+        id: "ideco-lump-sum",
+        memberId: baseline.householdMembers[0].id,
+        name: "iDeCo一時金",
+        type: "oneTime",
+        startYearMonth: "2026-11",
+        endYearMonth: "2027-02",
+        monthlyAmount: 3_000_000,
+        sourceAssetKey: "ideco",
+        sourceAssetPayoutMode: "cash",
+        taxTreatment: "taxable",
+      },
+    ];
+    const target = structuredClone(baseline);
+    target.id = "target";
+    target.incomeEvents[0] = {
+      ...target.incomeEvents[0],
+      endYearMonth: "2026-11",
+    };
+
+    const diff = buildScenarioDiffSummary(baseline, target);
+
+    expect(diff.items.some((item) => item.id === "income-changed-ideco-lump-sum")).toBe(false);
+  });
+
   it("ignores removed blank placeholder income events", () => {
     const baseline = cloneSampleScenario();
     const target = structuredClone(baseline);

@@ -49,6 +49,10 @@ function periodLabel(start?: string, end?: string) {
   return `${monthLabel(start)}〜${monthLabel(end)}`;
 }
 
+function isIdecoLumpSumEvent(event: IncomeEvent) {
+  return event.type === "oneTime" && event.sourceAssetKey === "ideco";
+}
+
 function incomeKey(event: IncomeEvent) {
   return event.id || `${event.memberId}:${event.type}:${event.name}`;
 }
@@ -72,16 +76,28 @@ function incomeValue(event: IncomeEvent) {
         ? "口座内積上"
         : "現金収入"
       : event.sourceAssetKey === "ideco"
-        ? `iDeCo ${event.idecoPensionYears ?? "-"}年受取`
+        ? isIdecoLumpSumEvent(event)
+          ? "iDeCo一時金"
+          : `iDeCo ${event.idecoPensionYears ?? "-"}年受取`
       : undefined;
   return [
     yen(event.monthlyAmount ?? 0),
-    periodLabel(event.startYearMonth, event.endYearMonth),
+    isIdecoLumpSumEvent(event) ? `受取年月 ${monthLabel(event.startYearMonth)}` : periodLabel(event.startYearMonth, event.endYearMonth),
     payout,
   ].filter(Boolean).join(" / ");
 }
 
 function incomeChangeSummary(label: string, baselineEvent: IncomeEvent, targetEvent: IncomeEvent) {
+  if (isIdecoLumpSumEvent(baselineEvent) && isIdecoLumpSumEvent(targetEvent)) {
+    const changes: string[] = [];
+    if (baselineEvent.startYearMonth !== targetEvent.startYearMonth) {
+      changes.push(`iDeCo一時金受取年月: 基準 ${monthLabel(baselineEvent.startYearMonth)} / このシナリオ ${monthLabel(targetEvent.startYearMonth)}`);
+    }
+    if (baselineEvent.monthlyAmount !== targetEvent.monthlyAmount) {
+      changes.push(`一時金受取額 ${yen(baselineEvent.monthlyAmount ?? 0)} → ${yen(targetEvent.monthlyAmount ?? 0)}`);
+    }
+    return changes.length ? changes.join(" / ") : `${label}: 設定変更`;
+  }
   const changes: string[] = [];
   if (baselineEvent.monthlyAmount !== targetEvent.monthlyAmount) {
     changes.push(`月額 ${yen(baselineEvent.monthlyAmount ?? 0)} → ${yen(targetEvent.monthlyAmount ?? 0)}`);
@@ -171,10 +187,14 @@ function compareIncomeEvents(baseline: ScenarioData, target: ScenarioData): Scen
     }
     if (!baselineEvent || !targetEvent) continue;
 
+    const isBothIdecoLumpSum = isIdecoLumpSumEvent(baselineEvent) && isIdecoLumpSumEvent(targetEvent);
+    const incomeEventPeriodChanged = isBothIdecoLumpSum
+      ? baselineEvent.startYearMonth !== targetEvent.startYearMonth
+      : baselineEvent.startYearMonth !== targetEvent.startYearMonth || baselineEvent.endYearMonth !== targetEvent.endYearMonth;
+
     if (
       baselineEvent.monthlyAmount !== targetEvent.monthlyAmount ||
-      baselineEvent.startYearMonth !== targetEvent.startYearMonth ||
-      baselineEvent.endYearMonth !== targetEvent.endYearMonth ||
+      incomeEventPeriodChanged ||
       baselineEvent.sourceAssetPayoutMode !== targetEvent.sourceAssetPayoutMode ||
       baselineEvent.sourceOptionSubAccountId !== targetEvent.sourceOptionSubAccountId ||
       baselineEvent.idecoPensionYears !== targetEvent.idecoPensionYears

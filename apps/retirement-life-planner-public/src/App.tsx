@@ -7744,6 +7744,7 @@ function IncomeSection({
           const isExternalPublicPension = event.type === "pension" && !event.sourceAssetKey;
           const eventMember = scenario.householdMembers.find((member) => member.id === event.memberId);
           const incomeTypeOptions = getIncomeTypeSelectOptions(event.sourceAssetKey, event.type);
+          const isIdecoLumpSumEvent = event.type === "oneTime" && event.sourceAssetKey === "ideco";
           const editor = (
             <EventEditor
               key={event.id}
@@ -7811,18 +7812,20 @@ function IncomeSection({
                   ))}
                 </Select>
               </Field>
-              <Field label="開始年月">
-                <Input
-                  type="month"
-                  value={event.startYearMonth}
-                  onChange={(e) =>
-                    updateScenario((s) => {
-                      s.incomeEvents[index].startYearMonth = e.target.value;
-                      applyIncomeEventCurrentAmountInput(s.incomeEvents[index]);
-                    })
-                  }
-                />
-              </Field>
+              {!isIdecoLumpSumEvent && (
+                <Field label="開始年月">
+                  <Input
+                    type="month"
+                    value={event.startYearMonth}
+                    onChange={(e) =>
+                      updateScenario((s) => {
+                        s.incomeEvents[index].startYearMonth = e.target.value;
+                        applyIncomeEventCurrentAmountInput(s.incomeEvents[index]);
+                      })
+                    }
+                  />
+                </Field>
+              )}
               <Field label="原資資産">
                 <Select
                   value={event.sourceAssetKey ?? ""}
