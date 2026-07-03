@@ -87,6 +87,7 @@ import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
 import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
+import { calculateLifetimeTotalExpenseSummary } from "@/lib/lifetimeExpense";
 import {
   getNextNoticePaymentMonthSummary,
   summarizeNoticePaymentsByPaymentYear,
@@ -2500,7 +2501,7 @@ function Dashboard({
   const diffSummary = buildScenarioDiffSummary(baselineScenario, scenario);
   const flexibleFreeCashLabel = flexibleFreeCashPeriodLabel(flexibleFreeCashSummary.period);
   const assetLifeValue = result.depletionYearMonth ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "期間内維持";
-  const assetLifeSub = `${scenario.userProfile.targetBalanceAge}歳時点 ${compactYen(result.targetAgeBalance ?? 0)}`;
+  const lifetimeTotalExpense = calculateLifetimeTotalExpenseSummary(result, scenario.userProfile.targetBalanceAge);
   const otherSpecialExpenseTotal = Math.max(0, flexibleFreeCashSummary.specialExpenseTotal - specialExpenseCategoryTotals.enjoyment);
   const chartData = result.annual.map((row) => ({
     year: String(row.year),
@@ -2773,7 +2774,11 @@ function Dashboard({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric title="現在資産" value={compactYen(getTotalAssets(scenario))} sub={`取り崩し対象 ${compactYen(getSimulationTargetAssets(scenario))}`} />
-        <Metric title={`資産寿命 / ${scenario.userProfile.targetBalanceAge}歳残高`} value={assetLifeValue} sub={assetLifeSub} />
+        <Metric
+          title="生涯総支出"
+          value={compactYen(lifetimeTotalExpense.total)}
+          sub={`開始月〜${scenario.userProfile.targetBalanceAge}歳。生活費 ${compactYen(lifetimeTotalExpense.living)} / 税社保 ${compactYen(lifetimeTotalExpense.taxAndSocial)} / 特別支出 ${compactYen(lifetimeTotalExpense.special)}`}
+        />
         <Metric
           title={`${flexibleFreeCashLabel} 資産活用額`}
           value={compactYen(flexibleFreeCashSummary.assetUtilizationAmount)}
@@ -13206,6 +13211,7 @@ function CompareSection({
     const flexibleFreeCash = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
     const specialExpenseCategoryTotals = calculateSpecialExpenseCategoryTotals(scenario, result, flexibleFreeCashPeriod);
     const targetBalanceAnalysis = calculateTargetBalanceAnalysis(scenario, result);
+    const lifetimeTotalExpense = calculateLifetimeTotalExpenseSummary(result, scenario.userProfile.targetBalanceAge);
     const scenarioDiff = buildScenarioDiffSummary(baselineScenario, scenario);
     const yearCount = Math.max(1, result.annual.length);
     const deficitAssetSale = result.annual.reduce((sum, row) => sum + row.deficitAssetWithdrawalAmount, 0);
@@ -13277,6 +13283,7 @@ function CompareSection({
       flexibleFreeCash,
       specialExpenseCategoryTotals,
       targetBalanceAnalysis,
+      lifetimeTotalExpense,
       scenarioDiff,
     };
   });
@@ -13664,7 +13671,7 @@ function CompareSection({
         <CardHeader>
           <CardTitle>複数シナリオ詳細比較表</CardTitle>
           <CardDescription>
-            まず資産寿命、目標残高との差額、資産活用額、楽しみ支出、NISA実行額を横並びで見ます。現在の比較基準は「{baselineScenario.name}」です。
+            まず資産寿命、目標残高、生涯総支出、資産活用額、楽しみ支出、NISA実行額を横並びで見ます。現在の比較基準は「{baselineScenario.name}」です。
           </CardDescription>
         </CardHeader>
         <CardContent className="border-b">
@@ -13677,13 +13684,14 @@ function CompareSection({
           </p>
         </CardContent>
         <CardContent className="table-scroll overflow-auto">
-          <Table className="min-w-[1040px]">
+          <Table className="min-w-[1120px]">
             <thead>
               <Tr>
                 <Th className="sticky-col left-0 z-30 bg-white">シナリオ</Th>
                 <Th>枯渇時期</Th>
                 <Th>枯渇年齢</Th>
                 <Th>{periodSourceScenario.userProfile.targetBalanceAge}歳<br />残高</Th>
+                <Th>生涯総支出</Th>
                 <Th>指定年齢残高差<br />基準比</Th>
                 <Th>主因メモ</Th>
                 <Th>目標残高<br />との差額</Th>
@@ -13704,12 +13712,14 @@ function CompareSection({
                   flexibleFreeCash,
                   specialExpenseCategoryTotals,
                   targetBalanceAnalysis,
+                  lifetimeTotalExpense,
                 }) => (
                 <Tr key={scenario.id}>
                   <Td className="sticky-col left-0 z-20 bg-white font-medium">{scenario.name}</Td>
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
+                  <Td>{compactYen(lifetimeTotalExpense.total)}</Td>
                   {(() => {
                     const detailRow = optionTaxSocialImpactRows.find((row) => row.scenario.id === scenario.id);
                     return (
