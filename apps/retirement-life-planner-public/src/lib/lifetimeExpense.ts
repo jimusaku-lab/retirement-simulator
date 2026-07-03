@@ -1,4 +1,5 @@
 import type { MonthlyResult } from "@/types";
+import { compactYen } from "@/lib/utils";
 
 type LifetimeExpenseMonthlyRow = Pick<
   MonthlyResult,
@@ -56,4 +57,9 @@ export function calculateLifetimeTotalExpenseSummary(
     total: summary.living + summary.special + summary.taxAndSocial,
     targetYearMonth: rows.at(-1)?.yearMonth,
   };
+}
+
+export function formatLifetimeExpenseYen(value: number) {
+  if (Math.abs(value) >= 100_000_000) return `${(value / 100_000_000).toFixed(2)}億円`;
+  return compactYen(value);
 }

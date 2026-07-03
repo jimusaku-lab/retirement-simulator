@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateLifetimeTotalExpenseSummary } from "@/lib/lifetimeExpense";
+import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "@/lib/lifetimeExpense";
 
 function row(ageYears: number, overrides: Partial<Parameters<typeof calculateLifetimeTotalExpenseSummary>[0]["monthly"][number]> = {}) {
   return {
@@ -32,5 +32,11 @@ describe("calculateLifetimeTotalExpenseSummary", () => {
     expect(summary.taxAndSocial).toBe(64);
     expect(summary.total).toBe(1_674);
     expect(summary.targetYearMonth).toBe("2026-60");
+  });
+
+  it("生涯総支出の1億円以上は億円単位で小数第2位まで表示する", () => {
+    expect(formatLifetimeExpenseYen(202_853_960)).toBe("2.03億円");
+    expect(formatLifetimeExpenseYen(100_000_000)).toBe("1.00億円");
+    expect(formatLifetimeExpenseYen(99_990_000)).toBe("9,999万円");
   });
 });

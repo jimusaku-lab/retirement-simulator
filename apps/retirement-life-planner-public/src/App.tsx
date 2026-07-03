@@ -87,7 +87,7 @@ import { syncLinkedIncomeEndYearMonths } from "@/lib/householdEvents";
 import { inferMonthlyOptionIncomeFromScenarioName } from "@/lib/optionIncomeHints";
 import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/lib/optionSubAccounts";
 import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
-import { calculateLifetimeTotalExpenseSummary } from "@/lib/lifetimeExpense";
+import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "@/lib/lifetimeExpense";
 import {
   getNextNoticePaymentMonthSummary,
   summarizeNoticePaymentsByPaymentYear,
@@ -2776,7 +2776,7 @@ function Dashboard({
         <Metric title="現在資産" value={compactYen(getTotalAssets(scenario))} sub={`取り崩し対象 ${compactYen(getSimulationTargetAssets(scenario))}`} />
         <Metric
           title="生涯総支出"
-          value={compactYen(lifetimeTotalExpense.total)}
+          value={formatLifetimeExpenseYen(lifetimeTotalExpense.total)}
           sub={`開始月〜${scenario.userProfile.targetBalanceAge}歳。生活費 ${compactYen(lifetimeTotalExpense.living)} / 税社保 ${compactYen(lifetimeTotalExpense.taxAndSocial)} / 特別支出 ${compactYen(lifetimeTotalExpense.special)}`}
         />
         <Metric
@@ -13719,7 +13719,7 @@ function CompareSection({
                   <Td>{result.depletionYearMonth ?? "期間内維持"}</Td>
                   <Td>{result.depletionAgeYears ? `${result.depletionAgeYears}歳${result.depletionAgeMonths}か月` : "-"}</Td>
                   <Td>{compactYen(result.targetAgeBalance ?? 0)}</Td>
-                  <Td>{compactYen(lifetimeTotalExpense.total)}</Td>
+                  <Td>{formatLifetimeExpenseYen(lifetimeTotalExpense.total)}</Td>
                   {(() => {
                     const detailRow = optionTaxSocialImpactRows.find((row) => row.scenario.id === scenario.id);
                     return (
