@@ -3,8 +3,10 @@ import { sampleState } from "@/data/sampleData";
 import { historicalMarketReturns } from "@/data/historicalMarketReturns";
 import {
   createDefaultHistoricalSinglePathReturnModel,
+  getMonthlyAssetGrowthRate,
   getHistoricalSinglePathDataCoverage,
   getRequiredHistoricalReturnMonths,
+  getUsdJpyMonthlyReturn,
   historicalReturnPresets,
 } from "@/lib/assetReturnModel";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
@@ -336,6 +338,123 @@ describe("simulation", () => {
     const expectedMonthlyReturn = startReturn!.sp500! * 0.8 + startReturn!.usBond! * 0.2;
 
     expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * expectedMonthlyReturn));
+  });
+
+  it("円換算リターンではドル建て指数リターンに同じ月のUSD/JPY変化率を掛ける", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    const usdJpyReturn = getUsdJpyMonthlyReturn("2000-01");
+    expect(startReturn?.sp500).toBeDefined();
+    expect(usdJpyReturn).toBeDefined();
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.currencyMode = "jpyConverted";
+    returnModel.assetMappings.specificAccount = historicalPresetMapping("sp500_100");
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel,
+      },
+    });
+    const expectedMonthlyReturn = (1 + startReturn!.sp500!) * (1 + usdJpyReturn!) - 1;
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * expectedMonthlyReturn));
+  });
+
+  it("円換算リターンでは資産配分のドル建て加重平均後にUSD/JPY変化率を掛ける", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    const usdJpyReturn = getUsdJpyMonthlyReturn("2000-01");
+    expect(startReturn?.sp500).toBeDefined();
+    expect(startReturn?.usBond).toBeDefined();
+    expect(usdJpyReturn).toBeDefined();
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.currencyMode = "jpyConverted";
+    returnModel.assetMappings.specificAccount = historicalPresetMapping("sp500_80_usBond_20");
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel,
+      },
+    });
+    const usdPortfolioReturn = startReturn!.sp500! * 0.8 + startReturn!.usBond! * 0.2;
+    const expectedMonthlyReturn = (1 + usdPortfolioReturn) * (1 + usdJpyReturn!) - 1;
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * expectedMonthlyReturn));
+  });
+
+  it("円換算リターンでも現金・普通預金・定期預金にはUSD/JPY変化率を掛けない", () => {
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.currencyMode = "jpyConverted";
+    const rates = {
+      cash: 0.12,
+      bankDeposit: 0.12,
+      timeDeposit: 0.12,
+      nisa: 0,
+      specificAccount: 0,
+      ordinaryAccountForOptions: 0,
+      ideco: 0,
+    };
+    const expectedFixedMonthlyReturn = Math.pow(1 + 0.12, 1 / 12) - 1;
+
+    expect(getMonthlyAssetGrowthRate({ enabled: true, rates, returnModel }, "cash", 0)).toBeCloseTo(expectedFixedMonthlyReturn);
+    expect(getMonthlyAssetGrowthRate({ enabled: true, rates, returnModel }, "bankDeposit", 0)).toBeCloseTo(expectedFixedMonthlyReturn);
+    expect(getMonthlyAssetGrowthRate({ enabled: true, rates, returnModel }, "timeDeposit", 0)).toBeCloseTo(expectedFixedMonthlyReturn);
+  });
+
+  it("円換算リターンではUSD/JPYデータ不足月を補完せず不足扱いにする", () => {
+    const returnModel = historicalSinglePathReturnModel("1970-01");
+    const indexOnlyCoverage = getHistoricalSinglePathDataCoverage("1970-01", 2, returnModel.assetMappings, "indexOnly");
+    returnModel.currencyMode = "jpyConverted";
+    const jpyCoverage = getHistoricalSinglePathDataCoverage("1970-01", 2, returnModel.assetMappings, returnModel.currencyMode);
+
+    expect(indexOnlyCoverage.isSufficient).toBe(true);
+    expect(jpyCoverage.isSufficient).toBe(false);
+    expect(jpyCoverage.requiresUsdJpy).toBe(true);
+    expect(jpyCoverage.missingMonths).toBeGreaterThan(0);
   });
 
   it("過去実績モードでも資産別に固定年率と過去実績を混在できる", () => {

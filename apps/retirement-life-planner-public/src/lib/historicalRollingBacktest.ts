@@ -2,6 +2,7 @@ import dayjs from "dayjs";
 import { historicalMarketReturnDataset } from "@/data/historicalMarketReturns";
 import {
   getHistoricalReturnMonth,
+  getHistoricalCurrencyMode,
   getHistoricalSinglePathDataCoverage,
   getRequiredHistoricalReturnMonths,
 } from "@/lib/assetReturnModel";
@@ -119,7 +120,7 @@ function buildSinglePathScenario(
     mode: "historicalSinglePath",
     datasetId: model.datasetId,
     startYearMonth,
-    currencyMode: "indexOnly",
+    currencyMode: getHistoricalCurrencyMode(model),
     assetMappings: structuredClone(model.assetMappings) as Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>,
   };
   return next;
@@ -133,9 +134,10 @@ export function estimateHistoricalRollingBacktestPaths(
   const candidateMonths = monthRange(model.rangeStartYearMonth, model.rangeEndYearMonth);
   let validPathCount = 0;
   let requiredIndexIds: string[] = [];
+  const currencyMode = getHistoricalCurrencyMode(model);
 
   for (const month of candidateMonths) {
-    const coverage = getHistoricalSinglePathDataCoverage(month, requiredMonths, model.assetMappings);
+    const coverage = getHistoricalSinglePathDataCoverage(month, requiredMonths, model.assetMappings, currencyMode);
     requiredIndexIds = coverage.requiredIndexIds;
     if (coverage.isSufficient) validPathCount += 1;
   }
@@ -160,7 +162,12 @@ export function runHistoricalRollingBacktest(
   const paths: HistoricalRollingBacktestPath[] = [];
 
   for (const startYearMonth of monthRange(model.rangeStartYearMonth, model.rangeEndYearMonth)) {
-    const coverage = getHistoricalSinglePathDataCoverage(startYearMonth, estimate.requiredMonths, model.assetMappings);
+    const coverage = getHistoricalSinglePathDataCoverage(
+      startYearMonth,
+      estimate.requiredMonths,
+      model.assetMappings,
+      getHistoricalCurrencyMode(model),
+    );
     if (!coverage.isSufficient) continue;
 
     const result = simulateScenario(buildSinglePathScenario(scenario, model, startYearMonth));
@@ -194,7 +201,10 @@ export function runHistoricalRollingBacktest(
     paths,
     depletedPathCount,
     depletionRate: paths.length ? depletedPathCount / paths.length : 0,
-    dataInsufficientReason: "必要月数分の過去データがない開始月は検証対象外です。平均リターンなどでは補完しません。",
+    dataInsufficientReason:
+      getHistoricalCurrencyMode(model) === "jpyConverted"
+        ? "必要月数分の指数・USD/JPYデータがない開始月は検証対象外です。平均リターンや0%では補完しません。"
+        : "必要月数分の過去データがない開始月は検証対象外です。平均リターンなどでは補完しません。",
     worstStartYearMonth: age90Balance?.worst.startYearMonth,
     bestStartYearMonth: age90Balance?.best.startYearMonth,
     targetAgeBalance,

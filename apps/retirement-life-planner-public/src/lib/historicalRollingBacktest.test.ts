@@ -61,6 +61,24 @@ describe("historical rolling backtest", () => {
     expect(result.dataInsufficientReason).toContain("補完しません");
   });
 
+  it("円換算リターンではUSD/JPYデータ不足の開始月を範囲検証から除外する", () => {
+    const scenario = testScenario();
+    scenario.userProfile.targetBalanceAge = 60;
+    const model = createDefaultHistoricalRollingRangeReturnModel("1970-01", "1971-03");
+    if (model.mode !== "historicalRollingRange") throw new Error("rolling range model expected");
+    model.currencyMode = "jpyConverted";
+
+    const estimate = estimateHistoricalRollingBacktestPaths(scenario, model);
+    const result = runHistoricalRollingBacktest(scenario, model);
+
+    expect(estimate.requiredMonths).toBe(1);
+    expect(estimate.totalPathCount).toBe(15);
+    expect(estimate.validPathCount).toBe(2);
+    expect(estimate.excludedPathCount).toBe(13);
+    expect(result.paths.map((path) => path.startYearMonth)).toEqual(["1971-02", "1971-03"]);
+    expect(result.dataInsufficientReason).toContain("USD/JPY");
+  });
+
   it("範囲検証は各開始月を既存シミュレーションに当てはめて集計する", () => {
     const scenario = testScenario();
     const model = createDefaultHistoricalRollingRangeReturnModel("1990-01", "1990-03");

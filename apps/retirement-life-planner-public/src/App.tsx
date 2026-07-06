@@ -92,13 +92,16 @@ import {
   createDefaultHistoricalRollingRangeReturnModel,
   createDefaultHistoricalSinglePathReturnModel,
   getEffectiveReturnModel,
+  getHistoricalCurrencyMode,
   getHistoricalReturnPresetId,
   getHistoricalReturnPresetLabel,
   getHistoricalSinglePathDataCoverage,
   getHistoricalReturnDatasetSummary,
   getRequiredHistoricalReturnMonths,
+  historicalCurrencyModeLabels,
   historicalReturnAssetKeys,
   historicalReturnPresets,
+  type HistoricalCurrencyMode,
   type HistoricalReturnPresetId,
 } from "@/lib/assetReturnModel";
 import {
@@ -5598,10 +5601,15 @@ function AssetsSection({
   const requiredHistoricalReturnMonths = getRequiredHistoricalReturnMonths(scenario);
   const historicalAssetMappings =
     returnModel.mode === "historicalSinglePath" || returnModel.mode === "historicalRollingRange" ? returnModel.assetMappings : {};
+  const historicalCurrencyMode =
+    returnModel.mode === "historicalSinglePath" || returnModel.mode === "historicalRollingRange"
+      ? getHistoricalCurrencyMode(returnModel)
+      : "indexOnly";
   const historicalDataCoverage = getHistoricalSinglePathDataCoverage(
     historicalStartYearMonth,
     requiredHistoricalReturnMonths,
     historicalAssetMappings,
+    historicalCurrencyMode,
   );
   const rollingBacktestEstimate = useMemo(
     () => (returnModel.mode === "historicalRollingRange" ? estimateHistoricalRollingBacktestPaths(scenario, returnModel) : undefined),
@@ -6140,7 +6148,7 @@ function AssetsSection({
             <CardDescription>生活費・税社保・積立・受取はそのまま使い、資産成長率だけを固定年率または過去市場だった場合に切り替えます。</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <div className="mb-4 grid gap-3 md:grid-cols-5">
               <Field label="資産成長率反映">
                 <Select
                   value={scenario.assetGrowthSettings.enabled ? "on" : "off"}
@@ -6168,6 +6176,22 @@ function AssetsSection({
                   <option value="fixedAnnual">固定年率</option>
                   <option value="historicalSinglePath">過去実績・単一期間</option>
                   <option value="historicalRollingRange">過去実績・範囲検証</option>
+                </Select>
+              </Field>
+              <Field label="為替モード">
+                <Select
+                  value={historicalCurrencyMode}
+                  disabled={returnModelMode === "fixedAnnual"}
+                  onChange={(event) => updateScenario((s) => {
+                    const currencyMode = event.target.value as HistoricalCurrencyMode;
+                    const current = getEffectiveReturnModel(s.assetGrowthSettings);
+                    if (current.mode === "historicalSinglePath" || current.mode === "historicalRollingRange") {
+                      s.assetGrowthSettings.returnModel = { ...current, currencyMode };
+                    }
+                  })}
+                >
+                  <option value="indexOnly">{historicalCurrencyModeLabels.indexOnly}</option>
+                  <option value="jpyConverted">{historicalCurrencyModeLabels.jpyConverted}</option>
                 </Select>
               </Field>
               <Field label="過去開始月">
@@ -6221,8 +6245,14 @@ function AssetsSection({
                 <div className="font-medium text-foreground">過去市場でこの人生設計を検証</div>
                 <div>
                   データは{historicalReturnDataset.label}、範囲は{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}です。
-                  為替は指数リターンのみ、円換算リターンは未対応です。
+                  為替モード: {historicalCurrencyModeLabels[historicalCurrencyMode]}。
                 </div>
+                {historicalCurrencyMode === "jpyConverted" && (
+                  <div>
+                    円換算リターンは、選択した過去期間のUSD/JPY変動を米国株・米国債券の月次リターンに重ねて、円建て資産として試算します。
+                    現在の為替レートで未来を予測するものではありません。
+                  </div>
+                )}
                 {returnModelMode === "historicalSinglePath" ? (
                   <>
                     <div>
@@ -6236,6 +6266,7 @@ function AssetsSection({
                       <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
                         過去データが不足しています。この開始月では{historicalDataCoverage.availableMonths}か月分しか使えず、
                         {historicalDataCoverage.missingMonths}か月不足します。平均リターンや固定年率では補完しません。
+                        {historicalDataCoverage.requiresUsdJpy ? " 円換算リターンにはUSD/JPY月次データも必要です。開始月を変更するか、指数リターンのみを選んでください。" : ""}
                       </div>
                     )}
                   </>
@@ -6246,11 +6277,17 @@ function AssetsSection({
                     検証範囲内の開始月 {rollingBacktestEstimate?.totalPathCount ?? 0}件のうち、
                     対象 {rollingBacktestEstimate?.validPathCount ?? 0}件 / 除外 {rollingBacktestEstimate?.excludedPathCount ?? 0}件です。
                     データ不足分は平均リターンなどで補完しません。
+                    {historicalCurrencyMode === "jpyConverted"
+                      ? " 円換算リターンにはUSD/JPY月次データが必要です。データが不足する開始月は検証対象から外しています。"
+                      : ""}
                   </div>
                 )}
                 <div>
-                  必要指数: {(returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds)?.length
-                    ? (returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds)?.join(" / ")
+                  必要データ: {(returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds)?.length
+                    ? [
+                        ...((returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds) ?? []),
+                        ...(historicalCurrencyMode === "jpyConverted" ? ["USD/JPY"] : []),
+                      ].join(" / ")
                     : "なし（固定年率のみ）"}
                 </div>
                 <div className="mt-3 rounded-md border bg-white/80 p-3">
@@ -12739,6 +12776,10 @@ function ResultsSection({
     resultReturnModel.mode === "historicalSinglePath" || resultReturnModel.mode === "historicalRollingRange"
       ? historicalReturnAssetKeys.map((key) => `${growthAssetLabels[key]}: ${getHistoricalReturnPresetLabel(resultReturnModel.assetMappings[key])}`)
       : [];
+  const resultHistoricalCurrencyMode =
+    resultReturnModel.mode === "historicalSinglePath" || resultReturnModel.mode === "historicalRollingRange"
+      ? getHistoricalCurrencyMode(resultReturnModel)
+      : "indexOnly";
 
   return (
     <div className="space-y-6">
@@ -12783,9 +12824,12 @@ function ResultsSection({
           <div className="text-muted-foreground">
             <p>
               データ: {historicalReturnDataset.label}（{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}） / 為替モード:
-              指数リターンのみ
+              {" "}{historicalCurrencyModeLabels[resultHistoricalCurrencyMode]}
             </p>
             <p>配分: {resultReturnSummaryRows.join(" / ")}</p>
+            {resultHistoricalCurrencyMode === "jpyConverted" && (
+              <p>円換算リターンは、過去のUSD/JPY変動を同じ月の米国株・米国債券リターンに重ねた検証です。将来の為替を保証するものではありません。</p>
+            )}
             {resultReturnModel.mode === "historicalRollingRange" && (
               <p>通常結果は範囲検証の中央値や最悪ケースへ置き換えません。過去市場ストレステストは初期資産タブで実行します。</p>
             )}

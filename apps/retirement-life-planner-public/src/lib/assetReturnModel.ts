@@ -1,8 +1,16 @@
 import dayjs from "dayjs";
-import { historicalMarketReturnDataset, historicalMarketReturns } from "@/data/historicalMarketReturns";
+import { historicalMarketReturnDataset, historicalMarketReturns, historicalUsdJpyMonthlyRates } from "@/data/historicalMarketReturns";
 import type { AssetReturnModel, GrowthAssetKey, GrowthSettings, HistoricalAssetMapping, ScenarioData, YearMonth } from "@/types";
 
 const historicalReturnByMonth = new Map(historicalMarketReturns.map((row) => [row.month, row]));
+const historicalUsdJpyByMonth = new Map(historicalUsdJpyMonthlyRates.map((row) => [row.month, row.usdJpy]));
+
+export type HistoricalCurrencyMode = "indexOnly" | "jpyConverted";
+
+export const historicalCurrencyModeLabels: Record<HistoricalCurrencyMode, string> = {
+  indexOnly: "指数リターンのみ",
+  jpyConverted: "円換算リターン",
+};
 
 export const historicalReturnAssetKeys: GrowthAssetKey[] = [
   "nisa",
@@ -75,6 +83,12 @@ export function getEffectiveReturnModel(settings: GrowthSettings): AssetReturnMo
   return settings.returnModel ?? { mode: "fixedAnnual" };
 }
 
+export function getHistoricalCurrencyMode(
+  returnModel: Extract<AssetReturnModel, { mode: "historicalSinglePath" | "historicalRollingRange" }>,
+): HistoricalCurrencyMode {
+  return returnModel.currencyMode ?? "indexOnly";
+}
+
 export function getHistoricalReturnMonth(startYearMonth: YearMonth, simulationMonthIndex: number): YearMonth {
   return dayjs(`${startYearMonth}-01`).add(simulationMonthIndex, "month").format("YYYY-MM");
 }
@@ -100,13 +114,17 @@ export function getHistoricalSinglePathDataCoverage(
   startYearMonth: YearMonth,
   requiredMonths: number,
   assetMappings?: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>,
+  currencyMode: HistoricalCurrencyMode = "indexOnly",
 ) {
   const required = Math.max(1, requiredMonths);
   const lastRequiredMonth = getHistoricalReturnMonth(startYearMonth, required - 1);
   const requiredIndexIds = getHistoricalIndexIdsFromMappings(assetMappings);
+  const requiresUsdJpy = currencyMode === "jpyConverted" && requiredIndexIds.length > 0;
   const availableMonths = historicalMarketReturns.filter((row) => {
     if (row.month < startYearMonth || row.month > lastRequiredMonth) return false;
-    return requiredIndexIds.every((indexId) => getHistoricalIndexReturn(indexId, row.month) !== undefined);
+    if (!requiredIndexIds.every((indexId) => getHistoricalIndexReturn(indexId, row.month) !== undefined)) return false;
+    if (requiresUsdJpy && getUsdJpyMonthlyReturn(row.month) === undefined) return false;
+    return true;
   }).length;
   return {
     requiredMonths: required,
@@ -116,6 +134,8 @@ export function getHistoricalSinglePathDataCoverage(
     missingMonths: Math.max(0, required - availableMonths),
     isSufficient: availableMonths >= required,
     requiredIndexIds,
+    currencyMode,
+    requiresUsdJpy,
   };
 }
 
@@ -132,7 +152,26 @@ function getHistoricalIndexReturn(indexId: string, month: YearMonth): number | u
   return undefined;
 }
 
-function getHistoricalPortfolioReturn(mapping: HistoricalAssetMapping, month: YearMonth): number | undefined {
+export function getUsdJpyMonthlyReturn(month: YearMonth): number | undefined {
+  const currentRate = historicalUsdJpyByMonth.get(month);
+  const previousMonth = dayjs(`${month}-01`).subtract(1, "month").format("YYYY-MM");
+  const previousRate = historicalUsdJpyByMonth.get(previousMonth);
+  if (currentRate === undefined || previousRate === undefined || previousRate === 0) return undefined;
+  return currentRate / previousRate - 1;
+}
+
+function convertUsdReturnToJpyReturn(usdReturn: number, month: YearMonth, currencyMode: HistoricalCurrencyMode): number | undefined {
+  if (currencyMode === "indexOnly") return usdReturn;
+  const usdJpyReturn = getUsdJpyMonthlyReturn(month);
+  if (usdJpyReturn === undefined) return undefined;
+  return (1 + usdReturn) * (1 + usdJpyReturn) - 1;
+}
+
+function getHistoricalPortfolioReturn(
+  mapping: HistoricalAssetMapping,
+  month: YearMonth,
+  currencyMode: HistoricalCurrencyMode,
+): number | undefined {
   if (mapping.type === "fixedAnnual") return undefined;
   let totalWeight = 0;
   let weightedReturn = 0;
@@ -146,7 +185,7 @@ function getHistoricalPortfolioReturn(mapping: HistoricalAssetMapping, month: Ye
   }
   if (totalWeight <= 0) return undefined;
   if (Math.abs(totalWeight - 1) > 0.0001) return undefined;
-  return weightedReturn;
+  return convertUsdReturnToJpyReturn(weightedReturn, month, currencyMode);
 }
 
 export function getHistoricalReturnPresetId(mapping: HistoricalAssetMapping | undefined): HistoricalReturnPresetId {
@@ -176,7 +215,7 @@ export function getMonthlyAssetGrowthRate(
   simulationMonthIndex: number,
 ): number {
   const returnModel = getEffectiveReturnModel(settings);
-  if (returnModel.mode !== "historicalSinglePath" || returnModel.currencyMode !== "indexOnly") {
+  if (returnModel.mode !== "historicalSinglePath") {
     return getFixedAnnualMonthlyGrowthRate(settings, assetKey);
   }
 
@@ -186,7 +225,7 @@ export function getMonthlyAssetGrowthRate(
   }
 
   const historicalMonth = getHistoricalReturnMonth(returnModel.startYearMonth, simulationMonthIndex);
-  return getHistoricalPortfolioReturn(mapping, historicalMonth) ?? 0;
+  return getHistoricalPortfolioReturn(mapping, historicalMonth, getHistoricalCurrencyMode(returnModel)) ?? 0;
 }
 
 export function getHistoricalReturnDatasetSummary() {
