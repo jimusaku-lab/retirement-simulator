@@ -14484,6 +14484,65 @@ function ManualSection() {
 
       <Card>
         <CardHeader>
+          <CardTitle>運用リターン設定と過去市場検証</CardTitle>
+          <CardDescription>固定年率と過去実績モードの違い、データの扱い、注意点です。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm leading-7">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <p className="font-medium">固定年率</p>
+              <p className="mt-1 text-muted-foreground">
+                NISA、特定口座、iDeCoなどに入れた年率を月利に直し、毎月同じ率で増減させます。既存シナリオと、returnModel未設定の保存データはこの扱いです。
+              </p>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <p className="font-medium">過去実績・単一期間</p>
+              <p className="mt-1 text-muted-foreground">
+                指定した過去開始月から、必要月数分の月次リターンを順番に当てはめます。生活費、税社保、積立、取り崩しは通常の入力をそのまま使います。
+              </p>
+            </div>
+            <div className="rounded-md border bg-slate-50 px-4 py-3">
+              <p className="font-medium">過去実績・範囲検証</p>
+              <p className="mt-1 text-muted-foreground">
+                指定した過去範囲内で、必要月数を満たす全開始月を検証します。初期表示では実行せず、「検証する」を押した時だけ複数試算します。
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border bg-sky-50 px-4 py-3 text-sky-950">
+              <p className="font-medium">必要データ期間</p>
+              <p className="mt-1">
+                60歳から90歳までを見る場合は約360か月、40年相当を見る場合は約480か月の月次データが必要です。
+                必要月数分の指数・USD/JPYデータがない開始月は、平均値、0%、直近値で補完せず対象外または不足警告にします。
+              </p>
+            </div>
+            <div className="rounded-md border bg-emerald-50 px-4 py-3 text-emerald-950">
+              <p className="font-medium">為替モード</p>
+              <p className="mt-1">
+                「指数リターンのみ」はドル建て指数の月次リターンをそのまま使います。「円換算リターン」は同じ月のUSD/JPY変化率を重ね、
+                `(1 + ドル建て指数リターン) * (1 + USD/JPY変化率) - 1` で見ます。現金、普通預金、定期預金には為替変動を掛けません。
+              </p>
+            </div>
+          </div>
+          <div className="rounded-md border bg-amber-50 px-4 py-3 text-amber-950">
+            <p className="font-medium">過去市場だった場合の検証です</p>
+            <p className="mt-1">
+              この機能は、過去実績に当てはめた検証です。現在の為替レートや過去の市場が将来も続くことを示すものではなく、将来を保証するものではありません。
+            </p>
+          </div>
+          <div className="rounded-md border bg-slate-50 px-4 py-3 text-slate-700">
+            <p className="font-medium text-slate-900">データ出典と対象期間</p>
+            <p className="mt-1">
+              対象: {historicalReturnDataset.label} / 期間: {historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth} / 最終データ年月: {historicalReturnDataset.lastMonth}。
+              S&P500とNASDAQ100は価格指数の月次変化率、米国債券はFRED GS10から推定した10年国債概算リターン、USD/JPYはFRED EXJPUSの月次平均です。
+              配当は含みません。出典メモ: {historicalReturnDataset.sourceLabel}。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>用語の読み替え</CardTitle>
           <CardDescription>画面で使う言葉の意味を簡単に確認します。</CardDescription>
         </CardHeader>
