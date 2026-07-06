@@ -4,17 +4,43 @@ import type { AssetReturnModel, GrowthAssetKey, GrowthSettings, HistoricalAssetM
 
 const historicalReturnByMonth = new Map(historicalMarketReturns.map((row) => [row.month, row]));
 
-export const phase1HistoricalReturnAssetKeys: GrowthAssetKey[] = [
+export const historicalReturnAssetKeys: GrowthAssetKey[] = [
   "nisa",
   "specificAccount",
   "ordinaryAccountForOptions",
   "ideco",
 ];
 
-const defaultHistoricalMapping: HistoricalAssetMapping = {
-  type: "historicalPortfolio",
-  allocations: [{ indexId: "sp500", weight: 1 }],
-};
+export const phase1HistoricalReturnAssetKeys = historicalReturnAssetKeys;
+
+export type HistoricalReturnPresetId =
+  | "fixedAnnual"
+  | "sp500_100"
+  | "nasdaq100_100"
+  | "sp500_80_usBond_20"
+  | "sp500_60_usBond_40";
+
+export const historicalReturnPresets: Array<{
+  id: HistoricalReturnPresetId;
+  label: string;
+  mapping: HistoricalAssetMapping;
+}> = [
+  { id: "fixedAnnual", label: "固定年率のまま", mapping: { type: "fixedAnnual" } },
+  { id: "sp500_100", label: "S&P500 100%", mapping: { type: "historicalPortfolio", allocations: [{ indexId: "sp500", weight: 1 }] } },
+  { id: "nasdaq100_100", label: "NASDAQ100 100%", mapping: { type: "historicalPortfolio", allocations: [{ indexId: "nasdaq100", weight: 1 }] } },
+  {
+    id: "sp500_80_usBond_20",
+    label: "S&P500 80% / 米国債券 20%",
+    mapping: { type: "historicalPortfolio", allocations: [{ indexId: "sp500", weight: 0.8 }, { indexId: "usBond", weight: 0.2 }] },
+  },
+  {
+    id: "sp500_60_usBond_40",
+    label: "S&P500 60% / 米国債券 40%",
+    mapping: { type: "historicalPortfolio", allocations: [{ indexId: "sp500", weight: 0.6 }, { indexId: "usBond", weight: 0.4 }] },
+  },
+];
+
+const defaultHistoricalMapping = historicalReturnPresets.find((preset) => preset.id === "sp500_100")!.mapping;
 
 export function createDefaultHistoricalSinglePathReturnModel(startYearMonth: YearMonth = "2000-01"): AssetReturnModel {
   return {
@@ -23,7 +49,7 @@ export function createDefaultHistoricalSinglePathReturnModel(startYearMonth: Yea
     startYearMonth,
     currencyMode: "indexOnly",
     assetMappings: Object.fromEntries(
-      phase1HistoricalReturnAssetKeys.map((key) => [key, structuredClone(defaultHistoricalMapping)]),
+      historicalReturnAssetKeys.map((key) => [key, structuredClone(defaultHistoricalMapping)]),
     ) as Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>,
   };
 }
@@ -42,10 +68,29 @@ export function getRequiredHistoricalReturnMonths(scenario: ScenarioData): numbe
   return Math.max(1, target.diff(start, "month"));
 }
 
-export function getHistoricalSinglePathDataCoverage(startYearMonth: YearMonth, requiredMonths: number) {
+function getHistoricalIndexIdsFromMappings(assetMappings?: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>) {
+  const ids = new Set<string>();
+  for (const mapping of Object.values(assetMappings ?? {})) {
+    if (!mapping || mapping.type !== "historicalPortfolio") continue;
+    for (const allocation of mapping.allocations) {
+      if (allocation.weight > 0 && allocation.indexId !== "cash") ids.add(allocation.indexId);
+    }
+  }
+  return [...ids];
+}
+
+export function getHistoricalSinglePathDataCoverage(
+  startYearMonth: YearMonth,
+  requiredMonths: number,
+  assetMappings?: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>,
+) {
   const required = Math.max(1, requiredMonths);
   const lastRequiredMonth = getHistoricalReturnMonth(startYearMonth, required - 1);
-  const availableMonths = historicalMarketReturns.filter((row) => row.month >= startYearMonth && row.month <= lastRequiredMonth).length;
+  const requiredIndexIds = getHistoricalIndexIdsFromMappings(assetMappings);
+  const availableMonths = historicalMarketReturns.filter((row) => {
+    if (row.month < startYearMonth || row.month > lastRequiredMonth) return false;
+    return requiredIndexIds.every((indexId) => getHistoricalIndexReturn(indexId, row.month) !== undefined);
+  }).length;
   return {
     requiredMonths: required,
     startYearMonth,
@@ -53,6 +98,7 @@ export function getHistoricalSinglePathDataCoverage(startYearMonth: YearMonth, r
     availableMonths,
     missingMonths: Math.max(0, required - availableMonths),
     isSufficient: availableMonths >= required,
+    requiredIndexIds,
   };
 }
 
@@ -62,8 +108,11 @@ export function getFixedAnnualMonthlyGrowthRate(settings: GrowthSettings, assetK
 
 function getHistoricalIndexReturn(indexId: string, month: YearMonth): number | undefined {
   if (indexId === "cash") return 0;
-  if (indexId !== "sp500") return undefined;
-  return historicalReturnByMonth.get(month)?.sp500;
+  const row = historicalReturnByMonth.get(month);
+  if (indexId === "sp500") return row?.sp500;
+  if (indexId === "nasdaq100") return row?.nasdaq100;
+  if (indexId === "usBond") return row?.usBond;
+  return undefined;
 }
 
 function getHistoricalPortfolioReturn(mapping: HistoricalAssetMapping, month: YearMonth): number | undefined {
@@ -79,7 +128,29 @@ function getHistoricalPortfolioReturn(mapping: HistoricalAssetMapping, month: Ye
     totalWeight += weight;
   }
   if (totalWeight <= 0) return undefined;
-  return weightedReturn / totalWeight;
+  if (Math.abs(totalWeight - 1) > 0.0001) return undefined;
+  return weightedReturn;
+}
+
+export function getHistoricalReturnPresetId(mapping: HistoricalAssetMapping | undefined): HistoricalReturnPresetId {
+  if (!mapping || mapping.type === "fixedAnnual") return "fixedAnnual";
+  const normalized = mapping.allocations
+    .filter((allocation) => allocation.weight > 0)
+    .map((allocation) => ({ indexId: allocation.indexId, weight: Number(allocation.weight.toFixed(4)) }))
+    .sort((a, b) => a.indexId.localeCompare(b.indexId));
+  for (const preset of historicalReturnPresets) {
+    if (preset.mapping.type === "fixedAnnual") continue;
+    const presetAllocations = preset.mapping.allocations
+      .map((allocation) => ({ indexId: allocation.indexId, weight: Number(allocation.weight.toFixed(4)) }))
+      .sort((a, b) => a.indexId.localeCompare(b.indexId));
+    if (JSON.stringify(normalized) === JSON.stringify(presetAllocations)) return preset.id;
+  }
+  return "fixedAnnual";
+}
+
+export function getHistoricalReturnPresetLabel(mapping: HistoricalAssetMapping | undefined) {
+  const presetId = getHistoricalReturnPresetId(mapping);
+  return historicalReturnPresets.find((preset) => preset.id === presetId)?.label ?? "固定年率のまま";
 }
 
 export function getMonthlyAssetGrowthRate(

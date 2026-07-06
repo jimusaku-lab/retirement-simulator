@@ -5,6 +5,7 @@ import {
   createDefaultHistoricalSinglePathReturnModel,
   getHistoricalSinglePathDataCoverage,
   getRequiredHistoricalReturnMonths,
+  historicalReturnPresets,
 } from "@/lib/assetReturnModel";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
 import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
@@ -173,6 +174,18 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
   };
 }
 
+function historicalPresetMapping(id: (typeof historicalReturnPresets)[number]["id"]) {
+  const preset = historicalReturnPresets.find((item) => item.id === id);
+  expect(preset).toBeDefined();
+  return structuredClone(preset!.mapping);
+}
+
+function historicalSinglePathReturnModel(startYearMonth = "2000-01") {
+  const model = createDefaultHistoricalSinglePathReturnModel(startYearMonth);
+  if (model.mode !== "historicalSinglePath") throw new Error("historicalSinglePath return model expected");
+  return model;
+}
+
 describe("simulation", () => {
   it("returnModel未設定でも固定年率モードと同じ資産成長になる", () => {
     const base = simpleScenario({
@@ -243,7 +256,164 @@ describe("simulation", () => {
       },
     });
 
-    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * startReturn!.sp500));
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * startReturn!.sp500!));
+  });
+
+  it("過去実績・単一期間ではNASDAQ100プリセットを選ぶとNASDAQ100月次リターンを適用する", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    expect(startReturn?.nasdaq100).toBeDefined();
+    expect(startReturn?.nasdaq100).not.toBe(startReturn?.sp500);
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.assetMappings.specificAccount = historicalPresetMapping("nasdaq100_100");
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel,
+      },
+    });
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * startReturn!.nasdaq100!));
+  });
+
+  it("過去実績・単一期間ではS&P500 80% / 米国債券 20%の加重平均を適用する", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    expect(startReturn?.sp500).toBeDefined();
+    expect(startReturn?.usBond).toBeDefined();
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.assetMappings.specificAccount = historicalPresetMapping("sp500_80_usBond_20");
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel,
+      },
+    });
+    const expectedMonthlyReturn = startReturn!.sp500! * 0.8 + startReturn!.usBond! * 0.2;
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * expectedMonthlyReturn));
+  });
+
+  it("過去実績モードでも資産別に固定年率と過去実績を混在できる", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    expect(startReturn?.sp500).toBeDefined();
+    const returnModel = historicalSinglePathReturnModel("2000-01");
+    returnModel.assetMappings.nisa = historicalPresetMapping("sp500_100");
+    returnModel.assetMappings.ideco = historicalPresetMapping("fixedAnnual");
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        nisa: 1_000_000,
+        ideco: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0.12,
+        },
+        returnModel,
+      },
+    });
+    const fixedMonthlyReturn = Math.pow(1 + 0.12, 1 / 12) - 1;
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(
+      Math.round(1_000_000 * startReturn!.sp500! + 1_000_000 * fixedMonthlyReturn),
+    );
+  });
+
+  it("過去実績モードでも定期預金は固定年率のまま計算する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        timeDeposit: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0.12,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel: createDefaultHistoricalSinglePathReturnModel("2000-01"),
+      },
+    });
+    const fixedMonthlyReturn = Math.pow(1 + 0.12, 1 / 12) - 1;
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * fixedMonthlyReturn));
   });
 
   it("過去実績モードの必要データ月数をtargetBalanceAgeまでで判定する", () => {

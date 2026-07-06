@@ -91,10 +91,14 @@ import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "
 import {
   createDefaultHistoricalSinglePathReturnModel,
   getEffectiveReturnModel,
+  getHistoricalReturnPresetId,
+  getHistoricalReturnPresetLabel,
   getHistoricalSinglePathDataCoverage,
   getHistoricalReturnDatasetSummary,
   getRequiredHistoricalReturnMonths,
-  phase1HistoricalReturnAssetKeys,
+  historicalReturnAssetKeys,
+  historicalReturnPresets,
+  type HistoricalReturnPresetId,
 } from "@/lib/assetReturnModel";
 import {
   getNextNoticePaymentMonthSummary,
@@ -1295,6 +1299,7 @@ function App() {
             )}
             {activeTab === "results" && (
               <ResultsSection
+                scenario={activeScenario}
                 result={result}
                 onOpenInputCard={openInputCard}
                 inputCards={inputCards}
@@ -5457,7 +5462,21 @@ function AssetsSection({
     ? returnModel.startYearMonth
     : defaultHistoricalStartYearMonth;
   const requiredHistoricalReturnMonths = getRequiredHistoricalReturnMonths(scenario);
-  const historicalDataCoverage = getHistoricalSinglePathDataCoverage(historicalStartYearMonth, requiredHistoricalReturnMonths);
+  const historicalAssetMappings = returnModel.mode === "historicalSinglePath" ? returnModel.assetMappings : {};
+  const historicalDataCoverage = getHistoricalSinglePathDataCoverage(
+    historicalStartYearMonth,
+    requiredHistoricalReturnMonths,
+    historicalAssetMappings,
+  );
+  const historicalAssetMappingRows = historicalReturnAssetKeys.map((key) => ({
+    key,
+    label: growthAssetLabels[key],
+    presetId: getHistoricalReturnPresetId(historicalAssetMappings[key]),
+    presetLabel: getHistoricalReturnPresetLabel(historicalAssetMappings[key]),
+  }));
+  const activeHistoricalMappingSummary = historicalAssetMappingRows
+    .map((row) => `${row.label}: ${row.presetLabel}`)
+    .join(" / ");
   const assetSyncSourceScenario = scenarios.find((item) => item.id === assetSyncSourceScenarioId) ?? scenario;
   const assetSyncSourceIsCurrentScenario = assetSyncSourceScenario.id === scenario.id;
   const assetSyncExcludedScenarioIds = useMemo(() => {
@@ -5489,6 +5508,22 @@ function AssetsSection({
     () => assetSyncSourceScenario.optionSubAccounts.map((account) => account.id),
     [assetSyncSourceScenario.optionSubAccounts],
   );
+  const updateHistoricalAssetPreset = (assetKey: GrowthAssetKey, presetId: HistoricalReturnPresetId) => {
+    updateScenario((s) => {
+      const current = getEffectiveReturnModel(s.assetGrowthSettings);
+      const next =
+        current.mode === "historicalSinglePath"
+          ? structuredClone(current)
+          : createDefaultHistoricalSinglePathReturnModel(historicalStartYearMonth);
+      if (next.mode !== "historicalSinglePath") return;
+      const preset = historicalReturnPresets.find((item) => item.id === presetId) ?? historicalReturnPresets[0];
+      next.assetMappings = {
+        ...next.assetMappings,
+        [assetKey]: structuredClone(preset.mapping),
+      };
+      s.assetGrowthSettings.returnModel = next;
+    });
+  };
   const assetSyncOptionSubAccountIdsKey = assetSyncOptionSubAccountIds.join("|");
   const linkedIncomeEventIdsForAssetSync = useMemo(
     () => getLinkedIncomeEventIdsForOptionSubAccounts(assetSyncSourceScenario, assetSyncOptionSubAccountIds),
@@ -6003,7 +6038,31 @@ function AssetsSection({
                     {historicalDataCoverage.missingMonths}か月不足します。平均リターンや固定年率では補完しません。
                   </div>
                 )}
-                <div>適用資産: {phase1HistoricalReturnAssetKeys.map((key) => growthAssetLabels[key]).join(" / ")}</div>
+                <div>
+                  必要指数: {historicalDataCoverage.requiredIndexIds.length ? historicalDataCoverage.requiredIndexIds.join(" / ") : "なし（固定年率のみ）"}
+                </div>
+                <div className="mt-3 rounded-md border bg-white/80 p-3">
+                  <div className="font-medium text-foreground">資産別の過去実績配分</div>
+                  <div className="mt-2 grid gap-2 md:grid-cols-2">
+                    {historicalAssetMappingRows.map((row) => (
+                      <Field key={row.key} label={row.label}>
+                        <Select
+                          value={row.presetId}
+                          onChange={(event) => updateHistoricalAssetPreset(row.key, event.target.value as HistoricalReturnPresetId)}
+                        >
+                          {historicalReturnPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    ))}
+                  </div>
+                  <div className="mt-2 text-xs">
+                    現在の配分: {activeHistoricalMappingSummary}。現金・普通預金・定期預金は固定年率設定を使います。
+                  </div>
+                </div>
                 <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
               </div>
             )}
@@ -12262,11 +12321,13 @@ function ScenariosSection(props: {
 }
 
 function ResultsSection({
+  scenario,
   result,
   onOpenInputCard,
   inputCards,
   onOpenInputGuide,
 }: {
+  scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
   onOpenInputCard: (cardId: InputCardId) => void;
   inputCards: InputCardDefinition[];
@@ -12446,6 +12507,12 @@ function ResultsSection({
   const resultStickyCellClass = "sticky left-0 z-20 bg-white shadow-[1px_0_0_#cbd5e1]";
   const resultsRequiredComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
   const resultsNextCard = getNextInputCard(inputCards);
+  const resultReturnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
+  const resultReturnModeLabel = resultReturnModel.mode === "historicalSinglePath" ? "過去実績・単一期間" : "固定年率";
+  const resultReturnSummaryRows =
+    resultReturnModel.mode === "historicalSinglePath"
+      ? historicalReturnAssetKeys.map((key) => `${growthAssetLabels[key]}: ${getHistoricalReturnPresetLabel(resultReturnModel.assetMappings[key])}`)
+      : [];
 
   return (
     <div className="space-y-6">
@@ -12483,6 +12550,21 @@ function ResultsSection({
           </Button>
         </CardContent>
       </Card>
+      <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6">
+        <div className="font-medium">運用リターン設定</div>
+        <p className="mt-1 text-muted-foreground">方式: {resultReturnModeLabel}</p>
+        {resultReturnModel.mode === "historicalSinglePath" ? (
+          <div className="text-muted-foreground">
+            <p>
+              データ: {historicalReturnDataset.label}（{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}） / 為替モード:
+              指数リターンのみ
+            </p>
+            <p>配分: {resultReturnSummaryRows.join(" / ")}</p>
+          </div>
+        ) : (
+          <p className="text-muted-foreground">資産別固定年率を使っています。</p>
+        )}
+      </div>
       <div className="grid gap-3 text-sm leading-6 md:grid-cols-3">
         <div className="rounded-md border bg-slate-50 px-4 py-3">
           <div className="font-medium">このタブで見ること</div>
