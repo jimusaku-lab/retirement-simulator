@@ -89,6 +89,7 @@ import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/li
 import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
 import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "@/lib/lifetimeExpense";
 import {
+  createDefaultHistoricalRollingRangeReturnModel,
   createDefaultHistoricalSinglePathReturnModel,
   getEffectiveReturnModel,
   getHistoricalReturnPresetId,
@@ -100,6 +101,13 @@ import {
   historicalReturnPresets,
   type HistoricalReturnPresetId,
 } from "@/lib/assetReturnModel";
+import {
+  createHistoricalRollingBacktestFingerprint,
+  estimateHistoricalRollingBacktestPaths,
+  runHistoricalRollingBacktest,
+  type HistoricalRollingBacktestEstimate,
+  type HistoricalRollingBacktestResult,
+} from "@/lib/historicalRollingBacktest";
 import {
   getNextNoticePaymentMonthSummary,
   summarizeNoticePaymentsByPaymentYear,
@@ -5434,6 +5442,119 @@ function InputGuidanceSummary({
   );
 }
 
+function HistoricalRollingStressTestCard({
+  estimate,
+  state,
+  needsRerun,
+  targetBalanceAge,
+  onRun,
+}: {
+  estimate: HistoricalRollingBacktestEstimate;
+  state: {
+    status: "idle" | "running" | "done" | "error";
+    result?: HistoricalRollingBacktestResult;
+    error?: string;
+  };
+  needsRerun: boolean;
+  targetBalanceAge: number;
+  onRun: () => void;
+}) {
+  const result = state.result;
+  const metricLabel = (point?: { value: number; startYearMonth: YearMonth }) =>
+    point ? `${compactYen(point.value)}（${point.startYearMonth}開始）` : "-";
+  const depletionRateLabel = result ? `${(result.depletionRate * 100).toFixed(1)}%` : "-";
+  const runDisabled = state.status === "running";
+
+  return (
+    <details className="mb-4 rounded-lg border bg-white px-4 py-3">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-900">過去市場ストレステスト</summary>
+      <div className="mt-3 space-y-3 text-sm leading-6">
+        <p className="text-muted-foreground">
+          指定した過去期間内で、必要月数を満たす全開始月を過去実績に当てはめた検証です。通常の結果やダッシュボードの数値は置き換えません。
+          将来を保証するものではありません。
+        </p>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Metric title="検証範囲" value={`${estimate.rangeStartYearMonth}〜${estimate.rangeEndYearMonth}`} sub={`${estimate.requiredMonths}か月分の過去データを使用`} />
+          <Metric title="対象パス数" value={`${estimate.validPathCount}件`} sub={`除外 ${estimate.excludedPathCount}件 / 候補 ${estimate.totalPathCount}件`} />
+          <Metric title="枯渇パス" value={result ? `${result.depletedPathCount}件` : "-"} sub={`枯渇率 ${depletionRateLabel}`} />
+        </div>
+        {estimate.tooManyPathWarning && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+            候補開始月が多いため、検証には少し時間がかかる可能性があります。実行は「検証する」を押した時だけ行います。
+          </p>
+        )}
+        {needsRerun && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+            入力条件が変わりました。最新条件で見るには再検証してください。
+          </p>
+        )}
+        {state.status === "error" && (
+          <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-red-900">{state.error}</p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" onClick={onRun} disabled={runDisabled || estimate.validPathCount === 0}>
+            {runDisabled ? "検証中..." : result ? "再検証する" : "検証する"}
+          </Button>
+          <span className="text-muted-foreground">
+            検証するまで複数シミュレーションは実行しません。データ不足の開始月は平均値で補完せず除外します。
+          </span>
+        </div>
+        {result && (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Metric title="90歳残高 最悪" value={metricLabel(result.age90Balance?.worst)} sub={`最悪開始月 ${result.worstStartYearMonth ?? "-"}`} />
+              <Metric title="90歳残高 中央" value={metricLabel(result.age90Balance?.median)} sub={`下位10% ${metricLabel(result.age90Balance?.p10)}`} />
+              <Metric title="90歳残高 最良" value={metricLabel(result.age90Balance?.best)} sub={`最良開始月 ${result.bestStartYearMonth ?? "-"}`} />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Metric title={`${targetBalanceAge}歳残高`} value={metricLabel(result.targetAgeBalance?.median)} sub={`最悪 ${metricLabel(result.targetAgeBalance?.worst)}`} />
+              <Metric title="最大ドローダウン" value={metricLabel(result.maxDrawdown?.worst)} sub={`中央値 ${metricLabel(result.maxDrawdown?.median)}`} />
+              <Metric title="除外理由" value={`${result.excludedPathCount}件`} sub={result.dataInsufficientReason} />
+            </div>
+            <details className="rounded-lg border bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer font-medium text-slate-900">開始月ごとの結果一覧</summary>
+              <div className="mt-3 max-h-96 overflow-auto rounded-md border bg-white">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="bg-slate-50 text-xs text-muted-foreground">
+                    <tr>
+                      <Th>開始月</Th>
+                      <Th>終了月</Th>
+                      <Th>{targetBalanceAge}歳残高</Th>
+                      <Th>90歳残高</Th>
+                      <Th>枯渇年齢</Th>
+                      <Th>最大ドローダウン</Th>
+                      <Th>生涯総支出</Th>
+                      <Th>資産成長額</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.paths.map((path) => (
+                      <Tr key={path.startYearMonth}>
+                        <Td>{path.startYearMonth}</Td>
+                        <Td>{path.endYearMonth}</Td>
+                        <Td>{compactYen(path.targetAgeBalance)}</Td>
+                        <Td>{compactYen(path.age90Balance)}</Td>
+                        <Td>
+                          {path.depleted
+                            ? `${path.depletionAgeYears ?? "-"}歳${path.depletionAgeMonths ?? 0}か月`
+                            : "-"}
+                        </Td>
+                        <Td>{compactYen(path.maxDrawdown)}</Td>
+                        <Td>{compactYen(path.lifetimeTotalExpense)}</Td>
+                        <Td>{compactYen(path.growthAmount)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function AssetsSection({
   scenario,
   scenarios,
@@ -5456,18 +5577,44 @@ function AssetsSection({
   });
   const [includeLinkedIncomeEventsWithAssetSync, setIncludeLinkedIncomeEventsWithAssetSync] = useState(true);
   const [assetSyncMessage, setAssetSyncMessage] = useState<string | null>(null);
+  const [rollingBacktestState, setRollingBacktestState] = useState<{
+    status: "idle" | "running" | "done" | "error";
+    fingerprint?: string;
+    result?: HistoricalRollingBacktestResult;
+    error?: string;
+  }>({ status: "idle" });
   const returnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
-  const returnModelMode = returnModel.mode === "historicalSinglePath" ? "historicalSinglePath" : "fixedAnnual";
+  const returnModelMode =
+    returnModel.mode === "historicalSinglePath" || returnModel.mode === "historicalRollingRange" ? returnModel.mode : "fixedAnnual";
   const historicalStartYearMonth = returnModel.mode === "historicalSinglePath"
     ? returnModel.startYearMonth
     : defaultHistoricalStartYearMonth;
+  const historicalRangeStartYearMonth = returnModel.mode === "historicalRollingRange"
+    ? returnModel.rangeStartYearMonth
+    : historicalReturnDataset.firstMonth;
+  const historicalRangeEndYearMonth = returnModel.mode === "historicalRollingRange"
+    ? returnModel.rangeEndYearMonth
+    : historicalReturnDataset.lastMonth;
   const requiredHistoricalReturnMonths = getRequiredHistoricalReturnMonths(scenario);
-  const historicalAssetMappings = returnModel.mode === "historicalSinglePath" ? returnModel.assetMappings : {};
+  const historicalAssetMappings =
+    returnModel.mode === "historicalSinglePath" || returnModel.mode === "historicalRollingRange" ? returnModel.assetMappings : {};
   const historicalDataCoverage = getHistoricalSinglePathDataCoverage(
     historicalStartYearMonth,
     requiredHistoricalReturnMonths,
     historicalAssetMappings,
   );
+  const rollingBacktestEstimate = useMemo(
+    () => (returnModel.mode === "historicalRollingRange" ? estimateHistoricalRollingBacktestPaths(scenario, returnModel) : undefined),
+    [returnModel, scenario],
+  );
+  const rollingBacktestFingerprint = useMemo(
+    () => (returnModel.mode === "historicalRollingRange" ? createHistoricalRollingBacktestFingerprint(scenario, returnModel) : ""),
+    [returnModel, scenario],
+  );
+  const rollingBacktestNeedsRerun =
+    returnModel.mode === "historicalRollingRange" &&
+    rollingBacktestState.status === "done" &&
+    rollingBacktestState.fingerprint !== rollingBacktestFingerprint;
   const historicalAssetMappingRows = historicalReturnAssetKeys.map((key) => ({
     key,
     label: growthAssetLabels[key],
@@ -5512,10 +5659,10 @@ function AssetsSection({
     updateScenario((s) => {
       const current = getEffectiveReturnModel(s.assetGrowthSettings);
       const next =
-        current.mode === "historicalSinglePath"
+        current.mode === "historicalSinglePath" || current.mode === "historicalRollingRange"
           ? structuredClone(current)
           : createDefaultHistoricalSinglePathReturnModel(historicalStartYearMonth);
-      if (next.mode !== "historicalSinglePath") return;
+      if (next.mode !== "historicalSinglePath" && next.mode !== "historicalRollingRange") return;
       const preset = historicalReturnPresets.find((item) => item.id === presetId) ?? historicalReturnPresets[0];
       next.assetMappings = {
         ...next.assetMappings,
@@ -5523,6 +5670,24 @@ function AssetsSection({
       };
       s.assetGrowthSettings.returnModel = next;
     });
+  };
+  const runRollingBacktest = () => {
+    if (returnModel.mode !== "historicalRollingRange") return;
+    const model = structuredClone(returnModel);
+    const fingerprint = rollingBacktestFingerprint;
+    setRollingBacktestState({ status: "running", fingerprint });
+    window.setTimeout(() => {
+      try {
+        const result = runHistoricalRollingBacktest(structuredClone(scenario), model);
+        setRollingBacktestState({ status: "done", fingerprint, result });
+      } catch (error) {
+        setRollingBacktestState({
+          status: "error",
+          fingerprint,
+          error: error instanceof Error ? error.message : "範囲検証に失敗しました。",
+        });
+      }
+    }, 0);
   };
   const assetSyncOptionSubAccountIdsKey = assetSyncOptionSubAccountIds.join("|");
   const linkedIncomeEventIdsForAssetSync = useMemo(
@@ -5975,7 +6140,7 @@ function AssetsSection({
             <CardDescription>生活費・税社保・積立・受取はそのまま使い、資産成長率だけを固定年率または過去市場だった場合に切り替えます。</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
               <Field label="資産成長率反映">
                 <Select
                   value={scenario.assetGrowthSettings.enabled ? "on" : "off"}
@@ -5994,12 +6159,15 @@ function AssetsSection({
                       s.assetGrowthSettings.returnModel =
                         mode === "historicalSinglePath"
                           ? createDefaultHistoricalSinglePathReturnModel(historicalStartYearMonth)
+                          : mode === "historicalRollingRange"
+                            ? createDefaultHistoricalRollingRangeReturnModel(historicalRangeStartYearMonth, historicalRangeEndYearMonth)
                           : { mode: "fixedAnnual" };
                     });
                   }}
                 >
                   <option value="fixedAnnual">固定年率</option>
                   <option value="historicalSinglePath">過去実績・単一期間</option>
+                  <option value="historicalRollingRange">過去実績・範囲検証</option>
                 </Select>
               </Field>
               <Field label="過去開始月">
@@ -6017,29 +6185,73 @@ function AssetsSection({
                   })}
                 />
               </Field>
+              <Field label="検証範囲開始月">
+                <Input
+                  type="month"
+                  value={historicalRangeStartYearMonth}
+                  disabled={returnModelMode !== "historicalRollingRange"}
+                  onChange={(event) => updateScenario((s) => {
+                    const rangeStartYearMonth = event.target.value || historicalReturnDataset.firstMonth;
+                    const current = getEffectiveReturnModel(s.assetGrowthSettings);
+                    s.assetGrowthSettings.returnModel =
+                      current.mode === "historicalRollingRange"
+                        ? { ...current, rangeStartYearMonth }
+                        : createDefaultHistoricalRollingRangeReturnModel(rangeStartYearMonth, historicalRangeEndYearMonth);
+                  })}
+                />
+              </Field>
+              <Field label="検証範囲終了月">
+                <Input
+                  type="month"
+                  value={historicalRangeEndYearMonth}
+                  disabled={returnModelMode !== "historicalRollingRange"}
+                  onChange={(event) => updateScenario((s) => {
+                    const rangeEndYearMonth = event.target.value || historicalReturnDataset.lastMonth;
+                    const current = getEffectiveReturnModel(s.assetGrowthSettings);
+                    s.assetGrowthSettings.returnModel =
+                      current.mode === "historicalRollingRange"
+                        ? { ...current, rangeEndYearMonth }
+                        : createDefaultHistoricalRollingRangeReturnModel(historicalRangeStartYearMonth, rangeEndYearMonth);
+                  })}
+                />
+              </Field>
             </div>
-            {returnModelMode === "historicalSinglePath" && (
+            {(returnModelMode === "historicalSinglePath" || returnModelMode === "historicalRollingRange") && (
               <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
                 <div className="font-medium text-foreground">過去市場でこの人生設計を検証</div>
                 <div>
                   データは{historicalReturnDataset.label}、範囲は{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}です。
                   為替は指数リターンのみ、円換算リターンは未対応です。
                 </div>
-                <div>
-                  この設定では、シナリオ開始月から{scenario.userProfile.targetBalanceAge}歳到達月までに必要な
-                  {historicalDataCoverage.requiredMonths}か月分の過去データを使います。
-                  使用範囲: {historicalDataCoverage.startYearMonth}〜{historicalDataCoverage.lastRequiredMonth}。
-                </div>
-                {historicalDataCoverage.isSufficient ? (
-                  <div>選択した開始月では必要月数分のデータがあります。データが不足する開始月は検証対象から外します。</div>
+                {returnModelMode === "historicalSinglePath" ? (
+                  <>
+                    <div>
+                      この設定では、シナリオ開始月から{scenario.userProfile.targetBalanceAge}歳到達月までに必要な
+                      {historicalDataCoverage.requiredMonths}か月分の過去データを使います。
+                      使用範囲: {historicalDataCoverage.startYearMonth}〜{historicalDataCoverage.lastRequiredMonth}。
+                    </div>
+                    {historicalDataCoverage.isSufficient ? (
+                      <div>選択した開始月では必要月数分のデータがあります。データが不足する開始月は検証対象から外します。</div>
+                    ) : (
+                      <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                        過去データが不足しています。この開始月では{historicalDataCoverage.availableMonths}か月分しか使えず、
+                        {historicalDataCoverage.missingMonths}か月不足します。平均リターンや固定年率では補完しません。
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
-                    過去データが不足しています。この開始月では{historicalDataCoverage.availableMonths}か月分しか使えず、
-                    {historicalDataCoverage.missingMonths}か月不足します。平均リターンや固定年率では補完しません。
+                  <div>
+                    この設定では、シナリオ開始月から{scenario.userProfile.targetBalanceAge}歳到達月までに必要な
+                    {rollingBacktestEstimate?.requiredMonths ?? requiredHistoricalReturnMonths}か月分の過去データを使います。
+                    検証範囲内の開始月 {rollingBacktestEstimate?.totalPathCount ?? 0}件のうち、
+                    対象 {rollingBacktestEstimate?.validPathCount ?? 0}件 / 除外 {rollingBacktestEstimate?.excludedPathCount ?? 0}件です。
+                    データ不足分は平均リターンなどで補完しません。
                   </div>
                 )}
                 <div>
-                  必要指数: {historicalDataCoverage.requiredIndexIds.length ? historicalDataCoverage.requiredIndexIds.join(" / ") : "なし（固定年率のみ）"}
+                  必要指数: {(returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds)?.length
+                    ? (returnModelMode === "historicalRollingRange" ? rollingBacktestEstimate?.requiredIndexIds : historicalDataCoverage.requiredIndexIds)?.join(" / ")
+                    : "なし（固定年率のみ）"}
                 </div>
                 <div className="mt-3 rounded-md border bg-white/80 p-3">
                   <div className="font-medium text-foreground">資産別の過去実績配分</div>
@@ -6065,6 +6277,15 @@ function AssetsSection({
                 </div>
                 <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
               </div>
+            )}
+            {returnModelMode === "historicalRollingRange" && rollingBacktestEstimate && (
+              <HistoricalRollingStressTestCard
+                estimate={rollingBacktestEstimate}
+                state={rollingBacktestState}
+                needsRerun={rollingBacktestNeedsRerun}
+                targetBalanceAge={scenario.userProfile.targetBalanceAge}
+                onRun={runRollingBacktest}
+              />
             )}
             <FormGrid>
               {editableGrowthAssetKeys.map((key) => (
@@ -12508,9 +12729,14 @@ function ResultsSection({
   const resultsRequiredComplete = inputCards.filter((card) => card.priority === "required").every(isInputCardSatisfied);
   const resultsNextCard = getNextInputCard(inputCards);
   const resultReturnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
-  const resultReturnModeLabel = resultReturnModel.mode === "historicalSinglePath" ? "過去実績・単一期間" : "固定年率";
-  const resultReturnSummaryRows =
+  const resultReturnModeLabel =
     resultReturnModel.mode === "historicalSinglePath"
+      ? "過去実績・単一期間"
+      : resultReturnModel.mode === "historicalRollingRange"
+        ? "過去実績・範囲検証"
+        : "固定年率";
+  const resultReturnSummaryRows =
+    resultReturnModel.mode === "historicalSinglePath" || resultReturnModel.mode === "historicalRollingRange"
       ? historicalReturnAssetKeys.map((key) => `${growthAssetLabels[key]}: ${getHistoricalReturnPresetLabel(resultReturnModel.assetMappings[key])}`)
       : [];
 
@@ -12553,13 +12779,16 @@ function ResultsSection({
       <div className="rounded-md border bg-slate-50 px-4 py-3 text-sm leading-6">
         <div className="font-medium">運用リターン設定</div>
         <p className="mt-1 text-muted-foreground">方式: {resultReturnModeLabel}</p>
-        {resultReturnModel.mode === "historicalSinglePath" ? (
+        {resultReturnModel.mode === "historicalSinglePath" || resultReturnModel.mode === "historicalRollingRange" ? (
           <div className="text-muted-foreground">
             <p>
               データ: {historicalReturnDataset.label}（{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}） / 為替モード:
               指数リターンのみ
             </p>
             <p>配分: {resultReturnSummaryRows.join(" / ")}</p>
+            {resultReturnModel.mode === "historicalRollingRange" && (
+              <p>通常結果は範囲検証の中央値や最悪ケースへ置き換えません。過去市場ストレステストは初期資産タブで実行します。</p>
+            )}
           </div>
         ) : (
           <p className="text-muted-foreground">資産別固定年率を使っています。</p>

@@ -54,6 +54,23 @@ export function createDefaultHistoricalSinglePathReturnModel(startYearMonth: Yea
   };
 }
 
+export function createDefaultHistoricalRollingRangeReturnModel(
+  rangeStartYearMonth: YearMonth = "1970-01",
+  rangeEndYearMonth: YearMonth = historicalMarketReturnDataset.lastMonth,
+): AssetReturnModel {
+  return {
+    mode: "historicalRollingRange",
+    datasetId: historicalMarketReturnDataset.id,
+    rangeStartYearMonth,
+    rangeEndYearMonth,
+    currencyMode: "indexOnly",
+    summaryMode: "median",
+    assetMappings: Object.fromEntries(
+      historicalReturnAssetKeys.map((key) => [key, structuredClone(defaultHistoricalMapping)]),
+    ) as Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>,
+  };
+}
+
 export function getEffectiveReturnModel(settings: GrowthSettings): AssetReturnModel {
   return settings.returnModel ?? { mode: "fixedAnnual" };
 }
