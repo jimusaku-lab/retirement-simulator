@@ -629,6 +629,7 @@ function normalizeScenario(input: LegacyScenario | undefined, index: number): Sc
         specificAccount: source.assetGrowthSettings?.rates?.specificAccount ?? legacyGrowthRate,
         ordinaryAccountForOptions: source.assetGrowthSettings?.rates?.ordinaryAccountForOptions ?? legacyGrowthRate,
       },
+      returnModel: source.assetGrowthSettings?.returnModel ?? baseScenario.assetGrowthSettings.returnModel,
     },
     inflationSettings: normalizeInflationSettings(source),
     optionAccountRules: {

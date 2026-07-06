@@ -28,6 +28,7 @@ import {
 } from "@/lib/retirementIncome";
 import { getEffectiveTaxRows, type DeclaredInvestmentIncomeByYear } from "@/lib/taxEngine";
 import { createId } from "@/lib/id";
+import { getMonthlyAssetGrowthRate } from "@/lib/assetReturnModel";
 import type {
   AnnualResult,
   AssetContributionEvent,
@@ -1969,7 +1970,7 @@ function simulateScenarioCore(
 
     const growthAmount = scenario.assetGrowthSettings.enabled
       ? growthAssetOrder.reduce((sum, key) => {
-          const monthlyGrowthRate = Math.pow(1 + scenario.assetGrowthSettings.rates[key], 1 / 12) - 1;
+          const monthlyGrowthRate = getMonthlyAssetGrowthRate(scenario.assetGrowthSettings, key, index);
           const amount = Math.max(balances[key], 0) * monthlyGrowthRate;
           if (key === "ordinaryAccountForOptions" && optionSubAccounts.length) {
             let optionGrowthTotal = 0;

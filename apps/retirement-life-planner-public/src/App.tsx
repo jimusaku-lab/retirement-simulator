@@ -89,6 +89,12 @@ import { inferOptionSubAccountIdFromName, resolveOptionSubAccountId } from "@/li
 import { buildScenarioDiffSummary, formatScenarioDiffHeadline, type ScenarioDiffSummary } from "@/lib/scenarioDiff";
 import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "@/lib/lifetimeExpense";
 import {
+  createDefaultHistoricalSinglePathReturnModel,
+  getEffectiveReturnModel,
+  getHistoricalReturnDatasetSummary,
+  phase1HistoricalReturnAssetKeys,
+} from "@/lib/assetReturnModel";
+import {
   getNextNoticePaymentMonthSummary,
   summarizeNoticePaymentsByPaymentYear,
   type NoticePaymentYearSummary,
@@ -601,6 +607,8 @@ const editableGrowthAssetKeys: GrowthAssetKey[] = [
   "ordinaryAccountForOptions",
   "ideco",
 ];
+const historicalReturnDataset = getHistoricalReturnDatasetSummary();
+const defaultHistoricalStartYearMonth = "2000-01";
 
 const assetTransferSourceLabels: Record<AssetTransferSourceKey, string> = {
   cash: "現金",
@@ -5441,6 +5449,11 @@ function AssetsSection({
   });
   const [includeLinkedIncomeEventsWithAssetSync, setIncludeLinkedIncomeEventsWithAssetSync] = useState(true);
   const [assetSyncMessage, setAssetSyncMessage] = useState<string | null>(null);
+  const returnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
+  const returnModelMode = returnModel.mode === "historicalSinglePath" ? "historicalSinglePath" : "fixedAnnual";
+  const historicalStartYearMonth = returnModel.mode === "historicalSinglePath"
+    ? returnModel.startYearMonth
+    : defaultHistoricalStartYearMonth;
   const assetSyncSourceScenario = scenarios.find((item) => item.id === assetSyncSourceScenarioId) ?? scenario;
   const assetSyncSourceIsCurrentScenario = assetSyncSourceScenario.id === scenario.id;
   const assetSyncExcludedScenarioIds = useMemo(() => {
@@ -5920,10 +5933,10 @@ function AssetsSection({
         <Card className="border-dashed">
           <CardHeader>
             <CardTitle>資産別利回り</CardTitle>
-            <CardDescription>現金と普通預金は流動資金として扱い、利回り計算の対象外です。年率を入力すると月次複利で反映します。</CardDescription>
+            <CardDescription>生活費・税社保・積立・受取はそのまま使い、資産成長率だけを固定年率または過去市場だった場合に切り替えます。</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex items-center gap-3">
+            <div className="mb-4 grid gap-3 md:grid-cols-3">
               <Field label="資産成長率反映">
                 <Select
                   value={scenario.assetGrowthSettings.enabled ? "on" : "off"}
@@ -5933,7 +5946,50 @@ function AssetsSection({
                   <option value="off">OFF</option>
                 </Select>
               </Field>
+              <Field label="運用リターン方式">
+                <Select
+                  value={returnModelMode}
+                  onChange={(event) => {
+                    const mode = event.target.value;
+                    updateScenario((s) => {
+                      s.assetGrowthSettings.returnModel =
+                        mode === "historicalSinglePath"
+                          ? createDefaultHistoricalSinglePathReturnModel(historicalStartYearMonth)
+                          : { mode: "fixedAnnual" };
+                    });
+                  }}
+                >
+                  <option value="fixedAnnual">固定年率</option>
+                  <option value="historicalSinglePath">過去実績・単一期間</option>
+                </Select>
+              </Field>
+              <Field label="過去開始月">
+                <Input
+                  type="month"
+                  value={historicalStartYearMonth}
+                  disabled={returnModelMode !== "historicalSinglePath"}
+                  onChange={(event) => updateScenario((s) => {
+                    const startYearMonth = event.target.value || defaultHistoricalStartYearMonth;
+                    const current = getEffectiveReturnModel(s.assetGrowthSettings);
+                    s.assetGrowthSettings.returnModel =
+                      current.mode === "historicalSinglePath"
+                        ? { ...current, startYearMonth }
+                        : createDefaultHistoricalSinglePathReturnModel(startYearMonth);
+                  })}
+                />
+              </Field>
             </div>
+            {returnModelMode === "historicalSinglePath" && (
+              <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                <div className="font-medium text-foreground">過去市場でこの人生設計を検証</div>
+                <div>
+                  データは{historicalReturnDataset.label}、範囲は{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}です。
+                  為替は指数リターンのみ、円換算リターンは未対応です。
+                </div>
+                <div>適用資産: {phase1HistoricalReturnAssetKeys.map((key) => growthAssetLabels[key]).join(" / ")}</div>
+                <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
+              </div>
+            )}
             <FormGrid>
               {editableGrowthAssetKeys.map((key) => (
                 <RateField

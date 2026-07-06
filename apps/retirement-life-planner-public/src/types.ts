@@ -102,6 +102,20 @@ export type AssetTransferTargetKey = Exclude<GrowthAssetKey, "cash">;
 
 export type GainTrackedAssetMap = Record<GainTrackedAssetKey, number>;
 
+export type HistoricalIndexId = "sp500" | "nasdaq100" | "usBond" | "cash";
+
+export type HistoricalAssetMapping =
+  | {
+      type: "fixedAnnual";
+    }
+  | {
+      type: "historicalPortfolio";
+      allocations: Array<{
+        indexId: HistoricalIndexId;
+        weight: number;
+      }>;
+    };
+
 export type MonthlyExpenseProfile = {
   food: number;
   dailyGoods: number;
@@ -352,7 +366,29 @@ export type RecurringTaxSocialPaymentTemplate = {
 export type GrowthSettings = {
   enabled: boolean;
   rates: Record<GrowthAssetKey, number>;
+  returnModel?: AssetReturnModel;
 };
+
+export type AssetReturnModel =
+  | {
+      mode: "fixedAnnual";
+    }
+  | {
+      mode: "historicalSinglePath";
+      datasetId: string;
+      startYearMonth: YearMonth;
+      currencyMode: "indexOnly" | "jpyConverted";
+      assetMappings: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>;
+    }
+  | {
+      mode: "historicalRollingRange";
+      datasetId: string;
+      rangeStartYearMonth: YearMonth;
+      rangeEndYearMonth: YearMonth;
+      currencyMode: "indexOnly" | "jpyConverted";
+      assetMappings: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>;
+      summaryMode: "worst" | "p10" | "median" | "p90" | "best";
+    };
 
 export type InflationSettings = {
   enabled: boolean;

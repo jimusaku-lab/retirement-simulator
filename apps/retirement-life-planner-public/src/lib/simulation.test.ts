@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
+import { historicalMarketReturns } from "@/data/historicalMarketReturns";
+import { createDefaultHistoricalSinglePathReturnModel } from "@/lib/assetReturnModel";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
 import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import { getPensionPlannerMembers, isPensionPlannerReplacingEvent, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
@@ -168,6 +170,78 @@ function simpleScenario(overrides: Partial<ScenarioData> = {}): ScenarioData {
 }
 
 describe("simulation", () => {
+  it("returnModel未設定でも固定年率モードと同じ資産成長になる", () => {
+    const base = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0.12,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+      },
+    });
+    const explicitFixed = structuredClone(base);
+    explicitFixed.assetGrowthSettings.returnModel = { mode: "fixedAnnual" };
+
+    expect(simulateScenario(base).monthly[0].growthAmount).toBe(simulateScenario(explicitFixed).monthly[0].growthAmount);
+    expect(simulateScenario(base).monthly[0].endingAssets).toBe(simulateScenario(explicitFixed).monthly[0].endingAssets);
+  });
+
+  it("過去実績・単一期間では指定開始月のS&P500月次リターンを適用する", () => {
+    const startReturn = historicalMarketReturns.find((row) => row.month === "2000-01");
+    expect(startReturn).toBeDefined();
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-04",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel: createDefaultHistoricalSinglePathReturnModel("2000-01"),
+      },
+    });
+
+    expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * startReturn!.sp500));
+  });
+
   it("開始月から終了月までの収入イベントを反映する", () => {
     const income = getIncomeForMonth(
       [
