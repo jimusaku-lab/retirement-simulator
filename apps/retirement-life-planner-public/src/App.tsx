@@ -91,7 +91,9 @@ import { calculateLifetimeTotalExpenseSummary, formatLifetimeExpenseYen } from "
 import {
   createDefaultHistoricalSinglePathReturnModel,
   getEffectiveReturnModel,
+  getHistoricalSinglePathDataCoverage,
   getHistoricalReturnDatasetSummary,
+  getRequiredHistoricalReturnMonths,
   phase1HistoricalReturnAssetKeys,
 } from "@/lib/assetReturnModel";
 import {
@@ -5454,6 +5456,8 @@ function AssetsSection({
   const historicalStartYearMonth = returnModel.mode === "historicalSinglePath"
     ? returnModel.startYearMonth
     : defaultHistoricalStartYearMonth;
+  const requiredHistoricalReturnMonths = getRequiredHistoricalReturnMonths(scenario);
+  const historicalDataCoverage = getHistoricalSinglePathDataCoverage(historicalStartYearMonth, requiredHistoricalReturnMonths);
   const assetSyncSourceScenario = scenarios.find((item) => item.id === assetSyncSourceScenarioId) ?? scenario;
   const assetSyncSourceIsCurrentScenario = assetSyncSourceScenario.id === scenario.id;
   const assetSyncExcludedScenarioIds = useMemo(() => {
@@ -5986,6 +5990,19 @@ function AssetsSection({
                   データは{historicalReturnDataset.label}、範囲は{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}です。
                   為替は指数リターンのみ、円換算リターンは未対応です。
                 </div>
+                <div>
+                  この設定では、シナリオ開始月から{scenario.userProfile.targetBalanceAge}歳到達月までに必要な
+                  {historicalDataCoverage.requiredMonths}か月分の過去データを使います。
+                  使用範囲: {historicalDataCoverage.startYearMonth}〜{historicalDataCoverage.lastRequiredMonth}。
+                </div>
+                {historicalDataCoverage.isSufficient ? (
+                  <div>選択した開始月では必要月数分のデータがあります。データが不足する開始月は検証対象から外します。</div>
+                ) : (
+                  <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                    過去データが不足しています。この開始月では{historicalDataCoverage.availableMonths}か月分しか使えず、
+                    {historicalDataCoverage.missingMonths}か月不足します。平均リターンや固定年率では補完しません。
+                  </div>
+                )}
                 <div>適用資産: {phase1HistoricalReturnAssetKeys.map((key) => growthAssetLabels[key]).join(" / ")}</div>
                 <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
               </div>

@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { historicalMarketReturnDataset, historicalMarketReturns } from "@/data/historicalMarketReturns";
-import type { AssetReturnModel, GrowthAssetKey, GrowthSettings, HistoricalAssetMapping, YearMonth } from "@/types";
+import type { AssetReturnModel, GrowthAssetKey, GrowthSettings, HistoricalAssetMapping, ScenarioData, YearMonth } from "@/types";
 
 const historicalReturnByMonth = new Map(historicalMarketReturns.map((row) => [row.month, row]));
 
@@ -34,6 +34,26 @@ export function getEffectiveReturnModel(settings: GrowthSettings): AssetReturnMo
 
 export function getHistoricalReturnMonth(startYearMonth: YearMonth, simulationMonthIndex: number): YearMonth {
   return dayjs(`${startYearMonth}-01`).add(simulationMonthIndex, "month").format("YYYY-MM");
+}
+
+export function getRequiredHistoricalReturnMonths(scenario: ScenarioData): number {
+  const start = dayjs(`${scenario.userProfile.simulationStartYearMonth}-01`);
+  const target = dayjs(scenario.userProfile.birthDate).add(scenario.userProfile.targetBalanceAge, "year").endOf("month");
+  return Math.max(1, target.diff(start, "month"));
+}
+
+export function getHistoricalSinglePathDataCoverage(startYearMonth: YearMonth, requiredMonths: number) {
+  const required = Math.max(1, requiredMonths);
+  const lastRequiredMonth = getHistoricalReturnMonth(startYearMonth, required - 1);
+  const availableMonths = historicalMarketReturns.filter((row) => row.month >= startYearMonth && row.month <= lastRequiredMonth).length;
+  return {
+    requiredMonths: required,
+    startYearMonth,
+    lastRequiredMonth,
+    availableMonths,
+    missingMonths: Math.max(0, required - availableMonths),
+    isSufficient: availableMonths >= required,
+  };
 }
 
 export function getFixedAnnualMonthlyGrowthRate(settings: GrowthSettings, assetKey: GrowthAssetKey): number {
@@ -78,7 +98,7 @@ export function getMonthlyAssetGrowthRate(
   }
 
   const historicalMonth = getHistoricalReturnMonth(returnModel.startYearMonth, simulationMonthIndex);
-  return getHistoricalPortfolioReturn(mapping, historicalMonth) ?? getFixedAnnualMonthlyGrowthRate(settings, assetKey);
+  return getHistoricalPortfolioReturn(mapping, historicalMonth) ?? 0;
 }
 
 export function getHistoricalReturnDatasetSummary() {

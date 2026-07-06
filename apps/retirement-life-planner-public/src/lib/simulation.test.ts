@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { sampleState } from "@/data/sampleData";
 import { historicalMarketReturns } from "@/data/historicalMarketReturns";
-import { createDefaultHistoricalSinglePathReturnModel } from "@/lib/assetReturnModel";
+import {
+  createDefaultHistoricalSinglePathReturnModel,
+  getHistoricalSinglePathDataCoverage,
+  getRequiredHistoricalReturnMonths,
+} from "@/lib/assetReturnModel";
 import { calculateAutoTaxDetails, calculateAutoTaxRows, getEffectiveTaxRows } from "@/lib/taxEngine";
 import { getTaxFilingAdvice } from "@/lib/taxFilingAdvice";
 import { getPensionPlannerMembers, isPensionPlannerReplacingEvent, mergePensionPlannerSettings } from "@/lib/pensionPlanner";
@@ -240,6 +244,61 @@ describe("simulation", () => {
     });
 
     expect(simulateScenario(scenario).monthly[0].growthAmount).toBe(Math.round(1_000_000 * startReturn!.sp500));
+  });
+
+  it("過去実績モードの必要データ月数をtargetBalanceAgeまでで判定する", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        birthDate: "1966-04-01",
+        simulationStartYearMonth: "2026-04",
+        targetBalanceAge: 90,
+      },
+    });
+    const requiredMonths = getRequiredHistoricalReturnMonths(scenario);
+    const sufficient = getHistoricalSinglePathDataCoverage("1990-01", requiredMonths);
+    const insufficient = getHistoricalSinglePathDataCoverage("2000-01", 480);
+
+    expect(requiredMonths).toBe(360);
+    expect(sufficient.isSufficient).toBe(true);
+    expect(insufficient.isSufficient).toBe(false);
+    expect(insufficient.missingMonths).toBeGreaterThan(0);
+  });
+
+  it("過去実績データが欠ける月は固定年率で補完しない", () => {
+    const scenario = simpleScenario({
+      userProfile: {
+        ...simpleScenario().userProfile,
+        simulationStartYearMonth: "2026-04",
+        simulationEndYearMonth: "2026-05",
+      },
+      monthlyExpenses: {
+        ...simpleScenario().monthlyExpenses,
+        housing: 0,
+      },
+      initialAssets: {
+        ...simpleScenario().initialAssets,
+        cash: 0,
+        specificAccount: 1_000_000,
+      },
+      assetGrowthSettings: {
+        enabled: true,
+        rates: {
+          cash: 0,
+          bankDeposit: 0,
+          timeDeposit: 0,
+          nisa: 0,
+          specificAccount: 0.12,
+          ordinaryAccountForOptions: 0,
+          ideco: 0,
+        },
+        returnModel: createDefaultHistoricalSinglePathReturnModel("2026-06"),
+      },
+    });
+
+    const result = simulateScenario(scenario);
+    expect(result.monthly[0].growthAmount).not.toBe(0);
+    expect(result.monthly[1].growthAmount).toBe(0);
   });
 
   it("開始月から終了月までの収入イベントを反映する", () => {
