@@ -176,6 +176,8 @@ import type {
   TaxSocialPaymentCategory,
   TaxSocialPaymentScheduleItem,
   RecurringTaxSocialPaymentTemplate,
+  AssetReturnModel,
+  HistoricalAssetMapping,
   YearMonth,
   GrowthAssetKey,
   PlanBackup,
@@ -627,6 +629,45 @@ const editableGrowthAssetKeys: GrowthAssetKey[] = [
 const historicalReturnDataset = getHistoricalReturnDatasetSummary();
 const defaultHistoricalStartYearMonth = "2000-01";
 
+type HistoricalRollingReturnModel = Extract<AssetReturnModel, { mode: "historicalRollingRange" }>;
+type HistoricalChartApplyMessage = {
+  caseLabel: string;
+  startYearMonth: YearMonth;
+  mappingSummary: string;
+  currencyLabel: string;
+};
+
+function formatYearMonthJa(yearMonth: YearMonth) {
+  const [year, month] = yearMonth.split("-");
+  return `${Number(year)}年${month}月`;
+}
+
+function summarizeHistoricalAssetMappings(assetMappings?: Partial<Record<GrowthAssetKey, HistoricalAssetMapping>>) {
+  const labels = historicalReturnAssetKeys.map((key) => getHistoricalReturnPresetLabel(assetMappings?.[key]));
+  const uniqueLabels = Array.from(new Set(labels));
+  if (uniqueLabels.length === 1) return uniqueLabels[0] ?? "過去実績";
+  return historicalReturnAssetKeys
+    .map((key) => `${growthAssetLabels[key]}: ${getHistoricalReturnPresetLabel(assetMappings?.[key])}`)
+    .join(" / ");
+}
+
+function describeReturnModelForChart(scenario: ScenarioData) {
+  const returnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
+  if (returnModel.mode === "fixedAnnual") {
+    return { label: "運用リターン: 固定年率", isHistorical: false };
+  }
+  if (returnModel.mode === "historicalSinglePath") {
+    return {
+      label: `運用リターン: 過去実績 ${formatYearMonthJa(returnModel.startYearMonth)}開始 / ${summarizeHistoricalAssetMappings(returnModel.assetMappings)} / ${historicalCurrencyModeLabels[getHistoricalCurrencyMode(returnModel)]}`,
+      isHistorical: true,
+    };
+  }
+  return {
+    label: `運用リターン: 過去実績・範囲検証 ${returnModel.rangeStartYearMonth}〜${returnModel.rangeEndYearMonth} / ${summarizeHistoricalAssetMappings(returnModel.assetMappings)} / ${historicalCurrencyModeLabels[getHistoricalCurrencyMode(returnModel)]}`,
+    isHistorical: true,
+  };
+}
+
 const assetTransferSourceLabels: Record<AssetTransferSourceKey, string> = {
   cash: "現金",
   bankDeposit: "普通預金",
@@ -912,6 +953,18 @@ function App() {
     window.setTimeout(() => {
       document.getElementById("asset-use-period-settings")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
+  };
+  const openAssetReturnSettings = () => {
+    setAppModeHash("safety");
+    setActiveTab("assets");
+    window.setTimeout(() => {
+      document.getElementById("asset-return-settings")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  };
+  const resetActiveScenarioReturnModelToFixedAnnual = () => {
+    updateScenario((s) => {
+      s.assetGrowthSettings.returnModel = { mode: "fixedAnnual" };
+    });
   };
 
   const safetySubTabs = tabs.filter((tab) => !["results", "compare", "data"].includes(tab.key));
@@ -1232,6 +1285,8 @@ function App() {
                 onOpenInputCard={openInputCard}
                 inputCards={inputCards}
                 onOpenInputGuide={openInputGuideSummary}
+                onResetReturnModelToFixedAnnual={resetActiveScenarioReturnModelToFixedAnnual}
+                onOpenReturnSettings={openAssetReturnSettings}
               />
             )}
             {activeTab === "profile" && (
@@ -1250,6 +1305,7 @@ function App() {
                 updateScenario={updateScenario}
                 updateScenarios={updateScenarios}
                 targetCardId={targetedInputCardId}
+                onOpenDashboard={() => setActiveTab("dashboard")}
               />
             )}
             {activeTab === "expenses" && (
@@ -2511,6 +2567,8 @@ function Dashboard({
   onOpenInputCard,
   inputCards,
   onOpenInputGuide,
+  onResetReturnModelToFixedAnnual,
+  onOpenReturnSettings,
 }: {
   scenario: ScenarioData;
   result: ReturnType<typeof simulateScenario>;
@@ -2519,6 +2577,8 @@ function Dashboard({
   onOpenInputCard: (cardId: InputCardId) => void;
   inputCards: InputCardDefinition[];
   onOpenInputGuide: () => void;
+  onResetReturnModelToFixedAnnual: () => void;
+  onOpenReturnSettings: () => void;
 }) {
   const flexibleFreeCashPeriod = getScenarioFlexibleFreeCashPeriod(scenario);
   const flexibleFreeCashSummary = calculateFlexibleFreeCashSummary(result, flexibleFreeCashPeriod);
@@ -2536,6 +2596,7 @@ function Dashboard({
     assets: row.endingAssets,
     withdrawal: row.withdrawalAmount,
   }));
+  const returnModelStatus = describeReturnModelForChart(scenario);
   const cashflowChartData = result.annual.map((row) => ({
     label: yearEndAgeLabel(row.year, row.ageYears),
     income: row.incomeTotal,
@@ -2905,19 +2966,41 @@ function Dashboard({
 
       <Card>
         <CardHeader>
-          <CardTitle>資産残高推移</CardTitle>
-          <CardDescription>年末資産残高だけを確認します。取り崩しや追加投資の原資不足は、結果タブの詳細で分けて確認します。</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>資産残高推移</CardTitle>
+              <CardDescription>年末資産残高だけを確認します。取り崩しや追加投資の原資不足は、結果タブの詳細で分けて確認します。</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {returnModelStatus.isHistorical && (
+                <Button type="button" variant="outline" size="sm" onClick={onResetReturnModelToFixedAnnual}>
+                  固定年率に戻す
+                </Button>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={onOpenReturnSettings}>
+                設定を変更
+              </Button>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="h-96">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="axisLabel" interval="preserveStartEnd" minTickGap={12} />
-              <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
-              <Tooltip formatter={(value) => yen(Number(value))} />
-              <Area dataKey="assets" name="年末資産" stroke="#0f766e" fill="#99f6e4" />
-            </AreaChart>
-          </ResponsiveContainer>
+        <CardContent className="space-y-3">
+          <div className={`rounded-md border px-4 py-3 text-sm leading-6 ${returnModelStatus.isHistorical ? "border-sky-200 bg-sky-50 text-sky-950" : "bg-slate-50 text-slate-700"}`}>
+            <span className="font-medium">{returnModelStatus.label}</span>
+            {returnModelStatus.isHistorical && (
+              <span className="ml-1">過去市場ケースを通常シナリオに反映中です。固定年率に戻すか、設定を変更できます。</span>
+            )}
+          </div>
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="axisLabel" interval="preserveStartEnd" minTickGap={12} />
+                <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 10_000)}万`} width={72} />
+                <Tooltip formatter={(value) => yen(Number(value))} />
+                <Area dataKey="assets" name="年末資産" stroke="#0f766e" fill="#99f6e4" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
 
@@ -5462,7 +5545,7 @@ function HistoricalRollingStressTestCard({
   needsRerun: boolean;
   targetBalanceAge: number;
   onRun: () => void;
-  onViewCaseInChart: (startYearMonth: YearMonth) => void;
+  onViewCaseInChart: (caseLabel: string, startYearMonth: YearMonth) => void;
 }) {
   const result = state.result;
   const metricLabel = (point?: { value: number; startYearMonth: YearMonth }) =>
@@ -5475,7 +5558,7 @@ function HistoricalRollingStressTestCard({
       type="button"
       variant="outline"
       disabled={!point}
-      onClick={() => point && onViewCaseInChart(point.startYearMonth)}
+      onClick={() => point && onViewCaseInChart(label.replace("を通常チャートに反映", ""), point.startYearMonth)}
     >
       {label}
     </Button>
@@ -5570,14 +5653,14 @@ function HistoricalRollingStressTestCard({
               />
             </div>
             <div className="rounded-lg border bg-sky-50 px-4 py-3 text-sky-950">
-              <p className="font-medium">チャートで1本の推移を見る</p>
+              <p className="font-medium">通常チャートに反映して確認</p>
               <p className="mt-1">
-                現在の運用リターン設定を単一期間へ切り替えます。押したケースの過去市場の開始月を使い、ダッシュボードや資産推移チャートで確認できます。
+                押すと、この開始月を通常の運用リターン設定に反映します。反映後はダッシュボードと結果タブの資産推移がこのケースで再計算されます。
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {chartButton("最悪ケースをチャートで見る", result.age90Balance?.worst)}
-                {chartButton("中央値ケースをチャートで見る", result.age90Balance?.median)}
-                {chartButton("最良ケースをチャートで見る", result.age90Balance?.best)}
+                {chartButton("最悪ケースを通常チャートに反映", result.age90Balance?.worst)}
+                {chartButton("中央値ケースを通常チャートに反映", result.age90Balance?.median)}
+                {chartButton("最良ケースを通常チャートに反映", result.age90Balance?.best)}
               </div>
             </div>
             <details className="rounded-lg border bg-slate-50 px-3 py-2">
@@ -5633,9 +5716,11 @@ function AssetsSection({
   updateScenario,
   updateScenarios,
   targetCardId,
+  onOpenDashboard,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
+  onOpenDashboard: () => void;
 }) {
   const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [assetSyncSelectedTargetIds, setAssetSyncSelectedTargetIds] = useState<string[]>([]);
@@ -5655,6 +5740,8 @@ function AssetsSection({
     result?: HistoricalRollingBacktestResult;
     error?: string;
   }>({ status: "idle" });
+  const [historicalChartApplyMessage, setHistoricalChartApplyMessage] = useState<HistoricalChartApplyMessage | null>(null);
+  const [lastRollingReturnModel, setLastRollingReturnModel] = useState<HistoricalRollingReturnModel | null>(null);
   const returnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
   const returnModelMode =
     returnModel.mode === "historicalSinglePath" || returnModel.mode === "historicalRollingRange" ? returnModel.mode : "fixedAnnual";
@@ -5766,10 +5853,30 @@ function AssetsSection({
       }
     }, 0);
   };
-  const switchRollingCaseToSinglePath = (startYearMonth: YearMonth) => {
+  const resetReturnModelToFixedAnnual = () => {
+    updateScenario((s) => {
+      s.assetGrowthSettings.returnModel = { mode: "fixedAnnual" };
+    });
+    setHistoricalChartApplyMessage(null);
+  };
+  const restoreRollingRangeReturnModel = () => {
+    if (!lastRollingReturnModel) return;
+    updateScenario((s) => {
+      s.assetGrowthSettings.returnModel = structuredClone(lastRollingReturnModel);
+    });
+    setHistoricalChartApplyMessage(null);
+  };
+  const switchRollingCaseToSinglePath = (caseLabel: string, startYearMonth: YearMonth) => {
     updateScenario((s) => {
       const current = getEffectiveReturnModel(s.assetGrowthSettings);
       if (current.mode !== "historicalRollingRange") return;
+      setLastRollingReturnModel(structuredClone(current));
+      setHistoricalChartApplyMessage({
+        caseLabel,
+        startYearMonth,
+        mappingSummary: summarizeHistoricalAssetMappings(current.assetMappings),
+        currencyLabel: historicalCurrencyModeLabels[getHistoricalCurrencyMode(current)],
+      });
       s.assetGrowthSettings.returnModel = {
         mode: "historicalSinglePath",
         datasetId: current.datasetId,
@@ -6224,7 +6331,7 @@ function AssetsSection({
           <Metric title="シミュレーション対象資産" value={compactYen(getSimulationTargetAssets(scenario))} sub="取り崩し計算の起点" />
         </div>
 
-        <Card className="border-dashed">
+        <Card id="asset-return-settings" className="border-dashed">
           <CardHeader>
             <CardTitle>資産別利回り</CardTitle>
             <CardDescription>生活費・税社保・積立・受取はそのまま使い、資産成長率だけを固定年率または過去市場だった場合に切り替えます。</CardDescription>
@@ -6325,6 +6432,36 @@ function AssetsSection({
                 />
               </Field>
             </div>
+            {returnModelMode !== "fixedAnnual" && (
+              <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="font-medium">{describeReturnModelForChart(scenario).label}</span>
+                  <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
+                    固定年率に戻す
+                  </Button>
+                </div>
+              </div>
+            )}
+            {historicalChartApplyMessage && (
+              <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+                <p className="font-medium">{historicalChartApplyMessage.caseLabel}を通常チャートに反映しました</p>
+                <p className="mt-1">
+                  過去市場の開始月: {formatYearMonthJa(historicalChartApplyMessage.startYearMonth)} / 配分: {historicalChartApplyMessage.mappingSummary} / 為替: {historicalChartApplyMessage.currencyLabel}
+                </p>
+                <p className="mt-1">ダッシュボードと結果タブの資産推移が、この開始月の過去市場ケースで再計算されています。</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={onOpenDashboard}>
+                    ダッシュボードで見る
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled={!lastRollingReturnModel} onClick={restoreRollingRangeReturnModel}>
+                    範囲検証に戻る
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
+                    固定年率に戻す
+                  </Button>
+                </div>
+              </div>
+            )}
             {(returnModelMode === "historicalSinglePath" || returnModelMode === "historicalRollingRange") && (
               <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
                 <div className="font-medium text-foreground">過去市場でこの人生設計を検証</div>
