@@ -5451,6 +5451,7 @@ function HistoricalRollingStressTestCard({
   needsRerun,
   targetBalanceAge,
   onRun,
+  onViewCaseInChart,
 }: {
   estimate: HistoricalRollingBacktestEstimate;
   state: {
@@ -5461,29 +5462,63 @@ function HistoricalRollingStressTestCard({
   needsRerun: boolean;
   targetBalanceAge: number;
   onRun: () => void;
+  onViewCaseInChart: (startYearMonth: YearMonth) => void;
 }) {
   const result = state.result;
   const metricLabel = (point?: { value: number; startYearMonth: YearMonth }) =>
     point ? `${compactYen(point.value)}（${point.startYearMonth}開始）` : "-";
+  const startMonthLabel = (point?: { value: number; startYearMonth: YearMonth }) => point?.startYearMonth ?? "-";
   const depletionRateLabel = result ? `${(result.depletionRate * 100).toFixed(1)}%` : "-";
   const runDisabled = state.status === "running";
+  const chartButton = (label: string, point?: { value: number; startYearMonth: YearMonth }) => (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={!point}
+      onClick={() => point && onViewCaseInChart(point.startYearMonth)}
+    >
+      {label}
+    </Button>
+  );
 
   return (
     <details className="mb-4 rounded-lg border bg-white px-4 py-3">
       <summary className="cursor-pointer text-sm font-semibold text-slate-900">過去市場ストレステスト</summary>
       <div className="mt-3 space-y-3 text-sm leading-6">
         <p className="text-muted-foreground">
-          指定した過去期間内で、必要月数を満たす全開始月を過去実績に当てはめた検証です。通常の結果やダッシュボードの数値は置き換えません。
-          将来を保証するものではありません。
+          範囲検証は、複数の過去市場の開始月をまとめて検証するストレステストです。通常のダッシュボードや資産推移チャートは置き換えません。
+          チャートで1本の推移を見たい場合は「過去実績・単一期間」を選び、見たい開始月を指定してください。将来を保証するものではありません。
         </p>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Metric title="検証範囲" value={`${estimate.rangeStartYearMonth}〜${estimate.rangeEndYearMonth}`} sub={`${estimate.requiredMonths}か月分の過去データを使用`} />
-          <Metric title="対象パス数" value={`${estimate.validPathCount}件`} sub={`除外 ${estimate.excludedPathCount}件 / 候補 ${estimate.totalPathCount}件`} />
-          <Metric title="枯渇パス" value={result ? `${result.depletedPathCount}件` : "-"} sub={`枯渇率 ${depletionRateLabel}`} />
+        <div className="grid gap-3 md:grid-cols-5">
+          <Metric
+            title="検証範囲"
+            value={`${estimate.rangeStartYearMonth}〜${estimate.rangeEndYearMonth}`}
+            sub="この範囲内の各月を「過去市場の開始月」として試します。"
+          />
+          <Metric
+            title="必要データ"
+            value={`${estimate.requiredMonths}か月`}
+            sub={`${targetBalanceAge}歳到達月までに必要な月次データです。`}
+          />
+          <Metric
+            title="検証できた開始月"
+            value={`${estimate.validPathCount}件`}
+            sub={`開始月候補${estimate.totalPathCount}件のうち、必要データ${estimate.requiredMonths}か月分を確保できた開始月です。`}
+          />
+          <Metric
+            title="資産が尽きた開始月"
+            value={result ? `${result.depletedPathCount}件` : "-"}
+            sub={result ? `検証できた${estimate.validPathCount}件のうち、${targetBalanceAge}歳までに資産が枯渇したケースです。枯渇率 ${depletionRateLabel}` : "検証後に、資産が尽きた開始月の件数を表示します。"}
+          />
+          <Metric
+            title="データ不足で除外"
+            value={`${estimate.excludedPathCount}件`}
+            sub="必要月数分の過去データが足りない開始月です。平均値では補完しません。"
+          />
         </div>
         {estimate.tooManyPathWarning && (
           <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
-            候補開始月が多いため、検証には少し時間がかかる可能性があります。実行は「検証する」を押した時だけ行います。
+            開始月候補が多いため、検証には少し時間がかかる可能性があります。実行は「検証する」を押した時だけ行います。
           </p>
         )}
         {needsRerun && (
@@ -5505,22 +5540,56 @@ function HistoricalRollingStressTestCard({
         {result && (
           <>
             <div className="grid gap-3 md:grid-cols-3">
-              <Metric title="90歳残高 最悪" value={metricLabel(result.age90Balance?.worst)} sub={`最悪開始月 ${result.worstStartYearMonth ?? "-"}`} />
-              <Metric title="90歳残高 中央" value={metricLabel(result.age90Balance?.median)} sub={`下位10% ${metricLabel(result.age90Balance?.p10)}`} />
-              <Metric title="90歳残高 最良" value={metricLabel(result.age90Balance?.best)} sub={`最良開始月 ${result.bestStartYearMonth ?? "-"}`} />
+              <Metric
+                title="90歳残高が最も少ないケース"
+                value={metricLabel(result.age90Balance?.worst)}
+                sub={`過去市場の開始月 ${startMonthLabel(result.age90Balance?.worst)}。選択した過去市場の中で、90歳残高が最も少なかったケースです。`}
+              />
+              <Metric
+                title="90歳残高の中央値ケース"
+                value={metricLabel(result.age90Balance?.median)}
+                sub={`過去市場の開始月 ${startMonthLabel(result.age90Balance?.median)}。検証できた開始月を90歳残高順に並べた中央付近のケースです。`}
+              />
+              <Metric
+                title="90歳残高が最も多いケース"
+                value={metricLabel(result.age90Balance?.best)}
+                sub={`過去市場の開始月 ${startMonthLabel(result.age90Balance?.best)}。選択した過去市場の中で、90歳残高が最も多かったケースです。`}
+              />
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <Metric title={`${targetBalanceAge}歳残高`} value={metricLabel(result.targetAgeBalance?.median)} sub={`最悪 ${metricLabel(result.targetAgeBalance?.worst)}`} />
-              <Metric title="最大ドローダウン" value={metricLabel(result.maxDrawdown?.worst)} sub={`中央値 ${metricLabel(result.maxDrawdown?.median)}`} />
-              <Metric title="除外理由" value={`${result.excludedPathCount}件`} sub={result.dataInsufficientReason} />
+              <Metric
+                title="最大ドローダウン"
+                value={metricLabel(result.maxDrawdown?.worst)}
+                sub={`検証期間中に、資産残高がピークからどれだけ大きく落ち込んだかを示します。中央値 ${metricLabel(result.maxDrawdown?.median)}`}
+              />
+              <Metric
+                title="データ不足で除外"
+                value={`${result.excludedPathCount}件`}
+                sub={`${result.dataInsufficientReason} 平均値では補完しません。`}
+              />
+            </div>
+            <div className="rounded-lg border bg-sky-50 px-4 py-3 text-sky-950">
+              <p className="font-medium">チャートで1本の推移を見る</p>
+              <p className="mt-1">
+                現在の運用リターン設定を単一期間へ切り替えます。押したケースの過去市場の開始月を使い、ダッシュボードや資産推移チャートで確認できます。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {chartButton("最悪ケースをチャートで見る", result.age90Balance?.worst)}
+                {chartButton("中央値ケースをチャートで見る", result.age90Balance?.median)}
+                {chartButton("最良ケースをチャートで見る", result.age90Balance?.best)}
+              </div>
             </div>
             <details className="rounded-lg border bg-slate-50 px-3 py-2">
-              <summary className="cursor-pointer font-medium text-slate-900">開始月ごとの結果一覧</summary>
+              <summary className="cursor-pointer font-medium text-slate-900">過去市場の開始月ごとの結果一覧</summary>
+              <p className="mt-2 text-muted-foreground">
+                例: 1996-03開始は、あなたの将来シミュレーション開始月に、1996年3月からの市場リターンを順番に当てはめるという意味です。
+              </p>
               <div className="mt-3 max-h-96 overflow-auto rounded-md border bg-white">
                 <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs text-muted-foreground">
                     <tr>
-                      <Th>開始月</Th>
+                      <Th>過去市場の開始月</Th>
                       <Th>終了月</Th>
                       <Th>{targetBalanceAge}歳残高</Th>
                       <Th>90歳残高</Th>
@@ -5696,6 +5765,19 @@ function AssetsSection({
         });
       }
     }, 0);
+  };
+  const switchRollingCaseToSinglePath = (startYearMonth: YearMonth) => {
+    updateScenario((s) => {
+      const current = getEffectiveReturnModel(s.assetGrowthSettings);
+      if (current.mode !== "historicalRollingRange") return;
+      s.assetGrowthSettings.returnModel = {
+        mode: "historicalSinglePath",
+        datasetId: current.datasetId,
+        startYearMonth,
+        currencyMode: getHistoricalCurrencyMode(current),
+        assetMappings: structuredClone(current.assetMappings),
+      };
+    });
   };
   const assetSyncOptionSubAccountIdsKey = assetSyncOptionSubAccountIds.join("|");
   const linkedIncomeEventIdsForAssetSync = useMemo(
@@ -6194,7 +6276,7 @@ function AssetsSection({
                   <option value="jpyConverted">{historicalCurrencyModeLabels.jpyConverted}</option>
                 </Select>
               </Field>
-              <Field label="過去開始月">
+              <Field label="過去市場の開始月">
                 <Input
                   type="month"
                   value={historicalStartYearMonth}
@@ -6208,6 +6290,9 @@ function AssetsSection({
                         : createDefaultHistoricalSinglePathReturnModel(startYearMonth);
                   })}
                 />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  例: 1996-03開始は、あなたの将来シミュレーション開始月に1996年3月からの市場リターンを順番に当てはめるという意味です。
+                </p>
               </Field>
               <Field label="検証範囲開始月">
                 <Input
@@ -6322,6 +6407,7 @@ function AssetsSection({
                 needsRerun={rollingBacktestNeedsRerun}
                 targetBalanceAge={scenario.userProfile.targetBalanceAge}
                 onRun={runRollingBacktest}
+                onViewCaseInChart={switchRollingCaseToSinglePath}
               />
             )}
             <FormGrid>
@@ -14498,15 +14584,22 @@ function ManualSection() {
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <p className="font-medium">過去実績・単一期間</p>
               <p className="mt-1 text-muted-foreground">
-                指定した過去開始月から、必要月数分の月次リターンを順番に当てはめます。生活費、税社保、積立、取り崩しは通常の入力をそのまま使います。
+                指定した過去市場の開始月から、必要月数分の月次リターンを順番に当てはめます。生活費、税社保、積立、取り崩しは通常の入力をそのまま使います。
               </p>
             </div>
             <div className="rounded-md border bg-slate-50 px-4 py-3">
               <p className="font-medium">過去実績・範囲検証</p>
               <p className="mt-1 text-muted-foreground">
-                指定した過去範囲内で、必要月数を満たす全開始月を検証します。初期表示では実行せず、「検証する」を押した時だけ複数試算します。
+                複数の過去市場の開始月を試すストレステストです。通常のダッシュボードや資産推移チャートは自動では置き換えず、「検証する」を押した時だけ複数試算します。
               </p>
             </div>
+          </div>
+          <div className="rounded-md border bg-blue-50 px-4 py-3 text-blue-950">
+            <p className="font-medium">範囲検証の読み方</p>
+            <p className="mt-1">
+              「開始月候補」は指定範囲内で試せる月、「検証できた開始月」は必要データ期間を確保できた月、「データ不足で除外」は必要月数分のデータが足りない月です。
+              データ不足は平均値で補完しません。最悪・中央値・最良ケースをチャートで見たい場合は、結果内のボタンで「過去実績・単一期間」へ切り替えて確認します。
+            </p>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border bg-sky-50 px-4 py-3 text-sky-950">
