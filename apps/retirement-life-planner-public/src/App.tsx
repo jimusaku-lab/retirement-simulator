@@ -637,6 +637,24 @@ type HistoricalChartApplyMessage = {
   currencyLabel: string;
 };
 
+function getHistoricalRollingStressTestStatusLabel(
+  status: "idle" | "running" | "done" | "error",
+  hasResult: boolean,
+  needsRerun: boolean,
+) {
+  if (status === "running") return "検証中";
+  if (status === "error") return "エラー";
+  if (needsRerun) return "再検証が必要";
+  if (hasResult || status === "done") return "結果あり";
+  return "未検証";
+}
+
+function formatHistoricalRollingResultSummary(result?: HistoricalRollingBacktestResult) {
+  if (!result) return null;
+  const worstAge90Balance = result.age90Balance?.worst ? compactYen(result.age90Balance.worst.value) : "-";
+  return `検証完了: 対象${result.validPathCount}件 / 資産が尽きた開始月${result.depletedPathCount}件 / 90歳残高の最悪 ${worstAge90Balance}`;
+}
+
 function formatYearMonthJa(yearMonth: YearMonth) {
   const [year, month] = yearMonth.split("-");
   return `${Number(year)}年${month}月`;
@@ -5533,8 +5551,10 @@ function HistoricalRollingStressTestCard({
   estimate,
   state,
   needsRerun,
+  isOpen,
   targetBalanceAge,
   onRun,
+  onOpenChange,
   onViewCaseInChart,
 }: {
   estimate: HistoricalRollingBacktestEstimate;
@@ -5544,11 +5564,14 @@ function HistoricalRollingStressTestCard({
     error?: string;
   };
   needsRerun: boolean;
+  isOpen: boolean;
   targetBalanceAge: number;
   onRun: () => void;
+  onOpenChange: (open: boolean) => void;
   onViewCaseInChart: (caseLabel: string, startYearMonth: YearMonth) => void;
 }) {
   const result = state.result;
+  const statusLabel = getHistoricalRollingStressTestStatusLabel(state.status, Boolean(result), needsRerun);
   const metricLabel = (point?: { value: number; startYearMonth: YearMonth }) =>
     point ? `${compactYen(point.value)}（${point.startYearMonth}開始）` : "-";
   const startMonthLabel = (point?: { value: number; startYearMonth: YearMonth }) => point?.startYearMonth ?? "-";
@@ -5566,8 +5589,18 @@ function HistoricalRollingStressTestCard({
   );
 
   return (
-    <details className="mb-4 rounded-lg border bg-white px-4 py-3">
-      <summary className="cursor-pointer text-sm font-semibold text-slate-900">過去市場ストレステスト</summary>
+    <details
+      id="historical-rolling-stress-test"
+      className="mb-4 rounded-lg border bg-white px-4 py-3"
+      open={isOpen}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <span>過去市場ストレステスト</span>
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{statusLabel}</span>
+        </span>
+      </summary>
       <div className="mt-3 space-y-3 text-sm leading-6">
         <p className="text-muted-foreground">
           範囲検証は、複数の過去市場の開始月をまとめて検証するストレステストです。通常のダッシュボードや資産推移チャートは置き換えません。
@@ -5623,6 +5656,7 @@ function HistoricalRollingStressTestCard({
         </div>
         {result && (
           <>
+            <div id="historical-rolling-stress-test-result" className="scroll-mt-24" />
             <div className="grid gap-3 md:grid-cols-3">
               <Metric
                 title="90歳残高が最も少ないケース"
@@ -5743,6 +5777,7 @@ function AssetsSection({
     result?: HistoricalRollingBacktestResult;
     error?: string;
   }>({ status: "idle" });
+  const [rollingBacktestOpen, setRollingBacktestOpen] = useState(false);
   const [historicalChartApplyMessage, setHistoricalChartApplyMessage] = useState<HistoricalChartApplyMessage | null>(null);
   const [lastRollingReturnModel, setLastRollingReturnModel] = useState<HistoricalRollingReturnModel | null>(null);
   const returnModel = getEffectiveReturnModel(scenario.assetGrowthSettings);
@@ -5782,6 +5817,7 @@ function AssetsSection({
     returnModel.mode === "historicalRollingRange" &&
     rollingBacktestState.status === "done" &&
     rollingBacktestState.fingerprint !== rollingBacktestFingerprint;
+  const rollingBacktestResultSummary = formatHistoricalRollingResultSummary(rollingBacktestState.result);
   const historicalAssetMappingRows = historicalReturnAssetKeys.map((key) => ({
     key,
     label: growthAssetLabels[key],
@@ -5838,21 +5874,33 @@ function AssetsSection({
       s.assetGrowthSettings.returnModel = next;
     });
   };
+  const scrollToRollingBacktestResult = () => {
+    setRollingBacktestOpen(true);
+    window.setTimeout(() => {
+      const target =
+        document.getElementById("historical-rolling-stress-test-result") ??
+        document.getElementById("historical-rolling-stress-test");
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
   const runRollingBacktest = () => {
     if (returnModel.mode !== "historicalRollingRange") return;
     const model = structuredClone(returnModel);
     const fingerprint = rollingBacktestFingerprint;
+    setRollingBacktestOpen(true);
     setRollingBacktestState({ status: "running", fingerprint });
     window.setTimeout(() => {
       try {
         const result = runHistoricalRollingBacktest(structuredClone(scenario), model);
         setRollingBacktestState({ status: "done", fingerprint, result });
+        scrollToRollingBacktestResult();
       } catch (error) {
         setRollingBacktestState({
           status: "error",
           fingerprint,
           error: error instanceof Error ? error.message : "範囲検証に失敗しました。",
         });
+        scrollToRollingBacktestResult();
       }
     }, 0);
   };
@@ -6584,27 +6632,42 @@ function AssetsSection({
                   </div>
                 </div>
                 {returnModelMode === "historicalRollingRange" && (
-                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-white px-3 py-3 text-amber-950">
-                    <span>
-                      {rollingBacktestNeedsRerun
-                        ? "条件が変わりました。最新条件で再検証してください。"
-                        : "設定を確認したら、範囲検証を実行してください。"}
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={runRollingBacktest}
-                      disabled={rollingBacktestState.status === "running" || (rollingBacktestEstimate?.validPathCount ?? 0) === 0}
-                    >
+                  <div className="mt-3 rounded-md border border-amber-200 bg-white px-3 py-3 text-amber-950">
+                    <div className="font-medium">
                       {rollingBacktestState.status === "running"
-                        ? "検証中..."
-                        : rollingBacktestState.status === "done"
-                          ? "再検証する"
-                          : "検証する"}
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
-                      固定年率に戻す
-                    </Button>
+                        ? "検証中です。開始月ごとの試算を実行しています。"
+                        : rollingBacktestNeedsRerun
+                          ? "条件が変わりました。最新条件で再検証してください。"
+                          : rollingBacktestResultSummary ?? "設定を確認したら、範囲検証を実行してください。"}
+                    </div>
+                    {rollingBacktestState.status === "error" && rollingBacktestState.error && (
+                      <p className="mt-1 text-sm text-red-700">{rollingBacktestState.error}</p>
+                    )}
+                    <p className="mt-1 text-sm">
+                      検証後、下の「過去市場ストレステスト」を開いて結果を表示します。
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      {rollingBacktestResultSummary && !rollingBacktestNeedsRerun && (
+                        <Button type="button" variant="outline" size="sm" onClick={scrollToRollingBacktestResult}>
+                          結果を開く
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={runRollingBacktest}
+                        disabled={rollingBacktestState.status === "running" || (rollingBacktestEstimate?.validPathCount ?? 0) === 0}
+                      >
+                        {rollingBacktestState.status === "running"
+                          ? "検証中..."
+                          : rollingBacktestState.status === "done"
+                            ? "再検証して結果を見る"
+                            : "検証して結果を見る"}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
+                        固定年率に戻す
+                      </Button>
+                    </div>
                   </div>
                 )}
                 <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
@@ -6615,8 +6678,10 @@ function AssetsSection({
                 estimate={rollingBacktestEstimate}
                 state={rollingBacktestState}
                 needsRerun={rollingBacktestNeedsRerun}
+                isOpen={rollingBacktestOpen}
                 targetBalanceAge={scenario.userProfile.targetBalanceAge}
                 onRun={runRollingBacktest}
+                onOpenChange={setRollingBacktestOpen}
                 onViewCaseInChart={switchRollingCaseToSinglePath}
               />
             )}
