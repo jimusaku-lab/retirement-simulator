@@ -1306,6 +1306,7 @@ function App() {
                 updateScenarios={updateScenarios}
                 targetCardId={targetedInputCardId}
                 onOpenDashboard={() => setActiveTab("dashboard")}
+                onOpenResults={() => setActiveTab("results")}
               />
             )}
             {activeTab === "expenses" && (
@@ -5717,10 +5718,12 @@ function AssetsSection({
   updateScenarios,
   targetCardId,
   onOpenDashboard,
+  onOpenResults,
 }: SectionProps & {
   scenarios: ScenarioData[];
   updateScenarios: (updater: (scenario: ScenarioData) => ScenarioData, backupLabel?: string) => void;
   onOpenDashboard: () => void;
+  onOpenResults: () => void;
 }) {
   const [assetSyncTargetMode, setAssetSyncTargetMode] = useState<AssetSyncTargetMode>("compare");
   const [assetSyncSelectedTargetIds, setAssetSyncSelectedTargetIds] = useState<string[]>([]);
@@ -5863,6 +5866,21 @@ function AssetsSection({
     if (!lastRollingReturnModel) return;
     updateScenario((s) => {
       s.assetGrowthSettings.returnModel = structuredClone(lastRollingReturnModel);
+    });
+    setHistoricalChartApplyMessage(null);
+  };
+  const switchSinglePathToRollingRange = () => {
+    updateScenario((s) => {
+      const current = getEffectiveReturnModel(s.assetGrowthSettings);
+      const next = createDefaultHistoricalRollingRangeReturnModel(
+        historicalRangeStartYearMonth,
+        historicalRangeEndYearMonth,
+      ) as HistoricalRollingReturnModel;
+      if (current.mode === "historicalSinglePath" || current.mode === "historicalRollingRange") {
+        next.assetMappings = structuredClone(current.assetMappings);
+        next.currencyMode = getHistoricalCurrencyMode(current);
+      }
+      s.assetGrowthSettings.returnModel = next;
     });
     setHistoricalChartApplyMessage(null);
   };
@@ -6464,11 +6482,22 @@ function AssetsSection({
             )}
             {(returnModelMode === "historicalSinglePath" || returnModelMode === "historicalRollingRange") && (
               <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-                <div className="font-medium text-foreground">過去市場でこの人生設計を検証</div>
+                <div className="font-medium text-foreground">
+                  {returnModelMode === "historicalSinglePath" ? "過去市場1ケースを通常計算に反映中" : "複数の過去市場開始月でストレステスト"}
+                </div>
                 <div>
                   データは{historicalReturnDataset.label}、範囲は{historicalReturnDataset.firstMonth}〜{historicalReturnDataset.lastMonth}です。
                   為替モード: {historicalCurrencyModeLabels[historicalCurrencyMode]}。
                 </div>
+                {returnModelMode === "historicalSinglePath" ? (
+                  <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-950">
+                    ここで変更した内容はダッシュボード・結果・比較へ自動反映されます。反映ボタンは不要です。
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+                    複数の開始月をまとめて試すため、変更後は「検証する / 再検証する」を押した時だけ計算します。通常のダッシュボードは自動では置き換えません。
+                  </div>
+                )}
                 {historicalCurrencyMode === "jpyConverted" && (
                   <div>
                     円換算リターンは、選択した過去期間のUSD/JPY変動を米国株・米国債券の月次リターンに重ねて、円建て資産として試算します。
@@ -6512,6 +6541,26 @@ function AssetsSection({
                       ].join(" / ")
                     : "なし（固定年率のみ）"}
                 </div>
+                {returnModelMode === "historicalSinglePath" && (
+                  <div className="mt-3 rounded-md border border-emerald-200 bg-white px-3 py-3 text-emerald-950">
+                    <div className="font-medium">設定変更は自動反映済みです</div>
+                    <p className="mt-1 text-sm">ダッシュボードの資産残高推移、結果タブ、比較タブでこの設定が使われています。</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" onClick={onOpenDashboard}>
+                        ダッシュボードで確認
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={onOpenResults}>
+                        結果で確認
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={switchSinglePathToRollingRange}>
+                        範囲検証で比較する
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
+                        固定年率に戻す
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 rounded-md border bg-white/80 p-3">
                   <div className="font-medium text-foreground">資産別の過去実績配分</div>
                   <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -6534,6 +6583,30 @@ function AssetsSection({
                     現在の配分: {activeHistoricalMappingSummary}。現金・普通預金・定期預金は固定年率設定を使います。
                   </div>
                 </div>
+                {returnModelMode === "historicalRollingRange" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-white px-3 py-3 text-amber-950">
+                    <span>
+                      {rollingBacktestNeedsRerun
+                        ? "条件が変わりました。最新条件で再検証してください。"
+                        : "設定を確認したら、範囲検証を実行してください。"}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={runRollingBacktest}
+                      disabled={rollingBacktestState.status === "running" || (rollingBacktestEstimate?.validPathCount ?? 0) === 0}
+                    >
+                      {rollingBacktestState.status === "running"
+                        ? "検証中..."
+                        : rollingBacktestState.status === "done"
+                          ? "再検証する"
+                          : "検証する"}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={resetReturnModelToFixedAnnual}>
+                      固定年率に戻す
+                    </Button>
+                  </div>
+                )}
                 <div>{historicalReturnDataset.note} 将来を保証するものではありません。</div>
               </div>
             )}
